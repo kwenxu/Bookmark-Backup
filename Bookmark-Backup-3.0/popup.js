@@ -10538,6 +10538,117 @@ function showRestoreModal(versions, source) {
         }
     });
 
+    const getRestoreUiErrorCode = (payload) => {
+        if (payload && typeof payload === 'object') {
+            const directCode = String(payload.errorCode || payload.code || '').trim();
+            if (directCode) return directCode;
+        }
+
+        const rawError = typeof payload === 'string'
+            ? payload
+            : String(payload?.error || payload?.message || '');
+        const normalizedError = rawError.trim().toLowerCase();
+        if (!normalizedError) return '';
+        if (normalizedError.includes('ambiguous top-level root foldertype mapping')) {
+            return 'restore_root_folder_type_conflict';
+        }
+        if (normalizedError.includes('lacks syncing metadata for a duplicated top-level root foldertype')) {
+            return 'restore_root_syncing_required';
+        }
+        if (normalizedError.includes('cannot map one or more snapshot root containers')) {
+            return 'restore_root_mapping_missing';
+        }
+        if (normalizedError === 'no snapshot root containers found') {
+            return 'restore_snapshot_root_missing';
+        }
+        return '';
+    };
+
+    const joinRestoreUiErrorList = (values = []) => {
+        return Array.from(new Set(
+            (Array.isArray(values) ? values : [])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        )).join(', ');
+    };
+
+    const buildRestoreUiErrorDetailText = (payload, lang = cachedLang) => {
+        const isEn = lang === 'en';
+        const errorDetails = payload && typeof payload === 'object' && payload.errorDetails && typeof payload.errorDetails === 'object'
+            ? payload.errorDetails
+            : null;
+        if (!errorDetails) return '';
+
+        const ambiguousFolderTypesMissingSyncing = joinRestoreUiErrorList(errorDetails.ambiguousFolderTypesMissingSyncing);
+        if (ambiguousFolderTypesMissingSyncing) {
+            return isEn
+                ? ` Affected folder types: ${ambiguousFolderTypesMissingSyncing}.`
+                : ` 涉及的 folderType：${ambiguousFolderTypesMissingSyncing}。`;
+        }
+
+        const duplicateFolderTypes = joinRestoreUiErrorList([
+            ...(Array.isArray(errorDetails.duplicateSnapshotFolderTypes) ? errorDetails.duplicateSnapshotFolderTypes : []),
+            ...(Array.isArray(errorDetails.duplicateCurrentFolderTypes) ? errorDetails.duplicateCurrentFolderTypes : [])
+        ]);
+        if (duplicateFolderTypes) {
+            return isEn
+                ? ` Affected folder types: ${duplicateFolderTypes}.`
+                : ` 涉及的 folderType：${duplicateFolderTypes}。`;
+        }
+
+        const unresolvedFolderTypes = joinRestoreUiErrorList(errorDetails.unresolvedFolderTypes);
+        if (unresolvedFolderTypes) {
+            return isEn
+                ? ` Missing mapping for: ${unresolvedFolderTypes}.`
+                : ` 缺少映射的 folderType：${unresolvedFolderTypes}。`;
+        }
+
+        const unresolvedTitles = joinRestoreUiErrorList(errorDetails.unresolvedTitles);
+        if (unresolvedTitles) {
+            return isEn
+                ? ` Unmapped roots: ${unresolvedTitles}.`
+                : ` 未匹配的根目录：${unresolvedTitles}。`;
+        }
+
+        return '';
+    };
+
+    const formatRestoreUiError = (payload, lang = cachedLang) => {
+        const isEn = lang === 'en';
+        const fallbackError = isEn ? 'Unknown error' : '未知错误';
+        const rawError = typeof payload === 'string'
+            ? String(payload || '').trim()
+            : String(payload?.error || payload?.message || '').trim();
+        const errorCode = getRestoreUiErrorCode(payload);
+        const detailText = buildRestoreUiErrorDetailText(payload, lang);
+
+        if (errorCode === 'restore_root_folder_type_conflict') {
+            return isEn
+                ? `Overwrite restore is unavailable because the snapshot or current browser contains conflicting top-level root identities, so root mapping is not unique.${detailText} This path now tries (folderType + syncing) first, then folderType, then the legacy root-key fallback.`
+                : `当前无法执行覆盖恢复，因为这个快照或当前浏览器里存在冲突的顶层根身份，导致根映射不再唯一。${detailText}当前链路是“(folderType + syncing) 优先，再 folderType，再旧根 key 兜底”。`;
+        }
+
+        if (errorCode === 'restore_root_syncing_required') {
+            return isEn
+                ? `Overwrite restore is unavailable because the current snapshot does not carry enough top-level root identity metadata for a dual-root browser layout.${detailText} This does not change backup scope; it only blocks precise overwrite mapping for that folderType.`
+                : `当前无法执行覆盖恢复，因为这个快照在双根浏览器布局下缺少足够的顶层根身份元数据，无法做精确映射。${detailText}这不影响备份范围，只是在这些 folderType 上不能做精确覆盖恢复。`;
+        }
+
+        if (errorCode === 'restore_root_mapping_missing') {
+            return isEn
+                ? `Overwrite restore is unavailable because one or more snapshot top-level roots still cannot be matched after trying (folderType + syncing), folderType, and the legacy root id/title fallback.${detailText} This usually indicates an abnormal browser root layout or incomplete root metadata in the snapshot.`
+                : `当前无法执行覆盖恢复，因为即使已经尝试了“(folderType + syncing) → folderType → 旧根 id/title”这套兜底链路，仍有一个或多个快照顶层根无法匹配到当前浏览器。${detailText}这通常说明当前浏览器根结构异常，或快照里的根元数据不完整。`;
+        }
+
+        if (errorCode === 'restore_snapshot_root_missing') {
+            return isEn
+                ? 'This snapshot does not contain restorable top-level bookmark roots.'
+                : '这个快照里没有可恢复的顶层书签根目录。';
+        }
+
+        return rawError || fallbackError;
+    };
+
     const getRestoreConfirmIdleText = (lang = cachedLang) => {
         const isEn = lang === 'en';
         if (isChangesSubModeActive(currentVersionType)) {
@@ -13021,7 +13132,7 @@ function showRestoreModal(versions, source) {
                     }
 
                     if (!res || res.success !== true) {
-                        previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(res?.error || 'Unknown error')}</div>`;
+                        previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(formatRestoreUiError(res, cachedLang))}</div>`;
                         return;
                     }
 
@@ -13048,7 +13159,7 @@ function showRestoreModal(versions, source) {
                     bindPreviewTreeToggle(previewContent);
                     return;
                 } catch (err) {
-                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${escapeHtml(err?.message || 'Unknown error')}</div>`;
+                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Error: ' : '错误：'}${escapeHtml(formatRestoreUiError(err, cachedLang))}</div>`;
                     return;
                 }
             }
@@ -13066,7 +13177,7 @@ function showRestoreModal(versions, source) {
                 }
 
                 if (!res || res.success !== true) {
-                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(res?.error || 'Unknown error')}</div>`;
+                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(formatRestoreUiError(res, cachedLang))}</div>`;
                     return;
                 }
 
@@ -13124,7 +13235,7 @@ function showRestoreModal(versions, source) {
                 previewContent.setAttribute('data-loaded', 'true');
                 bindPreviewTreeToggle(previewContent);
             } catch (err) {
-                previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${escapeHtml(err?.message || 'Unknown error')}</div>`;
+                previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Error: ' : '错误：'}${escapeHtml(formatRestoreUiError(err, cachedLang))}</div>`;
             }
         };
 
@@ -13241,7 +13352,7 @@ function showRestoreModal(versions, source) {
                     });
                     if (!res || res.success !== true) {
                         mergePreviewCache = null;
-                        diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(res?.error || 'Unknown error')}</span>`;
+                        diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(formatRestoreUiError(res, cachedLang))}</span>`;
                         return;
                     }
 
@@ -13251,7 +13362,7 @@ function showRestoreModal(versions, source) {
                     if (previewButton) previewButton.style.display = 'inline-flex';
                 } catch (e) {
                     mergePreviewCache = null;
-                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
+                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(formatRestoreUiError(e, cachedLang))}</span>`;
                 }
                 return;
             }
@@ -13271,7 +13382,7 @@ function showRestoreModal(versions, source) {
                 });
 
                 if (!res || res.success !== true) {
-                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(res?.error || 'Unknown error')}</span>`;
+                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(formatRestoreUiError(res, cachedLang))}</span>`;
                     return;
                 }
 
@@ -13332,7 +13443,7 @@ function showRestoreModal(versions, source) {
                 if (previewButton) previewButton.style.display = 'inline-flex';
             } catch (e) {
                 patchBlockedByIdChurn = false;
-                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
+                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(formatRestoreUiError(e, cachedLang))}</span>`;
             }
         };
 
@@ -13650,6 +13761,29 @@ function showRestoreModal(versions, source) {
                 ? confirmResult.preflight
                 : null;
             const restoreSessionId = `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const lang = await getPreferredLang();
+            const isEn = lang === 'en';
+            const selectedFolderType = detectRestoreFolderType(selectedVersion);
+            const selectedVersionId = selectedVersion?.id != null ? String(selectedVersion.id) : '';
+            const displayedSeqFromTable = selectedVersionId
+                ? String(displayedSeqByVersionId.get(selectedVersionId) || '').trim()
+                : '';
+            const fallbackSeq = selectedVersion?.seqNumber != null ? String(selectedVersion.seqNumber) : '';
+            const resolvedSeq = selectedFolderType === 'overwrite'
+                ? '0'
+                : (displayedSeqFromTable || fallbackSeq || '');
+            const restoreRecordMeta = {
+                note: isEn
+                    ? `Restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                    : `恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`,
+                sourceSeqNumber: resolvedSeq,
+                sourceTime: selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '',
+                sourceNote: selectedVersion?.note || '',
+                sourceFingerprint: selectedVersion?.fingerprint || '',
+                sourceSnapshotKey: selectedVersion?.restoreRef?.snapshotKey || '',
+                sourceOverwriteMode: selectedFolderType === 'overwrite' ? 'overwrite' : 'versioned',
+                precomputedDiffSummary: restoreExecutePreflight?.precomputedDiffSummary || null
+            };
 
             // 执行恢复：锁定按钮
             confirmButton.disabled = true;
@@ -13664,8 +13798,6 @@ function showRestoreModal(versions, source) {
             if (searchButton) searchButton.disabled = true;
             if (restoreSearchInput) restoreSearchInput.disabled = true;
             if (restoreSearchClear) restoreSearchClear.disabled = true;
-            const lang = await getPreferredLang();
-            const isEn = lang === 'en';
             const restoringBaseText = isEn ? 'Restoring...' : '恢复中...';
             const restoreStartedAt = Date.now();
             const refreshRestoringText = () => {
@@ -13675,7 +13807,7 @@ function showRestoreModal(versions, source) {
             refreshRestoringText();
             restoringTextTimer = setInterval(refreshRestoringText, 1000);
 
-            const restorePayload = { restoreRef, strategy, localPayload, restoreSessionId };
+            const restorePayload = { restoreRef, strategy, localPayload, restoreSessionId, restoreRecordMeta };
             if (strategy === 'auto') {
                 restorePayload.thresholdPercent = restorePatchThresholdPercent;
             }
@@ -13702,8 +13834,8 @@ function showRestoreModal(versions, source) {
 
             if ((!restoreRes || restoreRes.success !== true) && strategy === 'patch') {
                 const fallbackMsg = isEn
-                    ? `Patch restore failed: ${restoreRes?.error || 'Unknown error'}\n\nSwitch to overwrite restore?`
-                    : `补丁恢复失败：${restoreRes?.error || '未知错误'}\n\n是否改用覆盖恢复？`;
+                    ? `Patch restore failed: ${formatRestoreUiError(restoreRes, lang)}\n\nSwitch to overwrite restore?`
+                    : `补丁恢复失败：${formatRestoreUiError(restoreRes, lang)}\n\n是否改用覆盖恢复？`;
                 const shouldFallback = window.confirm(fallbackMsg);
                 if (shouldFallback) {
                     patchFallbackUsed = true;
@@ -13720,6 +13852,7 @@ function showRestoreModal(versions, source) {
                         strategy: 'overwrite',
                         localPayload,
                         restoreSessionId,
+                        restoreRecordMeta,
                         ...(fallbackPreflight ? { preflight: fallbackPreflight } : {})
                     });
                 }
@@ -13761,50 +13894,15 @@ function showRestoreModal(versions, source) {
                 })();
                 alert(msg);
                 closeModal();
-
-                // Restore should be recorded as a backup (create a restore record in history)
-                try {
-                    const selectedFolderType = detectRestoreFolderType(selectedVersion);
-                    const selectedVersionId = selectedVersion?.id != null ? String(selectedVersion.id) : '';
-                    const displayedSeqFromTable = selectedVersionId
-                        ? String(displayedSeqByVersionId.get(selectedVersionId) || '').trim()
-                        : '';
-                    const fallbackSeq = selectedVersion?.seqNumber != null ? String(selectedVersion.seqNumber) : '';
-                    const resolvedSeq = selectedFolderType === 'overwrite'
-                        ? '0'
-                        : (displayedSeqFromTable || fallbackSeq || '');
-                    const seqNumberForRecord = resolvedSeq;
-                    const seqNumberDisplay = selectedFolderType === 'overwrite'
-                        ? '0'
-                        : resolvedSeq;
-                    const displayTime = selectedVersion?.displayTime || '';
-                    const restoreTime = selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '';
-                    const restoreNote = isEn
-                        ? `Restored to #${seqNumberDisplay || '-'} (${displayTime || '-'})`
-                        : `恢复至 #${seqNumberDisplay || '-'} (${displayTime || '-'})`;
-
-                    chrome.runtime.sendMessage({
-                        action: 'triggerRestoreBackup',
-                        note: restoreNote,
-                        sourceSeqNumber: seqNumberForRecord,
-                        sourceTime: restoreTime,
-                        sourceNote: selectedVersion?.note || '',
-                        sourceFingerprint: selectedVersion?.fingerprint || '',
-                        sourceSnapshotKey: selectedVersion?.restoreRef?.snapshotKey || '',
-                        sourceOverwriteMode: selectedFolderType === 'overwrite' ? 'overwrite' : 'versioned',
-                        strategy: appliedStrategy,
-                        restoreSessionId,
-                        precomputedDiffSummary: restoreExecutePreflight?.precomputedDiffSummary || null
-                    }, (backupResult) => {
-                        // 优先在恢复后立刻拉起一次刷新；若后台稍后写入，storage 监听会再补一轮。
-                        schedulePopupHistoryRefresh(80);
-
-                        // 若后台同步记录尚未完成，再追加一次兜底刷新，减少用户“手动刷新”需求。
-                        if (!backupResult || backupResult.success !== true) {
-                            schedulePopupHistoryRefresh(480);
-                        }
-                    });
-                } catch (_) { }
+                schedulePopupHistoryRefresh(80);
+                if (restoreRes?.restoreRecordSuccess === false) {
+                    showStatus(
+                        (isEn ? 'Restore completed, but failed to create restore history: ' : '恢复已完成，但写入恢复记录失败：')
+                        + (restoreRes?.restoreRecordError || (isEn ? 'Unknown error' : '未知错误')),
+                        'error',
+                        5000
+                    );
+                }
 
                 // Restore is equivalent to “first backup”: enter main UI without extra initialization
                 try {
@@ -13841,10 +13939,11 @@ function showRestoreModal(versions, source) {
                     }, 50);
                 } catch (_) { }
             } else {
-                alert(`Failed: ${restoreRes?.error || 'Unknown error'}`);
+                alert(`${isEn ? 'Failed: ' : '失败：'}${formatRestoreUiError(restoreRes, lang)}`);
             }
         } catch (e) {
-            alert(`Error: ${e.message}`);
+            const errorLang = cachedLang || await getPreferredLang();
+            alert(`${errorLang === 'en' ? 'Error: ' : '错误：'}${formatRestoreUiError(e, errorLang)}`);
         } finally {
             if (restoringTextTimer) {
                 clearInterval(restoringTextTimer);

@@ -229,6 +229,56 @@ function buildSnapshotNamingContext(options = {}) {
     };
 }
 
+function normalizeBookmarkFolderType(value) {
+    const text = String(value || '').trim().toLowerCase();
+    return text || '';
+}
+
+function normalizeBookmarkSyncing(value) {
+    if (value === true || value === 1) return true;
+    if (value === false || value === 0) return false;
+
+    const text = String(value ?? '').trim().toLowerCase();
+    if (!text) return null;
+    if (text === 'true' || text === '1') return true;
+    if (text === 'false' || text === '0') return false;
+    return null;
+}
+
+function buildRootFolderTypeSyncingKey(folderType = '', syncing = null) {
+    const normalizedFolderType = normalizeBookmarkFolderType(folderType);
+    const normalizedSyncing = normalizeBookmarkSyncing(syncing);
+    if (!normalizedFolderType || normalizedSyncing === null) return '';
+    return `folderType:${normalizedFolderType}|syncing:${normalizedSyncing ? 'true' : 'false'}`;
+}
+
+function buildFullSnapshotRootDescriptor(node) {
+    const descriptor = {
+        title: String(node?.title || ''),
+        folderType: normalizeBookmarkFolderType(node?.folderType || '')
+    };
+    const syncing = descriptor.folderType ? normalizeBookmarkSyncing(node?.syncing) : null;
+    if (syncing !== null) {
+        descriptor.syncing = syncing;
+    }
+    return descriptor;
+}
+
+function buildFullSnapshotHtmlMeta(bookmarks) {
+    const roots = Array.isArray(bookmarks) ? bookmarks : [bookmarks];
+    const primaryRoot = roots[0] && Array.isArray(roots[0].children) ? roots[0] : null;
+    const rootChildren = Array.isArray(primaryRoot?.children) ? primaryRoot.children : [];
+    const rootDescriptors = rootChildren
+        .map((node) => buildFullSnapshotRootDescriptor(node))
+        .filter((item) => item.folderType || item.title);
+
+    return {
+        schemaVersion: 2,
+        snapshotKind: 'full_html',
+        rootDescriptors
+    };
+}
+
 function getOverwriteSnapshotFileName() {
     return 'bookmark_backup.html';
 }
@@ -1876,6 +1926,437 @@ function noteBookmarkEventForBulkGuard() {
     }
 }
 
+async function handleTriggerRestoreBackupMessage(message = {}) {
+    try {
+        const note = String(message.note || '').trim();
+        const sourceSeqNumber = message.sourceSeqNumber;
+        const sourceTime = message.sourceTime;
+        const sourceNote = message.sourceNote || '';
+        const strategy = message.strategy || 'overwrite';
+        const restoreSessionId = String(message.restoreSessionId || '').trim();
+        const precomputedDiffSummary = normalizeRestoreRecordDiffSummaryPayload(message.precomputedDiffSummary);
+        const sourceFingerprint = message.sourceFingerprint || '';
+        const sourceSnapshotKeyRaw = String(message.sourceSnapshotKey || '').trim().toLowerCase();
+        const sourceSnapshotKey = sourceSnapshotKeyRaw === '__overwrite__'
+            ? '__overwrite__'
+            : parseSnapshotKeyFromText(sourceSnapshotKeyRaw);
+        const sourceOverwriteMode = normalizeOverwriteMode(
+            message.sourceOverwriteMode
+            || (sourceSnapshotKey === '__overwrite__' ? 'overwrite' : 'versioned')
+        );
+        const normalizedStrategy = String(strategy || 'overwrite').trim().toLowerCase();
+        const restoreRecordOverwriteMode = normalizedStrategy === 'merge'
+            ? 'versioned'
+            : sourceOverwriteMode;
+
+        const {
+            syncHistory: historyBeforeRestoreRecord = [],
+            cachedRecordAfterClear = null,
+            restoreBaselineSnapshot = null
+        } = await browserAPI.storage.local.get([
+            'syncHistory',
+            'cachedRecordAfterClear',
+            'restoreBaselineSnapshot'
+        ]);
+
+        let baselineTree = null;
+        let baselineTime = '';
+
+        try {
+            const capturedAt = Number(restoreBaselineSnapshot?.capturedAt || 0);
+            const baselineSessionId = String(restoreBaselineSnapshot?.restoreSessionId || '').trim();
+            const ageMs = Date.now() - capturedAt;
+            const sessionMatched = !!(restoreSessionId && baselineSessionId && restoreSessionId === baselineSessionId);
+            const sessionCompatible = !restoreSessionId || !baselineSessionId || sessionMatched;
+            const withinTimeWindow = capturedAt > 0 && ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000;
+            if (
+                (sessionMatched || (sessionCompatible && withinTimeWindow)) &&
+                isBookmarkTreeShapeValid(restoreBaselineSnapshot?.bookmarkTree)
+            ) {
+                baselineTree = Array.isArray(restoreBaselineSnapshot.bookmarkTree)
+                    ? restoreBaselineSnapshot.bookmarkTree
+                    : [restoreBaselineSnapshot.bookmarkTree];
+                baselineTime = restoreBaselineSnapshot?.capturedAtIso || '';
+            }
+        } catch (_) { }
+
+        if (!baselineTree && isBookmarkTreeShapeValid(cachedRecordAfterClear?.bookmarkTree)) {
+            baselineTree = Array.isArray(cachedRecordAfterClear.bookmarkTree)
+                ? cachedRecordAfterClear.bookmarkTree
+                : [cachedRecordAfterClear.bookmarkTree];
+            baselineTime = String(cachedRecordAfterClear?.time || '');
+        }
+
+        if (!baselineTree && Array.isArray(historyBeforeRestoreRecord) && historyBeforeRestoreRecord.length > 0) {
+            for (let i = historyBeforeRestoreRecord.length - 1; i >= 0; i -= 1) {
+                const candidate = historyBeforeRestoreRecord[i];
+                if (!candidate || candidate.status !== 'success') continue;
+
+                let candidateTree = isBookmarkTreeShapeValid(candidate.bookmarkTree)
+                    ? candidate.bookmarkTree
+                    : null;
+                if (!candidateTree && candidate.hasData && candidate.time) {
+                    try {
+                        const candidateKey = `backup_data_${candidate.time}`;
+                        const candidateData = await browserAPI.storage.local.get([candidateKey]);
+                        candidateTree = candidateData?.[candidateKey] || null;
+                    } catch (_) {
+                        candidateTree = null;
+                    }
+                }
+
+                if (isBookmarkTreeShapeValid(candidateTree)) {
+                    baselineTree = Array.isArray(candidateTree) ? candidateTree : [candidateTree];
+                    baselineTime = String(candidate?.time || '');
+                    break;
+                }
+            }
+        }
+
+        if (restoreBaselineSnapshot) {
+            try {
+                await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
+            } catch (_) { }
+        }
+
+        const syncTime = new Date().toISOString();
+        const snapshotNaming = buildSnapshotNamingContext({ syncTime });
+        const getBookmarkTreeStabilitySignature = (tree) => {
+            const roots = Array.isArray(tree) ? tree : [];
+            const root = roots[0] && typeof roots[0] === 'object' ? roots[0] : null;
+            const rootChildren = Array.isArray(root?.children) ? root.children : [];
+            const rootChildSignature = rootChildren
+                .map((child) => `${String(child?.id || '')}:${Array.isArray(child?.children) ? child.children.length : 0}`)
+                .join('|');
+            return `${countAllBookmarks(tree)}::${countAllFolders(tree)}::${rootChildSignature}`;
+        };
+        const captureStableBookmarks = async () => {
+            let latestTree = await new Promise((resolve) => {
+                browserAPI.bookmarks.getTree((items) => resolve(items));
+            });
+            let latestSignature = getBookmarkTreeStabilitySignature(latestTree);
+            let stableRounds = 0;
+            const startedAt = Date.now();
+
+            while ((Date.now() - startedAt) < 1800) {
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                const nextTree = await new Promise((resolve) => {
+                    browserAPI.bookmarks.getTree((items) => resolve(items));
+                });
+                const nextSignature = getBookmarkTreeStabilitySignature(nextTree);
+                if (nextSignature === latestSignature) {
+                    stableRounds += 1;
+                    latestTree = nextTree;
+                    if (stableRounds >= 2) {
+                        break;
+                    }
+                    continue;
+                }
+
+                stableRounds = 0;
+                latestTree = nextTree;
+                latestSignature = nextSignature;
+            }
+
+            return latestTree;
+        };
+        const bookmarks = await captureStableBookmarks();
+
+        const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+        const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
+        const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+
+        const githubRepoConfig = await browserAPI.storage.local.get([
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoEnabled'
+        ]);
+        const githubRepoConfigured = !!(
+            githubRepoConfig &&
+            githubRepoConfig.githubRepoToken &&
+            githubRepoConfig.githubRepoOwner &&
+            githubRepoConfig.githubRepoName
+        );
+        const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
+
+        const localConfig = await browserAPI.storage.local.get(['defaultDownloadEnabled']);
+        const localBackupConfigured = localConfig.defaultDownloadEnabled === true;
+
+        let webDAVSuccess = false;
+        let githubRepoSuccess = false;
+        let localSuccess = false;
+        const uploadErrors = [];
+
+        if (webDAVConfigured && webDAVEnabled) {
+            try {
+                const uploadResult = await uploadBookmarks(bookmarks, {
+                    ...snapshotNaming,
+                    overwriteMode: restoreRecordOverwriteMode
+                });
+                if (uploadResult?.success) {
+                    webDAVSuccess = true;
+                } else if (!uploadResult?.webDAVNotConfigured) {
+                    uploadErrors.push(uploadResult?.error || 'WebDAV上传失败');
+                }
+            } catch (uploadError) {
+                uploadErrors.push(uploadError?.message || 'WebDAV上传失败');
+            }
+        }
+
+        if (githubRepoConfigured && githubRepoEnabled) {
+            try {
+                const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
+                    ...snapshotNaming,
+                    overwriteMode: restoreRecordOverwriteMode
+                });
+                if (uploadResult?.success) {
+                    githubRepoSuccess = true;
+                } else if (!uploadResult?.repoNotConfigured && !uploadResult?.repoDisabled) {
+                    uploadErrors.push(uploadResult?.error || 'GitHub仓库上传失败');
+                }
+            } catch (uploadError) {
+                uploadErrors.push(uploadError?.message || 'GitHub仓库上传失败');
+            }
+        }
+
+        const tryLocalSnapshotUpload = async ({ forceEnable = false } = {}) => {
+            try {
+                const localResult = await uploadBookmarksToLocal(bookmarks, {
+                    ...snapshotNaming,
+                    overwriteMode: restoreRecordOverwriteMode,
+                    forceEnable
+                });
+                return localResult?.success !== false;
+            } catch (uploadError) {
+                const suffix = forceEnable ? '（兜底）' : '';
+                uploadErrors.push(`本地快照备份失败${suffix}: ${uploadError?.message || '未知错误'}`);
+                return false;
+            }
+        };
+
+        if (localBackupConfigured) {
+            localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
+            if (!localSuccess) {
+                try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
+                localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
+            }
+        }
+
+        if (!localSuccess && !webDAVSuccess && !githubRepoSuccess) {
+            localSuccess = await tryLocalSnapshotUpload({ forceEnable: true });
+        }
+
+        let restoreSyncDirection = 'none';
+        if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+            restoreSyncDirection = 'webdav_github_local';
+        } else if (localSuccess && webDAVSuccess) {
+            restoreSyncDirection = 'webdav_local';
+        } else if (localSuccess && githubRepoSuccess) {
+            restoreSyncDirection = 'github_repo_local';
+        } else if (localSuccess) {
+            restoreSyncDirection = 'local';
+        } else if (webDAVSuccess && githubRepoSuccess) {
+            restoreSyncDirection = 'cloud';
+        } else if (webDAVSuccess) {
+            restoreSyncDirection = 'webdav';
+        } else if (githubRepoSuccess) {
+            restoreSyncDirection = 'github_repo';
+        } else {
+            restoreSyncDirection = 'none';
+        }
+
+        const restoreErrorMessage = uploadErrors.length > 0 ? uploadErrors.join('; ') : '';
+        if (restoreSyncDirection === 'none') {
+            throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
+        }
+        await updateSyncStatus(
+            restoreSyncDirection,
+            syncTime,
+            'success',
+            restoreErrorMessage,
+            'manual',
+            null,
+            snapshotNaming.fingerprint,
+            {
+                overwriteMode: restoreRecordOverwriteMode,
+                skipAutoArtifacts: true,
+                localBookmarks: bookmarks
+            }
+        );
+
+        const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
+        if (syncHistory.length > 0) {
+            let targetIndex = syncHistory.findIndex(r => String(r?.time) === String(syncTime));
+            if (targetIndex < 0) targetIndex = syncHistory.length - 1;
+
+            const targetRecord = syncHistory[targetIndex];
+            if (targetRecord) {
+                const normalizedOverwriteMode = normalizedStrategy === 'merge'
+                    ? 'versioned'
+                    : sourceOverwriteMode;
+
+                targetRecord.type = 'restore';
+                targetRecord.overwriteMode = normalizedOverwriteMode;
+                if (note) targetRecord.note = note;
+                targetRecord.restoreInfo = {
+                    sourceSeqNumber,
+                    sourceTime,
+                    sourceNote,
+                    sourceFingerprint,
+                    sourceSnapshotKey: sourceSnapshotKey || null,
+                    sourceOverwriteMode,
+                    strategy,
+                    baselineTime
+                };
+
+                try {
+                    let restoreCurrentTree = null;
+                    const loadRestoreCurrentTree = async () => {
+                        if (restoreCurrentTree && isBookmarkTreeShapeValid(restoreCurrentTree)) {
+                            return restoreCurrentTree;
+                        }
+
+                        const treeKey = `backup_data_${syncTime}`;
+                        const treeData = await browserAPI.storage.local.get([treeKey]);
+                        let currentTree = treeData[treeKey];
+                        if (!isBookmarkTreeShapeValid(currentTree)) {
+                            currentTree = await browserAPI.bookmarks.getTree();
+                        }
+                        if (!isBookmarkTreeShapeValid(currentTree)) {
+                            return null;
+                        }
+
+                        restoreCurrentTree = Array.isArray(currentTree) ? currentTree : [currentTree];
+                        return restoreCurrentTree;
+                    };
+
+                    let statsApplied = false;
+                    let finalBookmarkStats = null;
+                    let finalCurrentTree = null;
+
+                    if (baselineTree && baselineTree.length > 0) {
+                        const normalizedCurrentTree = await loadRestoreCurrentTree();
+                        if (normalizedCurrentTree) {
+                            const rawDiffSummary = computeBookmarkGitDiffSummary(baselineTree, normalizedCurrentTree);
+                            const diffSummary = normalizeRestoreRecordDiffSummaryPayload(rawDiffSummary);
+                            const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(diffSummary, normalizedCurrentTree, {
+                                prevBookmarkCount: countAllBookmarks(baselineTree),
+                                prevFolderCount: countAllFolders(baselineTree)
+                            });
+                            if (bookmarkStats) {
+                                targetRecord.bookmarkStats = bookmarkStats;
+                                targetRecord.isFirstBackup = false;
+                                finalBookmarkStats = bookmarkStats;
+                                finalCurrentTree = normalizedCurrentTree;
+                                statsApplied = true;
+                            }
+                        }
+                    }
+
+                    if (!statsApplied && precomputedDiffSummary) {
+                        const normalizedCurrentTree = await loadRestoreCurrentTree();
+                        if (normalizedCurrentTree) {
+                            const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(precomputedDiffSummary, normalizedCurrentTree);
+                            if (bookmarkStats) {
+                                targetRecord.bookmarkStats = bookmarkStats;
+                                targetRecord.isFirstBackup = false;
+                                finalBookmarkStats = bookmarkStats;
+                                finalCurrentTree = normalizedCurrentTree;
+                                statsApplied = true;
+                            }
+                        }
+                    }
+
+                    if (finalBookmarkStats && finalCurrentTree) {
+                        const changeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
+                        let changePayload = null;
+
+                        if (baselineTree && baselineTree.length > 0) {
+                            const activeLang = await getCurrentLang();
+                            changePayload = await buildHistoryRecordChangePayload({
+                                recordTime: syncTime,
+                                lang: activeLang === 'en' ? 'en' : 'zh_CN',
+                                previousBookmarks: baselineTree,
+                                currentBookmarks: finalCurrentTree,
+                                explicitMovedIds: Array.isArray(finalBookmarkStats.explicitMovedIds)
+                                    ? finalBookmarkStats.explicitMovedIds
+                                    : [],
+                                stats: finalBookmarkStats
+                            });
+                        } else {
+                            const rawChangeData = await browserAPI.storage.local.get([changeDataKey]);
+                            const existingPayload = rawChangeData?.[changeDataKey];
+                            if (existingPayload && typeof existingPayload === 'object') {
+                                changePayload = {
+                                    ...existingPayload,
+                                    stats: { ...finalBookmarkStats },
+                                    generatedAt: new Date().toISOString(),
+                                    source: 'restore-record-adjusted'
+                                };
+                            }
+                        }
+
+                        if (changePayload && typeof changePayload === 'object') {
+                            await browserAPI.storage.local.set({ [changeDataKey]: changePayload });
+                            targetRecord.hasChangeData = true;
+                            targetRecord.changeDataKey = changeDataKey;
+                            targetRecord.changeDataSchemaVersion = Number(changePayload?.schemaVersion || 1);
+                        }
+                    }
+                } catch (diffError) {
+                    console.warn('[triggerRestoreBackup] 恢复记录差异修正失败:', diffError);
+                }
+
+                syncHistory[targetIndex] = targetRecord;
+                await browserAPI.storage.local.set({ syncHistory });
+
+                try {
+                    const activeLang = await getCurrentLang();
+                    await syncVersionedInfoLogIfNeeded({
+                        lang: activeLang,
+                        overwriteMode: restoreRecordOverwriteMode,
+                        syncHistory
+                    });
+                } catch (postSyncError) {
+                    console.warn('[triggerRestoreBackup] 恢复后同步备份历史log失败:', postSyncError);
+                }
+            }
+        }
+
+        if (baselineTree && historyBeforeRestoreRecord.length === 0) {
+            try {
+                await browserAPI.storage.local.set({
+                    cachedRecordAfterClear: {
+                        bookmarkTree: baselineTree,
+                        bookmarkStats: null,
+                        time: baselineTime || syncTime
+                    }
+                });
+            } catch (_) { }
+        }
+
+        await updateBadgeAfterSync(true);
+        await updateAndCacheAnalysis();
+        await setBadge();
+
+        try {
+            await browserAPI.runtime.sendMessage({
+                action: 'bookmarkChanged',
+                source: 'restore'
+            });
+        } catch (_) { }
+
+        return { success: true, syncTime, strategy };
+    } catch (error) {
+        try {
+            await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
+        } catch (_) { }
+        console.error('[triggerRestoreBackup] 失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 基础校验
@@ -1896,7 +2377,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const tree = await BookmarkSnapshotCache.ensureFresh();
                     sendResponse({ success: true, tree, version: BookmarkSnapshotCache.version });
                 } catch (error) {
-                    sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+                    const response = { success: false, error: error && error.message ? error.message : String(error) };
+                    if (error?.errorCode) {
+                        response.errorCode = error.errorCode;
+                    }
+                    if (error?.errorDetails && typeof error.errorDetails === 'object') {
+                        response.errorDetails = error.errorDetails;
+                    }
+                    sendResponse(response);
                 }
             })();
             return true;
@@ -2581,445 +3069,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })();
             return true;
         } else if (message.action === "triggerRestoreBackup") {
-            (async () => {
-                try {
-                    const note = String(message.note || '').trim();
-                    const sourceSeqNumber = message.sourceSeqNumber;
-                    const sourceTime = message.sourceTime;
-                    const sourceNote = message.sourceNote || '';
-                    const strategy = message.strategy || 'overwrite';
-                    const restoreSessionId = String(message.restoreSessionId || '').trim();
-                    const precomputedDiffSummary = normalizeRestoreRecordDiffSummaryPayload(message.precomputedDiffSummary);
-                    const sourceFingerprint = message.sourceFingerprint || '';
-                    const sourceSnapshotKeyRaw = String(message.sourceSnapshotKey || '').trim().toLowerCase();
-                    const sourceSnapshotKey = sourceSnapshotKeyRaw === '__overwrite__'
-                        ? '__overwrite__'
-                        : parseSnapshotKeyFromText(sourceSnapshotKeyRaw);
-                    const sourceOverwriteMode = normalizeOverwriteMode(
-                        message.sourceOverwriteMode
-                        || (sourceSnapshotKey === '__overwrite__' ? 'overwrite' : 'versioned')
-                    );
-                    const normalizedStrategy = String(strategy || 'overwrite').trim().toLowerCase();
-                    const restoreRecordOverwriteMode = normalizedStrategy === 'merge'
-                        ? 'versioned'
-                        : sourceOverwriteMode;
-
-                    const {
-                        syncHistory: historyBeforeRestoreRecord = [],
-                        cachedRecordAfterClear = null,
-                        restoreBaselineSnapshot = null
-                    } = await browserAPI.storage.local.get([
-                        'syncHistory',
-                        'cachedRecordAfterClear',
-                        'restoreBaselineSnapshot'
-                    ]);
-
-                    let baselineTree = null;
-                    let baselineTime = '';
-
-                    try {
-                        const capturedAt = Number(restoreBaselineSnapshot?.capturedAt || 0);
-                        const baselineSessionId = String(restoreBaselineSnapshot?.restoreSessionId || '').trim();
-                        const ageMs = Date.now() - capturedAt;
-                        const sessionMatched = !!(restoreSessionId && baselineSessionId && restoreSessionId === baselineSessionId);
-                        const sessionCompatible = !restoreSessionId || !baselineSessionId || sessionMatched;
-                        const withinTimeWindow = capturedAt > 0 && ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000;
-                        if (
-                            (sessionMatched || (sessionCompatible && withinTimeWindow)) &&
-                            isBookmarkTreeShapeValid(restoreBaselineSnapshot?.bookmarkTree)
-                        ) {
-                            baselineTree = Array.isArray(restoreBaselineSnapshot.bookmarkTree)
-                                ? restoreBaselineSnapshot.bookmarkTree
-                                : [restoreBaselineSnapshot.bookmarkTree];
-                            baselineTime = restoreBaselineSnapshot?.capturedAtIso || '';
-                        }
-                    } catch (_) { }
-
-                    if (!baselineTree && isBookmarkTreeShapeValid(cachedRecordAfterClear?.bookmarkTree)) {
-                        baselineTree = Array.isArray(cachedRecordAfterClear.bookmarkTree)
-                            ? cachedRecordAfterClear.bookmarkTree
-                            : [cachedRecordAfterClear.bookmarkTree];
-                        baselineTime = String(cachedRecordAfterClear?.time || '');
-                    }
-
-                    // 兜底：若临时基线不可用，回退到恢复前最后一条有效备份记录（可能与真实恢复前状态有偏差，但优于“无变化”误判）。
-                    if (!baselineTree && Array.isArray(historyBeforeRestoreRecord) && historyBeforeRestoreRecord.length > 0) {
-                        for (let i = historyBeforeRestoreRecord.length - 1; i >= 0; i -= 1) {
-                            const candidate = historyBeforeRestoreRecord[i];
-                            if (!candidate || candidate.status !== 'success') continue;
-
-                            let candidateTree = isBookmarkTreeShapeValid(candidate.bookmarkTree)
-                                ? candidate.bookmarkTree
-                                : null;
-                            if (!candidateTree && candidate.hasData && candidate.time) {
-                                try {
-                                    const candidateKey = `backup_data_${candidate.time}`;
-                                    const candidateData = await browserAPI.storage.local.get([candidateKey]);
-                                    candidateTree = candidateData?.[candidateKey] || null;
-                                } catch (_) {
-                                    candidateTree = null;
-                                }
-                            }
-
-                            if (isBookmarkTreeShapeValid(candidateTree)) {
-                                baselineTree = Array.isArray(candidateTree) ? candidateTree : [candidateTree];
-                                baselineTime = String(candidate?.time || '');
-                                break;
-                            }
-                        }
-                    }
-
-                    if (restoreBaselineSnapshot) {
-                        try {
-                            await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
-                        } catch (_) { }
-                    }
-
-                    // 恢复/覆盖/导入合并：先等待书签树稳定，再落地“快照文件”，避免拿到恢复前/中间态。
-                    const syncTime = new Date().toISOString();
-                    const snapshotNaming = buildSnapshotNamingContext({ syncTime });
-                    const getBookmarkTreeStabilitySignature = (tree) => {
-                        const roots = Array.isArray(tree) ? tree : [];
-                        const root = roots[0] && typeof roots[0] === 'object' ? roots[0] : null;
-                        const rootChildren = Array.isArray(root?.children) ? root.children : [];
-                        const rootChildSignature = rootChildren
-                            .map((child) => `${String(child?.id || '')}:${Array.isArray(child?.children) ? child.children.length : 0}`)
-                            .join('|');
-                        return `${countAllBookmarks(tree)}::${countAllFolders(tree)}::${rootChildSignature}`;
-                    };
-                    const captureStableBookmarks = async () => {
-                        let latestTree = await new Promise((resolve) => {
-                            browserAPI.bookmarks.getTree((items) => resolve(items));
-                        });
-                        let latestSignature = getBookmarkTreeStabilitySignature(latestTree);
-                        let stableRounds = 0;
-                        const startedAt = Date.now();
-
-                        while ((Date.now() - startedAt) < 1800) {
-                            await new Promise((resolve) => setTimeout(resolve, 120));
-                            const nextTree = await new Promise((resolve) => {
-                                browserAPI.bookmarks.getTree((items) => resolve(items));
-                            });
-                            const nextSignature = getBookmarkTreeStabilitySignature(nextTree);
-                            if (nextSignature === latestSignature) {
-                                stableRounds += 1;
-                                latestTree = nextTree;
-                                if (stableRounds >= 2) {
-                                    break;
-                                }
-                                continue;
-                            }
-
-                            stableRounds = 0;
-                            latestTree = nextTree;
-                            latestSignature = nextSignature;
-                        }
-
-                        return latestTree;
-                    };
-                    const bookmarks = await captureStableBookmarks();
-
-                    const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
-                    const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
-                    const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
-
-                    const githubRepoConfig = await browserAPI.storage.local.get([
-                        'githubRepoToken',
-                        'githubRepoOwner',
-                        'githubRepoName',
-                        'githubRepoEnabled'
-                    ]);
-                    const githubRepoConfigured = !!(
-                        githubRepoConfig &&
-                        githubRepoConfig.githubRepoToken &&
-                        githubRepoConfig.githubRepoOwner &&
-                        githubRepoConfig.githubRepoName
-                    );
-                    const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
-
-                    const localConfig = await browserAPI.storage.local.get(['defaultDownloadEnabled']);
-                    const localBackupConfigured = localConfig.defaultDownloadEnabled === true;
-
-                    let webDAVSuccess = false;
-                    let githubRepoSuccess = false;
-                    let localSuccess = false;
-                    const uploadErrors = [];
-
-                    if (webDAVConfigured && webDAVEnabled) {
-                        try {
-                            const uploadResult = await uploadBookmarks(bookmarks, {
-                                ...snapshotNaming,
-                                overwriteMode: restoreRecordOverwriteMode
-                            });
-                            if (uploadResult?.success) {
-                                webDAVSuccess = true;
-                            } else if (!uploadResult?.webDAVNotConfigured) {
-                                uploadErrors.push(uploadResult?.error || 'WebDAV上传失败');
-                            }
-                        } catch (uploadError) {
-                            uploadErrors.push(uploadError?.message || 'WebDAV上传失败');
-                        }
-                    }
-
-                    if (githubRepoConfigured && githubRepoEnabled) {
-                        try {
-                            const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
-                                ...snapshotNaming,
-                                overwriteMode: restoreRecordOverwriteMode
-                            });
-                            if (uploadResult?.success) {
-                                githubRepoSuccess = true;
-                            } else if (!uploadResult?.repoNotConfigured && !uploadResult?.repoDisabled) {
-                                uploadErrors.push(uploadResult?.error || 'GitHub仓库上传失败');
-                            }
-                        } catch (uploadError) {
-                            uploadErrors.push(uploadError?.message || 'GitHub仓库上传失败');
-                        }
-                    }
-
-                    const tryLocalSnapshotUpload = async ({ forceEnable = false } = {}) => {
-                        try {
-                            const localResult = await uploadBookmarksToLocal(bookmarks, {
-                                ...snapshotNaming,
-                                overwriteMode: restoreRecordOverwriteMode,
-                                forceEnable
-                            });
-                            return localResult?.success !== false;
-                        } catch (uploadError) {
-                            const suffix = forceEnable ? '（兜底）' : '';
-                            uploadErrors.push(`本地快照备份失败${suffix}: ${uploadError?.message || '未知错误'}`);
-                            return false;
-                        }
-                    };
-
-                    if (localBackupConfigured) {
-                        localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
-                        if (!localSuccess) {
-                            try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
-                            localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
-                        }
-                    }
-
-                    // 兜底：若三端都未成功，强制尝试一次本地快照，避免“只有当前变化无快照”。
-                    if (!localSuccess && !webDAVSuccess && !githubRepoSuccess) {
-                        localSuccess = await tryLocalSnapshotUpload({ forceEnable: true });
-                    }
-
-                    let restoreSyncDirection = 'none';
-                    if (localSuccess && webDAVSuccess && githubRepoSuccess) {
-                        restoreSyncDirection = 'webdav_github_local';
-                    } else if (localSuccess && webDAVSuccess) {
-                        restoreSyncDirection = 'webdav_local';
-                    } else if (localSuccess && githubRepoSuccess) {
-                        restoreSyncDirection = 'github_repo_local';
-                    } else if (localSuccess) {
-                        restoreSyncDirection = 'local';
-                    } else if (webDAVSuccess && githubRepoSuccess) {
-                        restoreSyncDirection = 'cloud';
-                    } else if (webDAVSuccess) {
-                        restoreSyncDirection = 'webdav';
-                    } else if (githubRepoSuccess) {
-                        restoreSyncDirection = 'github_repo';
-                    } else {
-                        restoreSyncDirection = 'none';
-                    }
-
-                    const restoreErrorMessage = uploadErrors.length > 0 ? uploadErrors.join('; ') : '';
-                    if (restoreSyncDirection === 'none') {
-                        throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
-                    }
-                    await updateSyncStatus(
-                        restoreSyncDirection,
-                        syncTime,
-                        'success',
-                        restoreErrorMessage,
-                        'manual',
-                        null,
-                        snapshotNaming.fingerprint,
-                        {
-                            overwriteMode: restoreRecordOverwriteMode,
-                            skipAutoArtifacts: true,
-                            localBookmarks: bookmarks
-                        }
-                    );
-
-                    const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
-                    if (syncHistory.length > 0) {
-                        let targetIndex = syncHistory.findIndex(r => String(r?.time) === String(syncTime));
-                        if (targetIndex < 0) targetIndex = syncHistory.length - 1;
-
-                        const targetRecord = syncHistory[targetIndex];
-                        if (targetRecord) {
-                            const normalizedOverwriteMode = normalizedStrategy === 'merge'
-                                ? 'versioned'
-                                : sourceOverwriteMode;
-
-                            targetRecord.type = 'restore';
-                            targetRecord.overwriteMode = normalizedOverwriteMode;
-                            if (note) targetRecord.note = note;
-                            targetRecord.restoreInfo = {
-                                sourceSeqNumber,
-                                sourceTime,
-                                sourceNote,
-                                sourceFingerprint,
-                                sourceSnapshotKey: sourceSnapshotKey || null,
-                                sourceOverwriteMode,
-                                strategy,
-                                baselineTime
-                            };
-
-                            // 恢复记录优先按“恢复前基线”计算变化；若基线缺失则回退到预演摘要，避免误显示“无变化”。
-                            try {
-                                let restoreCurrentTree = null;
-                                const loadRestoreCurrentTree = async () => {
-                                    if (restoreCurrentTree && isBookmarkTreeShapeValid(restoreCurrentTree)) {
-                                        return restoreCurrentTree;
-                                    }
-
-                                    const treeKey = `backup_data_${syncTime}`;
-                                    const treeData = await browserAPI.storage.local.get([treeKey]);
-                                    let currentTree = treeData[treeKey];
-                                    if (!isBookmarkTreeShapeValid(currentTree)) {
-                                        currentTree = await browserAPI.bookmarks.getTree();
-                                    }
-                                    if (!isBookmarkTreeShapeValid(currentTree)) {
-                                        return null;
-                                    }
-
-                                    restoreCurrentTree = Array.isArray(currentTree) ? currentTree : [currentTree];
-                                    return restoreCurrentTree;
-                                };
-
-                                let statsApplied = false;
-                                let finalBookmarkStats = null;
-                                let finalCurrentTree = null;
-
-                                if (baselineTree && baselineTree.length > 0) {
-                                    const normalizedCurrentTree = await loadRestoreCurrentTree();
-                                    if (normalizedCurrentTree) {
-                                        const rawDiffSummary = computeBookmarkGitDiffSummary(baselineTree, normalizedCurrentTree);
-                                        const diffSummary = normalizeRestoreRecordDiffSummaryPayload(rawDiffSummary);
-                                        const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(diffSummary, normalizedCurrentTree, {
-                                            prevBookmarkCount: countAllBookmarks(baselineTree),
-                                            prevFolderCount: countAllFolders(baselineTree)
-                                        });
-                                        if (bookmarkStats) {
-                                            targetRecord.bookmarkStats = bookmarkStats;
-                                            targetRecord.isFirstBackup = false;
-                                            finalBookmarkStats = bookmarkStats;
-                                            finalCurrentTree = normalizedCurrentTree;
-                                            statsApplied = true;
-                                        }
-                                    }
-                                }
-
-                                if (!statsApplied && precomputedDiffSummary) {
-                                    const normalizedCurrentTree = await loadRestoreCurrentTree();
-                                    if (normalizedCurrentTree) {
-                                        const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(precomputedDiffSummary, normalizedCurrentTree);
-                                        if (bookmarkStats) {
-                                            targetRecord.bookmarkStats = bookmarkStats;
-                                            targetRecord.isFirstBackup = false;
-                                            finalBookmarkStats = bookmarkStats;
-                                            finalCurrentTree = normalizedCurrentTree;
-                                            statsApplied = true;
-                                        }
-                                    }
-                                }
-
-                                // 修正恢复记录的 changes_data，避免详情视图仍显示“无变化”。
-                                if (finalBookmarkStats && finalCurrentTree) {
-                                    const changeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
-                                    let changePayload = null;
-
-                                    if (baselineTree && baselineTree.length > 0) {
-                                        const activeLang = await getCurrentLang();
-                                        changePayload = await buildHistoryRecordChangePayload({
-                                            recordTime: syncTime,
-                                            lang: activeLang === 'en' ? 'en' : 'zh_CN',
-                                            previousBookmarks: baselineTree,
-                                            currentBookmarks: finalCurrentTree,
-                                            explicitMovedIds: Array.isArray(finalBookmarkStats.explicitMovedIds)
-                                                ? finalBookmarkStats.explicitMovedIds
-                                                : [],
-                                            stats: finalBookmarkStats
-                                        });
-                                    } else {
-                                        const rawChangeData = await browserAPI.storage.local.get([changeDataKey]);
-                                        const existingPayload = rawChangeData?.[changeDataKey];
-                                        if (existingPayload && typeof existingPayload === 'object') {
-                                            changePayload = {
-                                                ...existingPayload,
-                                                stats: { ...finalBookmarkStats },
-                                                generatedAt: new Date().toISOString(),
-                                                source: 'restore-record-adjusted'
-                                            };
-                                        }
-                                    }
-
-                                    if (changePayload && typeof changePayload === 'object') {
-                                        await browserAPI.storage.local.set({ [changeDataKey]: changePayload });
-                                        targetRecord.hasChangeData = true;
-                                        targetRecord.changeDataKey = changeDataKey;
-                                        targetRecord.changeDataSchemaVersion = Number(changePayload?.schemaVersion || 1);
-                                    }
-                                }
-                            } catch (diffError) {
-                                console.warn('[triggerRestoreBackup] 恢复记录差异修正失败:', diffError);
-                            }
-
-                            syncHistory[targetIndex] = targetRecord;
-                            await browserAPI.storage.local.set({ syncHistory });
-
-                            try {
-                                const activeLang = await getCurrentLang();
-
-                                // 恢复记录只保留：
-                                // 1. 快照文件
-                                // 2. 备份历史 log
-                                // 不再为恢复记录额外导出“当前变化”文件，
-                                // 避免 HTML 恢复 / 二级 UI 恢复后生成误导性的 changes 产物。
-                                await syncVersionedInfoLogIfNeeded({
-                                    lang: activeLang,
-                                    overwriteMode: restoreRecordOverwriteMode,
-                                    syncHistory
-                                });
-                            } catch (postSyncError) {
-                                console.warn('[triggerRestoreBackup] 恢复后同步备份历史log失败:', postSyncError);
-                            }
-                        }
-                    }
-
-                    // 当历史为空时，保留恢复前基线，便于 HTML 页面首条记录计算变化。
-                    if (baselineTree && historyBeforeRestoreRecord.length === 0) {
-                        try {
-                            await browserAPI.storage.local.set({
-                                cachedRecordAfterClear: {
-                                    bookmarkTree: baselineTree,
-                                    bookmarkStats: null,
-                                    time: baselineTime || syncTime
-                                }
-                            });
-                        } catch (_) { }
-                    }
-
-                    await updateBadgeAfterSync(true);
-                    await updateAndCacheAnalysis();
-                    await setBadge();
-
-                    try {
-                        await browserAPI.runtime.sendMessage({
-                            action: 'bookmarkChanged',
-                            source: 'restore'
-                        });
-                    } catch (_) { }
-
-                    sendResponse({ success: true, syncTime, strategy });
-                } catch (error) {
-                    console.error('[triggerRestoreBackup] 失败:', error);
-                    sendResponse({ success: false, error: error.message });
-                }
-            })();
+            handleTriggerRestoreBackupMessage(message)
+                .then((result) => sendResponse(result))
+                .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
             return true;
         } else if (message.action === "resetAllData") {
             // 使用异步立即执行函数处理
@@ -3198,7 +3250,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         ...(patchResult || {})
                     });
                 } catch (error) {
-                    sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+                    const response = { success: false, error: error && error.message ? error.message : String(error) };
+                    if (error?.errorCode) {
+                        response.errorCode = error.errorCode;
+                    }
+                    if (error?.errorDetails && typeof error.errorDetails === 'object') {
+                        response.errorDetails = error.errorDetails;
+                    }
+                    sendResponse(response);
                 }
             })();
             return true;
@@ -3382,7 +3441,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                     return;
                 } catch (error) {
-                    sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+                    const response = { success: false, error: error && error.message ? error.message : String(error) };
+                    if (error?.errorCode) {
+                        response.errorCode = error.errorCode;
+                    }
+                    if (error?.errorDetails && typeof error.errorDetails === 'object') {
+                        response.errorDetails = error.errorDetails;
+                    }
+                    sendResponse(response);
                 } finally {
                     isBookmarkRestoring = false;
                     try {
@@ -4412,12 +4478,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 restoreRef: message.restoreRef,
                 strategy: message.strategy,
                 thresholdPercent: message.thresholdPercent,
+                restoreSessionId: message.restoreSessionId,
                 localPayload: message.localPayload,
                 mergeViewMode: message.mergeViewMode,
                 manualMatches: message.manualMatches,
                 importParentId: message.importParentId,
                 forceChangesArtifact: message.forceChangesArtifact,
-                preflight: message.preflight
+                preflight: message.preflight,
+                restoreRecordMeta: message.restoreRecordMeta
             })
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
@@ -9595,19 +9663,182 @@ async function resetAllData() {
     }
 }
 
-function normalizeRootKey(id, title) {
-    if (!id && !title) return 'unknown';
-    // 常见平台根ID映射
-    if (id === '1' || id === 'toolbar_____') return 'toolbar';
-    if (id === '2' || id === 'menu________') return 'menu';
-    if (id === '3' || id === 'unfiled_____') return 'unfiled';
-    if (id === 'mobile______') return 'mobile';
-    const t = (title || '').toLowerCase();
-    if (t.includes('toolbar') || t.includes('书签栏')) return 'toolbar';
-    if (t.includes('menu') || t.includes('菜单') || t.includes('其他书签')) return 'menu';
-    if (t.includes('unfiled')) return 'unfiled';
-    if (t.includes('mobile') || t.includes('移动')) return 'mobile';
-    return id || t || 'unknown';
+function getRootMatchKeys(id, title, folderType = '', syncing = null) {
+    const keys = [];
+    const pushKey = (value) => {
+        const normalizedValue = String(value || '').trim();
+        if (!normalizedValue || keys.includes(normalizedValue)) return;
+        keys.push(normalizedValue);
+    };
+
+    const normalizedFolderType = normalizeBookmarkFolderType(folderType);
+    const normalizedSyncing = normalizeBookmarkSyncing(syncing);
+    const preciseRootIdentityKey = buildRootFolderTypeSyncingKey(normalizedFolderType, normalizedSyncing);
+    if (preciseRootIdentityKey) {
+        pushKey(preciseRootIdentityKey);
+    }
+    if (normalizedFolderType) {
+        pushKey(`folderType:${normalizedFolderType}`);
+        if (normalizedFolderType === 'bookmarks-bar') pushKey('toolbar');
+        if (normalizedFolderType === 'other') {
+            pushKey('menu');
+            pushKey('unfiled');
+        }
+        if (normalizedFolderType === 'mobile') pushKey('mobile');
+        if (normalizedFolderType === 'managed') pushKey('managed');
+    }
+
+    const normalizedId = String(id || '').trim();
+    if (normalizedId === '1' || normalizedId === 'toolbar_____') pushKey('toolbar');
+    if (normalizedId === '2' || normalizedId === 'menu________') pushKey('menu');
+    if (normalizedId === '3' || normalizedId === 'unfiled_____') pushKey('unfiled');
+    if (normalizedId === 'mobile______') pushKey('mobile');
+
+    const normalizedTitle = String(title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (normalizedTitle) {
+        if (
+            normalizedTitle.includes('toolbar')
+            || normalizedTitle.includes('bookmark bar')
+            || normalizedTitle.includes('bookmarks bar')
+            || normalizedTitle.includes('bookmarks toolbar')
+            || normalizedTitle.includes('favorites bar')
+            || normalizedTitle.includes('书签栏')
+            || normalizedTitle.includes('收藏夹栏')
+        ) {
+            pushKey('toolbar');
+        }
+        if (
+            normalizedTitle.includes('menu')
+            || normalizedTitle.includes('other bookmark')
+            || normalizedTitle.includes('other bookmarks')
+            || normalizedTitle.includes('other favorite')
+            || normalizedTitle.includes('other favorites')
+            || normalizedTitle.includes('其他书签')
+            || normalizedTitle.includes('其他收藏夹')
+            || normalizedTitle.includes('菜单')
+        ) {
+            pushKey('menu');
+        }
+        if (normalizedTitle.includes('unfiled')) pushKey('unfiled');
+        if (
+            normalizedTitle.includes('mobile bookmark')
+            || normalizedTitle.includes('mobile bookmarks')
+            || normalizedTitle.includes('mobile favorite')
+            || normalizedTitle.includes('mobile favorites')
+            || normalizedTitle.includes('mobile')
+            || normalizedTitle.includes('移动')
+            || normalizedTitle.includes('手机')
+        ) {
+            pushKey('mobile');
+        }
+        if (normalizedTitle.includes('managed bookmark') || normalizedTitle.includes('managed bookmarks')) {
+            pushKey('managed');
+        }
+    }
+
+    if (!keys.length) {
+        pushKey(normalizedId || normalizedTitle || 'unknown');
+    }
+
+    return keys;
+}
+
+function extractFolderTypeFromRootMatchKey(value) {
+    const normalizedValue = String(value || '').trim().toLowerCase();
+    if (!normalizedValue) return '';
+
+    const preciseMatch = /^foldertype:([^|]+)\|syncing:(?:true|false)$/.exec(normalizedValue);
+    if (preciseMatch && preciseMatch[1]) {
+        return normalizeBookmarkFolderType(preciseMatch[1]);
+    }
+
+    const folderTypeMatch = /^foldertype:(.+)$/.exec(normalizedValue);
+    if (folderTypeMatch && folderTypeMatch[1]) {
+        return normalizeBookmarkFolderType(folderTypeMatch[1]);
+    }
+
+    if (normalizedValue === 'toolbar') return 'bookmarks-bar';
+    if (normalizedValue === 'menu' || normalizedValue === 'unfiled') return 'other';
+    if (normalizedValue === 'mobile') return 'mobile';
+    if (normalizedValue === 'managed') return 'managed';
+    return '';
+}
+
+function collectCandidateFolderTypesForRoot(node) {
+    return buildOverwriteRestorePlanStringList(
+        getRootMatchKeys(node?.id, node?.title, node?.folderType, node?.syncing)
+            .map((key) => extractFolderTypeFromRootMatchKey(key))
+            .filter(Boolean)
+    );
+}
+
+function buildRootIdentityStats(nodes = []) {
+    const folderTypeCounts = new Map();
+    const preciseIdentityCounts = new Map();
+    const folderTypesMissingSyncing = new Set();
+
+    for (const node of Array.isArray(nodes) ? nodes : []) {
+        const folderType = normalizeBookmarkFolderType(node?.folderType || '');
+        if (!folderType) continue;
+
+        folderTypeCounts.set(folderType, (folderTypeCounts.get(folderType) || 0) + 1);
+        const preciseIdentityKey = buildRootFolderTypeSyncingKey(folderType, node?.syncing);
+        if (preciseIdentityKey) {
+            preciseIdentityCounts.set(preciseIdentityKey, (preciseIdentityCounts.get(preciseIdentityKey) || 0) + 1);
+        } else {
+            folderTypesMissingSyncing.add(folderType);
+        }
+    }
+
+    const multiRootFolderTypes = Array.from(folderTypeCounts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([folderType]) => folderType);
+    const duplicatePreciseRootKeys = Array.from(preciseIdentityCounts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([key]) => key);
+    const duplicatePreciseFolderTypes = buildOverwriteRestorePlanStringList(
+        duplicatePreciseRootKeys
+            .map((key) => extractFolderTypeFromRootMatchKey(key))
+            .filter(Boolean)
+    );
+    const ambiguousFolderTypes = buildOverwriteRestorePlanStringList(
+        multiRootFolderTypes.filter((folderType) => folderTypesMissingSyncing.has(folderType))
+    );
+
+    return {
+        folderTypeCounts,
+        preciseIdentityCounts,
+        multiRootFolderTypes,
+        duplicatePreciseRootKeys,
+        duplicatePreciseFolderTypes,
+        folderTypesMissingSyncing: Array.from(folderTypesMissingSyncing),
+        ambiguousFolderTypes
+    };
+}
+
+function normalizeRootKey(id, title, folderType = '', syncing = null) {
+    return getRootMatchKeys(id, title, folderType, syncing)[0] || 'unknown';
+}
+
+function setRootMatchMapEntry(targetMap, node, value) {
+    if (!(targetMap instanceof Map) || !node || typeof node !== 'object') return;
+    const keys = getRootMatchKeys(node.id, node.title, node.folderType, node?.syncing);
+    for (const key of keys) {
+        if (!targetMap.has(key)) {
+            targetMap.set(key, value);
+        }
+    }
+}
+
+function getRootMatchMapValue(targetMap, node) {
+    if (!(targetMap instanceof Map) || !node || typeof node !== 'object') return null;
+    const keys = getRootMatchKeys(node.id, node.title, node.folderType, node?.syncing);
+    for (const key of keys) {
+        if (targetMap.has(key)) {
+            return targetMap.get(key);
+        }
+    }
+    return null;
 }
 
 function countBookmarkTreeContentNodes(snapshotTree) {
@@ -10137,22 +10368,41 @@ function mapRevertRootIds(currentTree, snapshotTree) {
     const currentByKey = new Map();
     for (const node of currentChildren) {
         if (!node || node.id == null) continue;
-        const key = normalizeRootKey(String(node.id), node.title);
-        if (!currentByKey.has(key)) {
-            currentByKey.set(key, String(node.id));
-        }
+        setRootMatchMapEntry(currentByKey, node, String(node.id));
     }
 
     for (const node of targetChildren) {
         if (!node || node.id == null) continue;
-        const key = normalizeRootKey(String(node.id), node.title);
-        const mapped = currentByKey.get(key);
+        const mapped = getRootMatchMapValue(currentByKey, node);
         if (mapped) {
             map.set(String(node.id), String(mapped));
         }
     }
 
     return map;
+}
+
+function applyRestoreTopLevelRootIdRemap(targetTree, currentTree) {
+    const idRemap = mapRevertRootIds(currentTree, targetTree);
+    const targetRoot = Array.isArray(targetTree) ? targetTree[0] : targetTree;
+    if (!targetRoot || !Array.isArray(targetRoot.children)) return idRemap;
+
+    for (const node of targetRoot.children) {
+        if (!node || node.id == null) continue;
+        const sourceId = String(node.id);
+        const mappedId = idRemap.get(sourceId);
+        if (!mappedId || mappedId == sourceId) continue;
+
+        node.id = String(mappedId);
+        const childNodes = Array.isArray(node.children) ? node.children : [];
+        for (const child of childNodes) {
+            if (child && child.parentId != null && String(child.parentId) === sourceId) {
+                child.parentId = String(mappedId);
+            }
+        }
+    }
+
+    return idRemap;
 }
 
 function resolveRevertTargetId(targetId, idRemap) {
@@ -10577,6 +10827,11 @@ function buildAutoRollbackFailureError(preferredLang, operationMsg, rollbackMsg)
         : `执行失败：${operationMsg}。自动用临时快照做一次覆盖回退失败。请稍后重试，建议使用覆盖撤销/恢复。回退错误：${rollbackMsg}`;
 }
 
+function shouldBypassAutoRollbackForError(error) {
+    const errorCode = String(error?.errorCode || '').trim();
+    return errorCode.startsWith('restore_root_');
+}
+
 async function executeBookmarkOperationWithAutoRollback(operationExecutor, options = {}) {
     const { preferredLang = 'zh_CN' } = options;
     const rollbackSnapshot = await browserAPI.bookmarks.getTree();
@@ -10584,6 +10839,10 @@ async function executeBookmarkOperationWithAutoRollback(operationExecutor, optio
     try {
         return await operationExecutor();
     } catch (operationError) {
+        if (shouldBypassAutoRollbackForError(operationError)) {
+            throw operationError;
+        }
+
         const operationMsg = operationError && operationError.message ? operationError.message : String(operationError);
 
         let rollbackFinalError = null;
@@ -10642,94 +10901,31 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
         throw new Error(preferredLang === 'en' ? 'Invalid snapshot data' : '快照数据无效');
     }
 
-    // 获取当前整棵书签
-    const currentTree = await new Promise((resolve) => {
-        browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
-    });
+    const containerState = await findBookmarkContainers();
+    const allowEmptyOverwrite = allowEmpty && !hasBookmarkTreeContent(snapshotTree);
 
-    // 计算需要清空的根下内容（保留根节点）
-    const currentRoots = currentTree && currentTree[0] && currentTree[0].children ? currentTree[0].children : [];
-
-    // 构建快照根映射（按平台根ID或标题归一化）
-    const snapshotRootChildren = (snapshotTree[0] && snapshotTree[0].children) ? snapshotTree[0].children : [];
-    const snapshotRootMap = new Map();
-    for (const sRoot of snapshotRootChildren) {
-        snapshotRootMap.set(normalizeRootKey(sRoot.id, sRoot.title), sRoot);
-    }
-
-    // 递归创建函数：根据快照还原
-    const createNodeRecursive = async (parentId, snapshotNode) => {
-        if (!snapshotNode) return;
-        if (snapshotNode.url) {
-            await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', url: snapshotNode.url, index: snapshotNode.index });
-        } else {
-            const folder = await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', index: snapshotNode.index });
-            if (snapshotNode.children && snapshotNode.children.length) {
-                for (const child of snapshotNode.children) {
-                    await createNodeRecursive(folder.id, child);
-                }
-            }
+    if (allowEmptyOverwrite) {
+        const clearTargets = Array.isArray(containerState?.children)
+            ? containerState.children.filter((node) => node?.id != null && isWritableRootContainer(node))
+            : [];
+        for (const target of clearTargets) {
+            await removeAllChildren(target.id, {
+                strictDelete,
+                preferredLang
+            });
         }
-    };
-
-    // 限流并发的批处理工具
-    const runBatched = async (items, worker, concurrency = 8) => {
-        let idx = 0; const running = new Set();
-        const runNext = () => {
-            if (idx >= items.length) return Promise.resolve();
-            const i = idx++; const p = Promise.resolve().then(() => worker(items[i])).catch(() => { }).finally(() => running.delete(p));
-            running.add(p);
-            if (running.size >= concurrency) {
-                return Promise.race(running).then(runNext);
-            }
-            return runNext();
-        };
-        await runNext();
-        await Promise.allSettled([...running]);
-    };
-
-    // 删除所有根下节点（分批并发）
-    const deleteFailures = [];
-    for (const root of currentRoots) {
-        if (!root || !root.id) continue;
-        const children = (root.children && root.children.length > 0) ? [...root.children] : [];
-        await runBatched(children, async (child) => {
-            try {
-                if (child.children && child.children.length) {
-                    await browserAPI.bookmarks.removeTree(child.id);
-                } else {
-                    await browserAPI.bookmarks.remove(child.id);
-                }
-            } catch (e) {
-                deleteFailures.push({
-                    id: child?.id ? String(child.id) : '',
-                    error: e && e.message ? String(e.message) : String(e)
-                });
-            }
-        }, 10);
-    }
-
-    if (deleteFailures.length > 0) {
-        const first = deleteFailures[0];
-        const detail = first ? `${first.id || '-'}: ${first.error || ''}` : '';
-        if (strictDelete) {
-            throw new Error(preferredLang === 'en'
-                ? `Overwrite delete phase failed on ${deleteFailures.length} node(s). ${detail}`
-                : `覆盖删除阶段失败，共 ${deleteFailures.length} 个节点删除失败。${detail}`);
+    } else {
+        const overwritePlan = buildOverwriteRestorePlan(snapshotTree, containerState);
+        if (!overwritePlan.success) {
+            throw createOverwriteRestorePlanError(overwritePlan);
         }
-        console.warn('[restoreSnapshotTree] Delete phase has failures:', deleteFailures.length, detail);
-    }
 
-    // 恢复：按根匹配并分批创建
-    for (const root of currentRoots) {
-        if (!root || !root.id) continue;
-        const key = normalizeRootKey(root.id, root.title);
-        const snapshotRoot = snapshotRootMap.get(key);
-        if (snapshotRoot && snapshotRoot.children && snapshotRoot.children.length) {
-            await runBatched(snapshotRoot.children, async (child) => {
-                await createNodeRecursive(root.id, child);
-            }, 6);
-        }
+        await executeOverwriteBookmarkRestore(snapshotTree, {
+            containerState,
+            overwritePlan,
+            preferredLang,
+            strictDelete
+        });
     }
 
     // 更新 lastBookmarkData 为当前还原后的树，避免视图根据旧ID计算出大量标识/diff
@@ -10785,7 +10981,7 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
 
     const rootMap = new Map();
     currentRoots.forEach(root => {
-        rootMap.set(normalizeRootKey(root.id, root.title), root);
+        setRootMatchMapEntry(rootMap, root, root);
     });
     const targetRoot = rootMap.get('menu') || rootMap.get('unfiled') || currentRoots[0];
 
@@ -10840,28 +11036,39 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
 
 // 将书签数据转换为Edge格式的HTML
 function convertToEdgeHTML(bookmarks) {
+    const htmlMeta = buildFullSnapshotHtmlMeta(bookmarks);
+    const hasHtmlMeta = Array.isArray(htmlMeta?.rootDescriptors)
+        && htmlMeta.rootDescriptors.some((item) => item?.folderType || typeof item?.syncing === 'boolean');
+    const scriptSafeMetaJson = hasHtmlMeta
+        ? JSON.stringify(htmlMeta, null, 2).replace(/<\/script/gi, '<\\/script')
+        : '';
+
     let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
 <TITLE>Bookmarks</TITLE>
 <H1>Bookmarks</H1>
-<DL><p>`;
+`;
 
-    function processBookmarks(bookmarks, level = 0) { // This was the original inner function name
+    if (hasHtmlMeta) {
+        html += `<script type="application/json" id="bookmarkBackupMeta">${scriptSafeMetaJson}</script>\n`;
+    }
+
+    html += '<DL><p>';
+
+    function processBookmarks(bookmarks, level = 0) {
         bookmarks.forEach(bookmark => {
             if (bookmark.children) {
-                // 这是一个文件夹
                 html += `${'    '.repeat(level)}<DT><H3>${bookmark.title}</H3>\n`;
                 html += `${'    '.repeat(level)}<DL><p>\n`;
                 processBookmarks(bookmark.children, level + 1);
                 html += `${'    '.repeat(level)}</DL><p>\n`;
             } else {
-                // 这是一个书签
                 html += `${'    '.repeat(level)}<DT><A HREF="${bookmark.url}">${bookmark.title}</A>\n`;
             }
         });
     }
 
-    processBookmarks(bookmarks); // Original called with the direct bookmarks argument
+    processBookmarks(bookmarks);
     html += '</DL><p>';
     return html;
 }
@@ -16831,47 +17038,75 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
     }
 }
 
+function collectDuplicateRootFolderTypes(nodes = []) {
+    const counts = new Map();
+    for (const node of Array.isArray(nodes) ? nodes : []) {
+        const folderType = normalizeBookmarkFolderType(node?.folderType || '');
+        if (!folderType) continue;
+        counts.set(folderType, (counts.get(folderType) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([folderType]) => folderType);
+}
+
+function isWritableRootContainer(node) {
+    return normalizeBookmarkFolderType(node?.folderType || '') !== 'managed';
+}
+
+function buildBookmarkContainerState(root) {
+    const children = Array.isArray(root?.children) ? root.children.filter(Boolean) : [];
+    const containerByKey = new Map();
+    const rootIds = [];
+    let bookmarkBar = null;
+    let otherBookmarks = null;
+    const rootIdentityStats = buildRootIdentityStats(children);
+
+    for (const child of children) {
+        if (child?.id != null) {
+            rootIds.push(String(child.id));
+        }
+
+        setRootMatchMapEntry(containerByKey, child, child);
+        const key = normalizeRootKey(String(child?.id || ''), child?.title, child?.folderType, child?.syncing);
+
+        const folderType = normalizeBookmarkFolderType(child?.folderType || '');
+        if (!bookmarkBar && (folderType === 'bookmarks-bar' || key === 'toolbar')) {
+            bookmarkBar = child;
+        }
+        if (!otherBookmarks && (folderType === 'other' || key === 'menu' || key === 'unfiled')) {
+            otherBookmarks = child;
+        }
+    }
+
+    return {
+        root,
+        children,
+        rootIds,
+        containerByKey,
+        duplicateFolderTypes: rootIdentityStats.multiRootFolderTypes,
+        multiRootFolderTypes: rootIdentityStats.multiRootFolderTypes,
+        duplicatePreciseFolderTypes: rootIdentityStats.duplicatePreciseFolderTypes,
+        ambiguousFolderTypes: rootIdentityStats.ambiguousFolderTypes,
+        rootIdentityStats,
+        bookmarkBar,
+        otherBookmarks
+    };
+}
+
 async function findBookmarkContainers() {
-
     const [root] = await browserAPI.bookmarks.getTree();
-    const children = root?.children || [];
-
-    let bookmarkBar = children.find(c => c.id === '1');
-    let otherBookmarks = children.find(c => c.id === '2');
-
-    if (!bookmarkBar) {
-        bookmarkBar = children.find(c =>
-            c.title === '书签栏' ||
-            c.title === 'Bookmarks Bar' ||
-            c.title === 'Bookmarks bar' ||
-            c.title === 'Favorites Bar' ||
-            c.title === 'Favorites bar' ||
-            c.title === '收藏夹栏' ||
-            c.title === 'toolbar_____'
-        );
-    }
-
-    if (!otherBookmarks) {
-        otherBookmarks = children.find(c =>
-            c.title === '其他书签' ||
-            c.title === 'Other Bookmarks' ||
-            c.title === 'Other bookmarks' ||
-            c.title === 'Other Favorites' ||
-            c.title === 'Other favorites' ||
-            c.title === 'Other favourites' ||
-            c.title === '其他收藏夹'
-        );
-    }
-
-    return { root, bookmarkBar, otherBookmarks };
+    return buildBookmarkContainerState(root);
 }
 
 async function getBookmarkRootContainers() {
     const [root] = await browserAPI.bookmarks.getTree();
-    const children = root?.children || [];
-    return children.map((c) => ({
+    const state = buildBookmarkContainerState(root);
+    return state.children.map((c) => ({
         id: String(c.id),
-        title: String(c.title || '')
+        title: String(c.title || ''),
+        folderType: normalizeBookmarkFolderType(c?.folderType || ''),
+        syncing: normalizeBookmarkSyncing(c?.syncing)
     }));
 }
 
@@ -16921,25 +17156,49 @@ function sumCreatedCounts(values) {
     }, 0);
 }
 
-async function removeAllChildren(parentId) {
+async function removeAllChildren(parentId, options = {}) {
+    const { strictDelete = false, preferredLang = 'zh_CN' } = options;
     const children = await browserAPI.bookmarks.getChildren(parentId);
+    const deleteFailures = [];
+
     await runBatchedTasks(children || [], async (child) => {
         try {
-            await browserAPI.bookmarks.removeTree(child.id);
+            if (Array.isArray(child?.children) && child.children.length > 0) {
+                await browserAPI.bookmarks.removeTree(child.id);
+            } else {
+                await browserAPI.bookmarks.remove(child.id);
+            }
         } catch (e) {
-            console.warn('[removeAllChildren] Remove failed:', child?.id, e);
+            const detail = {
+                id: child?.id ? String(child.id) : '',
+                error: e && e.message ? String(e.message) : String(e)
+            };
+            if (strictDelete) {
+                deleteFailures.push(detail);
+            } else {
+                console.warn('[removeAllChildren] Remove failed:', child?.id, e);
+            }
         }
         return 0;
     }, 8);
+
+    if (strictDelete && deleteFailures.length > 0) {
+        const first = deleteFailures[0];
+        const detail = first ? `${first.id || '-'}: ${first.error || ''}` : '';
+        throw new Error(preferredLang === 'en'
+            ? `Overwrite delete phase failed on ${deleteFailures.length} node(s). ${detail}`
+            : `覆盖删除阶段失败，共 ${deleteFailures.length} 个节点删除失败。${detail}`);
+    }
 }
 
 async function createNodeRecursive(node, parentId) {
     if (!node) return 0;
     const title = node.title || '';
+    const index = Number.isFinite(Number(node?.index)) ? Number(node.index) : undefined;
     const isFolder = Array.isArray(node.children) && !node.url;
 
     if (isFolder) {
-        const createdFolder = await browserAPI.bookmarks.create({ parentId, title });
+        const createdFolder = await browserAPI.bookmarks.create({ parentId, title, index });
         let created = 1;
 
         const childNodes = Array.isArray(node.children) ? node.children : [];
@@ -16952,54 +17211,243 @@ async function createNodeRecursive(node, parentId) {
     }
 
     if (node.url) {
-        await browserAPI.bookmarks.create({ parentId, title, url: node.url });
+        await browserAPI.bookmarks.create({ parentId, title, url: node.url, index });
         return 1;
     }
 
     return 0;
 }
 
-async function executeOverwriteBookmarkRestore(bookmarkTree) {
-    const lang = await getCurrentLang();
-    assertBookmarkTreeContent(bookmarkTree, lang, 'overwrite');
+function getRestoreSnapshotRootNodes(bookmarkTree) {
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const primaryRoot = nodes[0] && Array.isArray(nodes[0].children) ? nodes[0] : null;
+    return Array.isArray(primaryRoot?.children) ? primaryRoot.children.filter(Boolean) : [];
+}
 
-    const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
-    if (!bookmarkBar || !otherBookmarks) {
-        throw new Error('Cannot find bookmark containers');
+function buildOverwriteRestorePlanStringList(values = []) {
+    return Array.from(new Set(
+        (Array.isArray(values) ? values : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    ));
+}
+
+function buildOverwriteRestorePlanFailure(errorCode, error, errorDetails = null) {
+    return {
+        success: false,
+        errorCode: String(errorCode || '').trim(),
+        error,
+        errorDetails: errorDetails && typeof errorDetails === 'object' ? errorDetails : null
+    };
+}
+
+function buildOverwriteRestorePlanFailureResponse(overwritePlan, fallbackError = 'Cannot map snapshot roots to current browser roots') {
+    const response = {
+        success: false,
+        error: overwritePlan?.error || fallbackError
+    };
+
+    if (overwritePlan?.errorCode) {
+        response.errorCode = overwritePlan.errorCode;
+    }
+    if (overwritePlan?.errorDetails && typeof overwritePlan.errorDetails === 'object') {
+        response.errorDetails = overwritePlan.errorDetails;
     }
 
-    await removeAllChildren(bookmarkBar.id);
-    await removeAllChildren(otherBookmarks.id);
+    return response;
+}
+
+function createOverwriteRestorePlanError(overwritePlan) {
+    const error = new Error(overwritePlan?.error || 'Cannot map snapshot roots to current browser roots');
+    if (overwritePlan?.errorCode) {
+        error.errorCode = overwritePlan.errorCode;
+    }
+    if (overwritePlan?.errorDetails && typeof overwritePlan.errorDetails === 'object') {
+        error.errorDetails = overwritePlan.errorDetails;
+    }
+    return error;
+}
+
+function buildOverwriteRestorePlan(bookmarkTree, containerState = {}) {
+    const snapshotRoots = getRestoreSnapshotRootNodes(bookmarkTree);
+    if (!snapshotRoots.length) {
+        return buildOverwriteRestorePlanFailure(
+            'restore_snapshot_root_missing',
+            'No snapshot root containers found',
+            { snapshotRootCount: 0 }
+        );
+    }
+
+    const snapshotFolderTypesInUse = buildOverwriteRestorePlanStringList(
+        snapshotRoots.flatMap((node) => collectCandidateFolderTypesForRoot(node))
+    );
+    const snapshotRootIdentityStats = buildRootIdentityStats(snapshotRoots);
+    const currentRootIdentityStats = containerState?.rootIdentityStats && typeof containerState.rootIdentityStats === 'object'
+        ? containerState.rootIdentityStats
+        : buildRootIdentityStats(Array.isArray(containerState?.children) ? containerState.children : []);
+    const duplicateSnapshotFolderTypes = buildOverwriteRestorePlanStringList(
+        snapshotRootIdentityStats.duplicatePreciseFolderTypes
+    );
+    const duplicateCurrentFolderTypes = buildOverwriteRestorePlanStringList([
+        ...((Array.isArray(currentRootIdentityStats?.duplicatePreciseFolderTypes) ? currentRootIdentityStats.duplicatePreciseFolderTypes : [])
+            .filter((folderType) => snapshotFolderTypesInUse.includes(folderType))),
+        ...((Array.isArray(currentRootIdentityStats?.ambiguousFolderTypes) ? currentRootIdentityStats.ambiguousFolderTypes : [])
+            .filter((folderType) => snapshotFolderTypesInUse.includes(folderType)))
+    ]);
+
+    if (duplicateSnapshotFolderTypes.length > 0 || duplicateCurrentFolderTypes.length > 0) {
+        const detailParts = [];
+        if (duplicateSnapshotFolderTypes.length > 0) {
+            detailParts.push(`snapshot=${duplicateSnapshotFolderTypes.join(',')}`);
+        }
+        if (duplicateCurrentFolderTypes.length > 0) {
+            detailParts.push(`current=${duplicateCurrentFolderTypes.join(',')}`);
+        }
+        return buildOverwriteRestorePlanFailure(
+            'restore_root_folder_type_conflict',
+            `Ambiguous top-level root folderType mapping for HTML snapshot overwrite restore (${detailParts.join('; ') || 'folderType collision'}).`,
+            {
+                duplicateSnapshotFolderTypes,
+                duplicateCurrentFolderTypes,
+                snapshotFolderTypesInUse
+            }
+        );
+    }
+
+    const currentMultiRootFolderTypes = buildOverwriteRestorePlanStringList(
+        (Array.isArray(currentRootIdentityStats?.multiRootFolderTypes) ? currentRootIdentityStats.multiRootFolderTypes : [])
+            .filter((folderType) => snapshotFolderTypesInUse.includes(folderType))
+    );
+    const snapshotMultiRootFolderTypes = buildOverwriteRestorePlanStringList(
+        Array.isArray(snapshotRootIdentityStats?.multiRootFolderTypes) ? snapshotRootIdentityStats.multiRootFolderTypes : []
+    );
+    const snapshotFolderTypesMissingSyncing = buildOverwriteRestorePlanStringList(
+        snapshotRoots
+            .filter((node) => normalizeBookmarkSyncing(node?.syncing) === null)
+            .flatMap((node) => collectCandidateFolderTypesForRoot(node))
+    );
+    const ambiguousFolderTypesMissingSyncing = buildOverwriteRestorePlanStringList(
+        snapshotRoots
+            .filter((node) => normalizeBookmarkSyncing(node?.syncing) === null)
+            .flatMap((node) => {
+                const candidateFolderTypes = collectCandidateFolderTypesForRoot(node);
+                return candidateFolderTypes.filter((folderType) => (
+                    currentMultiRootFolderTypes.includes(folderType)
+                    || snapshotMultiRootFolderTypes.includes(folderType)
+                ));
+            })
+    );
+
+    if (ambiguousFolderTypesMissingSyncing.length > 0) {
+        return buildOverwriteRestorePlanFailure(
+            'restore_root_syncing_required',
+            'Cannot precisely map one or more snapshot root containers because the snapshot lacks syncing metadata for a duplicated top-level root folderType.',
+            {
+                ambiguousFolderTypesMissingSyncing,
+                currentMultiRootFolderTypes,
+                snapshotMultiRootFolderTypes: buildOverwriteRestorePlanStringList(
+                    snapshotMultiRootFolderTypes.filter((folderType) => ambiguousFolderTypesMissingSyncing.includes(folderType))
+                ),
+                snapshotFolderTypesMissingSyncing,
+                snapshotFolderTypesInUse
+            }
+        );
+    }
+
+    const assignments = [];
+    const unresolved = [];
+    const defaultContainer = containerState?.otherBookmarks || containerState?.bookmarkBar || (Array.isArray(containerState?.children) ? containerState.children[0] : null);
+
+    for (const snapshotRoot of snapshotRoots) {
+        const hasFolderType = !!normalizeBookmarkFolderType(snapshotRoot?.folderType || '');
+        let targetContainer = containerState?.containerByKey instanceof Map
+            ? getRootMatchMapValue(containerState.containerByKey, snapshotRoot)
+            : null;
+
+        if (!targetContainer && !hasFolderType) {
+            targetContainer = defaultContainer;
+        }
+
+        if (!targetContainer) {
+            unresolved.push(snapshotRoot);
+            continue;
+        }
+
+        assignments.push({ snapshotRoot, targetContainer });
+    }
+
+    if (unresolved.length > 0) {
+        return buildOverwriteRestorePlanFailure(
+            'restore_root_mapping_missing',
+            'Cannot map one or more snapshot root containers to current browser roots.',
+            {
+                unresolvedCount: unresolved.length,
+                unresolvedFolderTypes: buildOverwriteRestorePlanStringList(
+                    unresolved.flatMap((node) => collectCandidateFolderTypesForRoot(node))
+                ),
+                unresolvedTitles: buildOverwriteRestorePlanStringList(
+                    unresolved.map((node) => String(node?.title || '').trim())
+                ).slice(0, 10),
+                snapshotFolderTypesInUse
+            }
+        );
+    }
+
+    return { success: true, assignments };
+}
+
+async function buildOverwriteRestorePlanAgainstCurrentBrowser(bookmarkTree) {
+    const containerState = await findBookmarkContainers();
+    const overwritePlan = buildOverwriteRestorePlan(bookmarkTree, containerState);
+    return { containerState, overwritePlan };
+}
+
+async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
+    const lang = options?.preferredLang || await getCurrentLang();
+    assertBookmarkTreeContent(bookmarkTree, lang, 'overwrite');
+
+    const containerState = options?.containerState && typeof options.containerState === 'object'
+        ? options.containerState
+        : await findBookmarkContainers();
+    const overwritePlan = options?.overwritePlan && typeof options.overwritePlan === 'object'
+        ? options.overwritePlan
+        : buildOverwriteRestorePlan(bookmarkTree, containerState);
+    if (!overwritePlan.success) {
+        throw createOverwriteRestorePlanError(overwritePlan);
+    }
+
+    const clearTargets = Array.isArray(containerState?.children)
+        ? containerState.children.filter((node) => node?.id != null && isWritableRootContainer(node))
+        : [];
+
+    for (const target of clearTargets) {
+        await removeAllChildren(target.id, {
+            strictDelete: options?.strictDelete === true,
+            preferredLang: lang
+        });
+    }
 
     let createdCount = 0;
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    for (const entry of overwritePlan.assignments) {
+        const topFolder = entry.snapshotRoot;
+        const targetContainer = entry.targetContainer;
+        if (!targetContainer || targetContainer.id == null) continue;
 
-    for (const node of nodes) {
-        if (!node?.children) continue;
-        for (const topFolder of node.children || []) {
-            const isBookmarkBarFolder = topFolder.id === '1' ||
-                topFolder.title === '书签栏' ||
-                topFolder.title === 'Bookmarks Bar' ||
-                topFolder.title === 'Bookmarks bar' ||
-                topFolder.title === 'toolbar_____';
-
-            const targetContainer = isBookmarkBarFolder ? bookmarkBar : otherBookmarks;
-            if (topFolder?.url) {
-                try {
-                    createdCount += await createNodeRecursive(topFolder, targetContainer.id);
-                } catch (e) {
-                    console.warn('[executeOverwriteBookmarkRestore] Create failed:', e);
-                }
-                continue;
+        if (topFolder?.url) {
+            try {
+                createdCount += await createNodeRecursive(topFolder, targetContainer.id);
+            } catch (e) {
+                console.warn('[executeOverwriteBookmarkRestore] Create failed:', e);
             }
-
-            const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
-            const childCreatedCounts = await runBatchedTasks(childNodes, async (child) => {
-                return await createNodeRecursive(child, targetContainer.id);
-            }, 5);
-
-            createdCount += sumCreatedCounts(childCreatedCounts);
+            continue;
         }
+
+        const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
+        const childCreatedCounts = await runBatchedTasks(childNodes, async (child) => {
+            return await createNodeRecursive(child, targetContainer.id);
+        }, 5);
+
+        createdCount += sumCreatedCounts(childCreatedCounts);
     }
 
     return { created: createdCount };
@@ -17981,6 +18429,76 @@ function normalizeParsedBookmarkTreeForRestore(root) {
     return root;
 }
 
+function parseFullSnapshotMetaFromHtml(htmlText) {
+    const text = String(htmlText || '');
+    if (!text) return null;
+
+    try {
+        const scriptMatch = /<script[^>]*id=["']bookmarkBackupMeta["'][^>]*>([\s\S]*?)<\/script>/i.exec(text);
+        if (scriptMatch && scriptMatch[1]) {
+            const parsed = safeParseJson(scriptMatch[1]);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+        }
+    } catch (_) { }
+
+    return null;
+}
+
+function applyFullSnapshotMetaToParsedTree(root, meta) {
+    if (!root || !Array.isArray(root.children) || !meta || typeof meta !== 'object') return root;
+
+    const descriptors = Array.isArray(meta.rootDescriptors) ? meta.rootDescriptors : [];
+    if (!descriptors.length) return root;
+
+    const normalizedDescriptors = descriptors.map((item) => ({
+        title: String(item?.title || '').trim().toLowerCase(),
+        folderType: normalizeBookmarkFolderType(item?.folderType || ''),
+        syncing: normalizeBookmarkSyncing(item?.syncing)
+    }));
+    const rootChildren = root.children;
+
+    if (rootChildren.length === normalizedDescriptors.length) {
+        for (let i = 0; i < rootChildren.length; i += 1) {
+            const descriptor = normalizedDescriptors[i];
+            if (descriptor.folderType) {
+                rootChildren[i].folderType = descriptor.folderType;
+            }
+            if (descriptor.syncing !== null) {
+                rootChildren[i].syncing = descriptor.syncing;
+            }
+        }
+        return root;
+    }
+
+    const titleCounts = new Map();
+    for (const item of normalizedDescriptors) {
+        if (!item.title || !item.folderType) continue;
+        titleCounts.set(item.title, (titleCounts.get(item.title) || 0) + 1);
+    }
+
+    const descriptorByUniqueTitle = new Map();
+    for (const item of normalizedDescriptors) {
+        if (!item.title || !item.folderType) continue;
+        if (titleCounts.get(item.title) === 1) {
+            descriptorByUniqueTitle.set(item.title, item);
+        }
+    }
+
+    for (const child of rootChildren) {
+        const titleKey = String(child?.title || '').trim().toLowerCase();
+        const descriptor = descriptorByUniqueTitle.get(titleKey);
+        if (!descriptor) continue;
+        if (descriptor.folderType) {
+            child.folderType = descriptor.folderType;
+        }
+        if (descriptor.syncing !== null) {
+            child.syncing = descriptor.syncing;
+        }
+    }
+
+    return root;
+}
+
 function parseNetscapeBookmarkHtmlToTree(htmlText) {
     const root = { title: 'root', children: [] };
     const stack = [root];
@@ -18029,7 +18547,9 @@ function parseNetscapeBookmarkHtmlToTree(htmlText) {
         }
     }
 
-    return normalizeParsedBookmarkTreeForRestore(root);
+    const normalizedRoot = normalizeParsedBookmarkTreeForRestore(root);
+    applyFullSnapshotMetaToParsedTree(normalizedRoot, parseFullSnapshotMetaFromHtml(htmlText));
+    return normalizedRoot;
 }
 
 // Restore source caches
@@ -18674,7 +19194,7 @@ function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode
     return expectedMode === entryMode;
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId }) {
+async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
     const normalizedRestoreSessionId = String(restoreSessionId || '').trim();
 
     try {
@@ -18796,6 +19316,46 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
 
         const lang = await getCurrentLang();
 
+        let cachedOverwriteExecutionContext = null;
+        const ensureOverwriteExecutionContext = async () => {
+            if (cachedOverwriteExecutionContext) {
+                return cachedOverwriteExecutionContext;
+            }
+            cachedOverwriteExecutionContext = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
+            return cachedOverwriteExecutionContext;
+        };
+
+        const finalizeRestoreSuccess = async (payload = {}) => {
+            await browserAPI.storage.local.set({ initialized: true });
+
+            let restoreRecordFields = {};
+            const appliedRestoreStrategy = String(payload?.strategy || 'overwrite').trim().toLowerCase() || 'overwrite';
+
+            if (restoreRecordMeta && typeof restoreRecordMeta === 'object') {
+                const restoreRecordResult = await handleTriggerRestoreBackupMessage({
+                    ...restoreRecordMeta,
+                    strategy: appliedRestoreStrategy,
+                    restoreSessionId: normalizedRestoreSessionId
+                });
+                const restoreRecordSuccess = restoreRecordResult?.success === true;
+                restoreRecordFields = {
+                    restoreRecordSuccess,
+                    restoreRecordError: restoreRecordSuccess ? '' : String(restoreRecordResult?.error || 'Unknown error'),
+                    restoreRecordSyncTime: restoreRecordSuccess ? String(restoreRecordResult?.syncTime || '') : ''
+                };
+            } else {
+                try {
+                    await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
+                } catch (_) { }
+            }
+
+            return {
+                success: true,
+                ...payload,
+                ...restoreRecordFields
+            };
+        };
+
         if (!hasBookmarkTreeContent(tree)) {
             if (normalizedStrategy === 'merge') {
                 return { success: false, error: buildEmptySnapshotError(lang, 'merge') };
@@ -18806,14 +19366,13 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 return { success: false, error: buildEmptySnapshotError(lang, 'overwrite') };
             }
 
-            return {
-                success: true,
+            return await finalizeRestoreSuccess({
                 strategy: 'overwrite',
                 requestedStrategy,
                 created: 0,
                 skipped: true,
                 message: buildEmptySnapshotNoopMessage(lang, 'overwrite')
-            };
+            });
         }
 
         assertBookmarkTreeContent(tree, lang, normalizedStrategy === 'merge' ? 'merge' : 'overwrite');
@@ -18823,10 +19382,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 return await executeMergeBookmarkRestore(tree, mergeOptions);
             }, { preferredLang: lang });
 
-            // Restore should be treated as “initialized” (equivalent to first backup)
-            await browserAPI.storage.local.set({ initialized: true });
-
-            return { success: true, strategy: 'merge', requestedStrategy: 'merge', ...result };
+            return await finalizeRestoreSuccess({ strategy: 'merge', requestedStrategy: 'merge', ...result });
         }
 
         const stableIdComparable = isRestoreSourceStableIdComparable(restoreRef);
@@ -18960,21 +19516,25 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 }
                 console.warn('[restoreSelectedVersion] Patch restore failed, fallback to overwrite:', patchError);
                 appliedStrategy = 'overwrite';
+                const overwriteContext = await ensureOverwriteExecutionContext();
+                if (!overwriteContext?.overwritePlan?.success) {
+                    return buildOverwriteRestorePlanFailureResponse(overwriteContext?.overwritePlan);
+                }
                 overwriteResult = await executeBookmarkOperationWithAutoRollback(async () => {
-                    return await executeOverwriteBookmarkRestore(tree);
+                    return await executeOverwriteBookmarkRestore(tree, overwriteContext);
                 }, { preferredLang: lang });
             }
         } else {
+            const overwriteContext = await ensureOverwriteExecutionContext();
+            if (!overwriteContext?.overwritePlan?.success) {
+                return buildOverwriteRestorePlanFailureResponse(overwriteContext?.overwritePlan);
+            }
             overwriteResult = await executeBookmarkOperationWithAutoRollback(async () => {
-                return await executeOverwriteBookmarkRestore(tree);
+                return await executeOverwriteBookmarkRestore(tree, overwriteContext);
             }, { preferredLang: lang });
         }
 
-        // Restore should be treated as “initialized” (equivalent to first backup)
-        await browserAPI.storage.local.set({ initialized: true });
-
-        return {
-            success: true,
+        return await finalizeRestoreSuccess({
             strategy: appliedStrategy,
             requestedStrategy,
             preflightReused: !!decision.preflightReused,
@@ -18987,13 +19547,20 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             patchUnsupported: decision.patchUnsupported === true,
             stableIdComparable: decision.stableIdComparable !== false,
             ...(appliedStrategy === 'patch' ? (patchResult || {}) : (overwriteResult || {}))
-        };
+        });
     } catch (e) {
         try {
             await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
         } catch (_) { }
         console.error('[restoreSelectedVersion] Failed:', e);
-        return { success: false, error: e.message };
+        const response = { success: false, error: e.message };
+        if (e?.errorCode) {
+            response.errorCode = e.errorCode;
+        }
+        if (e?.errorDetails && typeof e.errorDetails === 'object') {
+            response.errorDetails = e.errorDetails;
+        }
+        return response;
     } finally {
         isBookmarkRestoring = false;
         try {
@@ -19028,9 +19595,12 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
 
-        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
-        const referenceRootIds = (bookmarkBar && otherBookmarks)
-            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
+        if (!overwritePlan.success) {
+            return buildOverwriteRestorePlanFailureResponse(overwritePlan);
+        }
+        const referenceRootIds = Array.isArray(containerState?.rootIds) && containerState.rootIds.length > 0
+            ? containerState.rootIds
             : ['1', '2'];
 
         const currentTree = await browserAPI.bookmarks.getTree();
@@ -19042,7 +19612,10 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
 
         ensureRestoreTreeIds(targetTree);
 
-        // Normalize IDs for better diff readability.
+        try {
+            applyRestoreTopLevelRootIdRemap(targetTree, currentTree);
+        } catch (_) { }
+
         try {
             normalizeTreeIds(targetTree, currentTree, {
                 referenceRootIds,
@@ -19098,7 +19671,14 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
         };
     } catch (e) {
         console.error('[buildOverwriteRestorePreview] Failed:', e);
-        return { success: false, error: e.message };
+        const response = { success: false, error: e.message };
+        if (e?.errorCode) {
+            response.errorCode = e.errorCode;
+        }
+        if (e?.errorDetails && typeof e.errorDetails === 'object') {
+            response.errorDetails = e.errorDetails;
+        }
+        return response;
     }
 }
 
@@ -19115,9 +19695,12 @@ async function computeRestoreDiffSummaryAgainstCurrent({ restoreRef, localPayloa
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
 
-        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
-        const referenceRootIds = (bookmarkBar && otherBookmarks)
-            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
+        if (!overwritePlan.success) {
+            return buildOverwriteRestorePlanFailureResponse(overwritePlan);
+        }
+        const referenceRootIds = Array.isArray(containerState?.rootIds) && containerState.rootIds.length > 0
+            ? containerState.rootIds
             : ['1', '2'];
 
         const currentTree = await browserAPI.bookmarks.getTree();
@@ -19128,6 +19711,10 @@ async function computeRestoreDiffSummaryAgainstCurrent({ restoreRef, localPayloa
         } catch (_) { }
 
         ensureRestoreTreeIds(targetTree);
+
+        try {
+            applyRestoreTopLevelRootIdRemap(targetTree, currentTree);
+        } catch (_) { }
 
         try {
             normalizeTreeIds(targetTree, currentTree, {
@@ -19142,7 +19729,14 @@ async function computeRestoreDiffSummaryAgainstCurrent({ restoreRef, localPayloa
         return { success: true, diffSummary };
     } catch (e) {
         console.error('[computeRestoreDiffSummaryAgainstCurrent] Failed:', e);
-        return { success: false, error: e.message };
+        const response = { success: false, error: e.message };
+        if (e?.errorCode) {
+            response.errorCode = e.errorCode;
+        }
+        if (e?.errorDetails && typeof e.errorDetails === 'object') {
+            response.errorDetails = e.errorDetails;
+        }
+        return response;
     }
 }
 

@@ -504,6 +504,14 @@ function showSettingsSavedIndicator() {
  * @param {object} [data={}] - 传递给后台函数的数据。
  * @returns {Promise<object>} 后台函数的响应。
  */
+function isRestoreRecoveryLockedResponse(response) {
+    return !!(response && response.errorCode === 'restore_recovery_locked');
+}
+
+function promptRestoreRecoveryTransactionFromPopup() {
+    Promise.resolve().then(() => maybePromptRestoreRecoveryTransaction().catch(() => { }));
+}
+
 async function callBackgroundFunction(action, data = {}) {
     return new Promise((resolve, reject) => {
         try {
@@ -514,6 +522,14 @@ async function callBackgroundFunction(action, data = {}) {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message));
                 } else {
+                    if (
+                        isRestoreRecoveryLockedResponse(response)
+                        && action !== 'getRestoreRecoveryTransactionStatus'
+                        && action !== 'continueRestoreRecoveryTransaction'
+                        && action !== 'rollbackRestoreRecoveryTransaction'
+                    ) {
+                        promptRestoreRecoveryTransactionFromPopup();
+                    }
                     resolve(response);
                 }
             });
@@ -521,6 +537,428 @@ async function callBackgroundFunction(action, data = {}) {
             reject(error);
         }
     });
+}
+
+
+async function getPopupPreferredLang() {
+    return await new Promise(resolve => {
+        chrome.storage.local.get(['currentLang', 'preferredLang'], (result) => {
+            resolve(result.currentLang || result.preferredLang || 'zh_CN');
+        });
+    });
+}
+
+function formatRestoreRecoveryPhaseLabel(phase, lang) {
+    const normalized = String(phase || '').toLowerCase();
+    const isEn = lang === 'en';
+    if (normalized === 'snapshot_ready') return isEn ? 'Snapshot Ready' : '快照已就绪';
+    if (normalized === 'destructive_started') return isEn ? 'Destructive Phase' : '破坏性阶段';
+    if (normalized === 'apply_started') return isEn ? 'Applying Changes' : '正在应用变更';
+    if (normalized === 'finalizing') return isEn ? 'Finalizing' : '正在收尾';
+    if (normalized === 'completed') return isEn ? 'Completed' : '已完成';
+    return normalized || (isEn ? 'Unknown' : '未知');
+}
+
+function formatRestoreRecoveryTimeLabel(value, lang) {
+    const date = new Date(value || Date.now());
+    if (!Number.isFinite(date.getTime())) return String(value || '');
+    try {
+        return date.toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN');
+    } catch (_) {
+        return date.toISOString();
+    }
+}
+
+
+let restoreRecoveryBlockingOverlayState = null;
+
+function closeRestoreRecoveryBlockingOverlay() {
+    const state = restoreRecoveryBlockingOverlayState;
+    restoreRecoveryBlockingOverlayState = null;
+    if (!state) return;
+
+    if (state.timer) {
+        window.clearInterval(state.timer);
+    }
+    if (state.keydownHandler) {
+        document.removeEventListener('keydown', state.keydownHandler, true);
+    }
+    if (state.focusHandler) {
+        document.removeEventListener('focusin', state.focusHandler, true);
+    }
+    if (state.overlay?.parentNode) {
+        state.overlay.parentNode.removeChild(state.overlay);
+    }
+}
+
+function formatRestoreRecoveryUiSourceLabel(value, lang) {
+    const normalized = String(value || '').toLowerCase();
+    const isEn = lang === 'en';
+    if (normalized === 'history') return isEn ? 'History Page' : 'HTML 历史页';
+    if (normalized === 'background') return isEn ? 'Background' : '后台';
+    return isEn ? 'Main UI' : '主 UI';
+}
+
+async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
+    if (restoreRecoveryBlockingOverlayState && restoreRecoveryBlockingOverlayState.overlay?.isConnected) {
+        return;
+    }
+
+    const lang = await getPopupPreferredLang();
+    const isEn = lang === 'en';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'restoreRecoveryBlockingOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        background: rgba(15, 23, 42, 0.58);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        box-sizing: border-box;
+        backdrop-filter: blur(2px);
+    `;
+
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.style.cssText = `
+        width: min(420px, calc(100vw - 24px));
+        max-height: calc(100vh - 24px);
+        overflow: auto;
+        background: var(--theme-bg-elevated);
+        color: var(--theme-text-primary);
+        border: 1px solid var(--theme-border-primary);
+        border-radius: 14px;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+        padding: 18px;
+        box-sizing: border-box;
+    `;
+
+    panel.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+                <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
+                    <div style="font-size:18px;font-weight:700;color:var(--theme-text-primary);">${isEn ? 'Resolve Unfinished Restore/Revert' : '处理未完成的恢复/撤销事务'}</div>
+                    <div style="font-size:13px;line-height:1.6;color:var(--theme-text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it here now, or dismiss the reminder after repeated prompts.' : '检测到一次未完成的恢复/撤销事务。你可以现在在这里处理，或在多次提醒后关闭本提醒。'}</div>
+                </div>
+                <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:44px;padding:4px 8px;border-radius:999px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:12px;font-weight:700;color:var(--theme-text-secondary);white-space:nowrap;flex-shrink:0;"></div>
+            </div>
+            <div id="restoreRecoveryBlockingSummary" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;padding:12px;border-radius:10px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:13px;"></div>
+            <div id="restoreRecoveryBlockingMessage" style="padding:10px 12px;border-radius:10px;background:var(--theme-status-info-bg);color:var(--theme-status-info-text);border:1px solid var(--theme-status-info-border);font-size:13px;line-height:1.6;"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+                <button id="restoreRecoveryDismissBtn" style="display:none;min-width:148px;padding:10px 14px;border:1px dashed var(--theme-border-primary);border-radius:10px;background:transparent;color:var(--theme-text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close Panel Only' : '仅关闭当前面板'}</button>
+                <button id="restoreRecoveryContinueBtn" style="min-width:148px;padding:10px 14px;border:none;border-radius:10px;background:var(--theme-accent-color);color:var(--theme-text-on-accent);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
+                <button id="restoreRecoveryRollbackBtn" style="min-width:148px;padding:10px 14px;border:1px solid var(--theme-border-primary);border-radius:10px;background:var(--theme-bg-primary);color:var(--theme-text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    const summary = panel.querySelector('#restoreRecoveryBlockingSummary');
+    const message = panel.querySelector('#restoreRecoveryBlockingMessage');
+    const promptCountBadge = panel.querySelector('#restoreRecoveryPromptCountBadge');
+    const dismissBtn = panel.querySelector('#restoreRecoveryDismissBtn');
+    const continueBtn = panel.querySelector('#restoreRecoveryContinueBtn');
+    const rollbackBtn = panel.querySelector('#restoreRecoveryRollbackBtn');
+
+    const state = {
+        overlay,
+        panel,
+        summary,
+        message,
+        promptCountBadge,
+        dismissBtn,
+        continueBtn,
+        rollbackBtn,
+        lang,
+        actionRunning: false,
+        lastStatus: null,
+        timer: null,
+        keydownHandler: null,
+        focusHandler: null
+    };
+    restoreRecoveryBlockingOverlayState = state;
+
+    const setMessage = (textValue, tone = 'info') => {
+        const palette = tone === 'error'
+            ? {
+                background: 'var(--theme-status-error-bg)',
+                color: 'var(--theme-status-error-text)',
+                border: 'var(--theme-status-error-border)'
+            }
+            : {
+                background: 'var(--theme-status-info-bg)',
+                color: 'var(--theme-status-info-text)',
+                border: 'var(--theme-status-info-border)'
+            };
+        message.textContent = textValue;
+        message.style.background = palette.background;
+        message.style.color = palette.color;
+        message.style.border = `1px solid ${palette.border}`;
+    };
+
+    const renderSummary = (status) => {
+        const transaction = status?.transaction || {};
+        const rows = [
+            [isEn ? 'Operation' : '操作类型', String(transaction.operationKind || '').toLowerCase() === 'revert' ? (isEn ? 'Revert' : '撤销') : (isEn ? 'Restore' : '恢复')],
+            [isEn ? 'Strategy' : '执行策略', String(transaction.resolvedStrategy || '').toLowerCase() === 'patch' ? (isEn ? 'Patch' : '补丁') : (isEn ? 'Overwrite' : '覆盖')],
+            [isEn ? 'Source' : '来源位置', formatRestoreRecoveryUiSourceLabel(transaction.uiSource, lang)],
+            [isEn ? 'Phase' : '当前阶段', formatRestoreRecoveryPhaseLabel(transaction.phase, lang)],
+            [isEn ? 'Started' : '开始时间', formatRestoreRecoveryTimeLabel(transaction.startedAt || transaction.updatedAt, lang)]
+        ];
+        const titleText = String(transaction.displayTitle || '').trim();
+        if (titleText) {
+            rows.push([isEn ? 'Title' : '标题备注', titleText]);
+        }
+        summary.innerHTML = '';
+        rows.forEach(([label, value]) => {
+            const labelEl = document.createElement('div');
+            labelEl.textContent = `${label}：`;
+            labelEl.style.color = 'var(--theme-text-secondary)';
+            labelEl.style.fontWeight = '600';
+            const valueEl = document.createElement('div');
+            valueEl.textContent = value || '-';
+            valueEl.style.color = 'var(--theme-text-primary)';
+            valueEl.style.wordBreak = 'break-word';
+            summary.appendChild(labelEl);
+            summary.appendChild(valueEl);
+        });
+    };
+
+    const applyStatus = (status) => {
+        state.lastStatus = status;
+        const transaction = status?.transaction || null;
+        if (!transaction) {
+            closeRestoreRecoveryBlockingOverlay();
+            window.location.reload();
+            return;
+        }
+        const canContinue = transaction.canContinue !== false;
+        const canRollback = transaction.canRollback !== false;
+        const isActive = status?.active === true;
+        const promptCount = Math.max(0, Number(transaction.promptCount) || 0);
+        const promptThreshold = Math.max(1, Number(transaction.promptThreshold) || 3);
+        const canDismissPanel = transaction.canDismissPanel === true;
+        renderSummary(status);
+
+        if (promptCount > 0) {
+            promptCountBadge.style.display = 'inline-flex';
+            promptCountBadge.textContent = promptCount > promptThreshold
+                ? `${promptThreshold}/${promptThreshold}+`
+                : `${promptCount}/${promptThreshold}`;
+        } else {
+            promptCountBadge.style.display = 'none';
+            promptCountBadge.textContent = '';
+        }
+
+        continueBtn.disabled = state.actionRunning || isActive || !canContinue;
+        rollbackBtn.disabled = state.actionRunning || isActive || !canRollback;
+        dismissBtn.disabled = state.actionRunning || isActive || !canDismissPanel;
+        dismissBtn.style.display = canDismissPanel ? 'inline-flex' : 'none';
+
+        continueBtn.style.opacity = continueBtn.disabled ? '0.55' : '1';
+        rollbackBtn.style.opacity = rollbackBtn.disabled ? '0.55' : '1';
+        dismissBtn.style.opacity = dismissBtn.disabled ? '0.55' : '1';
+        continueBtn.style.cursor = continueBtn.disabled ? 'not-allowed' : 'pointer';
+        rollbackBtn.style.cursor = rollbackBtn.disabled ? 'not-allowed' : 'pointer';
+        dismissBtn.style.cursor = dismissBtn.disabled ? 'not-allowed' : 'pointer';
+
+        if (state.actionRunning) {
+            return;
+        }
+        if (isActive) {
+            setMessage(isEn ? 'A restore/revert task is currently running in the background. Please wait…' : '后台正在执行恢复/撤销任务，请稍候……', 'info');
+            return;
+        }
+        if (!canContinue && !canRollback) {
+            setMessage(isEn ? 'Transaction snapshots are temporarily unavailable. Retrying detection automatically…' : '事务快照暂时不可用，正在自动重试检测……', 'error');
+            return;
+        }
+        if (!canContinue) {
+            setMessage(isEn ? 'Continue is unavailable right now. You must roll back to the state before it started.' : '当前无法继续到目标状态，你必须执行回滚。', 'error');
+            return;
+        }
+        if (!canRollback) {
+            setMessage(isEn ? 'Rollback is unavailable right now. You must continue to the target state.' : '当前无法回滚到开始前状态，你必须继续到目标状态。', 'error');
+            return;
+        }
+        if (promptThreshold > 1 && promptCount === promptThreshold - 1) {
+            setMessage(
+                isEn
+                    ? 'Final reminder: skip it again, and this panel will no longer appear; rollback to the pre-start snapshot will no longer be available.'
+                    : '最后一次提醒：若这次仍不处理，下次将不再显示此面板，且无法再回滚到开始前快照。',
+                'error'
+            );
+            return;
+        }
+        if (canDismissPanel) {
+            setMessage(
+                isEn
+                    ? 'This unfinished transaction has already reopened multiple times. You may close this panel now and continue using the regular actions. If you start a new restore/revert, it will replace this unfinished transaction.'
+                    : '这次未完成事务已经重复弹出多次。你现在可以关闭当前面板并继续使用常规操作；如果你发起新的恢复/撤销，它会替换这次未完成事务。',
+                'info'
+            );
+            return;
+        }
+        setMessage(isEn ? 'Choose one action to resolve this unfinished transaction. The dialog cannot be dismissed.' : '请选择“继续”或“回滚”来处理这次未完成事务；该面板不能关闭。', 'info');
+    };
+
+    const refreshStatus = async () => {
+        try {
+            const latest = await callBackgroundFunction('getRestoreRecoveryTransactionStatus');
+            if (!latest || latest.success !== true) {
+                setMessage(
+                    isEn ? `Status check failed: ${latest && latest.error ? latest.error : 'Unknown error'}` : `状态检测失败：${latest && latest.error ? latest.error : '未知错误'}`,
+                    'error'
+                );
+                return;
+            }
+            applyStatus(latest);
+        } catch (error) {
+            setMessage(isEn ? `Status check failed: ${error?.message || error}` : `状态检测失败：${error?.message || error}`, 'error');
+        }
+    };
+
+    const runAction = async (action) => {
+        state.actionRunning = true;
+        continueBtn.disabled = true;
+        rollbackBtn.disabled = true;
+        dismissBtn.disabled = true;
+        continueBtn.style.opacity = '0.55';
+        rollbackBtn.style.opacity = '0.55';
+        dismissBtn.style.opacity = '0.55';
+        setMessage(action === 'continueRestoreRecoveryTransaction'
+            ? (isEn ? 'Continuing to the target state…' : '正在继续到目标状态……')
+            : (isEn ? 'Rolling back to the state before it started…' : '正在回滚到开始前状态……'), 'info');
+
+        try {
+            const result = await callBackgroundFunction(action);
+            if (!result || result.success !== true) {
+                state.actionRunning = false;
+                await refreshStatus();
+                setMessage(
+                    isEn
+                        ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${result && result.error ? result.error : 'Unknown error'}`
+                        : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${result && result.error ? result.error : '未知错误'}`,
+                    'error'
+                );
+                return;
+            }
+            showStatus(action === 'continueRestoreRecoveryTransaction'
+                ? (isEn ? 'Continue completed.' : '继续完成。')
+                : (isEn ? 'Rollback completed.' : '回滚完成。'), 'success', 1800);
+            setTimeout(() => window.location.reload(), 250);
+        } catch (error) {
+            state.actionRunning = false;
+            await refreshStatus();
+            setMessage(
+                isEn
+                    ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${error?.message || error}`
+                    : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${error?.message || error}`,
+                'error'
+            );
+        }
+    };
+
+    continueBtn.addEventListener('click', () => {
+        if (continueBtn.disabled) return;
+        runAction('continueRestoreRecoveryTransaction').catch(() => { });
+    });
+    rollbackBtn.addEventListener('click', () => {
+        if (rollbackBtn.disabled) return;
+        runAction('rollbackRestoreRecoveryTransaction').catch(() => { });
+    });
+    dismissBtn.addEventListener('click', () => {
+        if (dismissBtn.disabled) return;
+        const confirmed = window.confirm(
+            isEn
+                ? 'This only closes the current panel. The unfinished transaction record remains, but regular actions are no longer blocked after repeated prompts. If you start a new restore/revert, it will replace this unfinished transaction. Close this panel now?'
+                : '这只会关闭当前面板。未完成事务记录仍会保留，但在多次提醒后常规操作已不再被阻止；如果你发起新的恢复/撤销，它会替换这次未完成事务。确定现在关闭这个面板吗？'
+        );
+        if (!confirmed) return;
+        closeRestoreRecoveryBlockingOverlay();
+        showStatus(
+            isEn
+                ? 'Panel closed. Regular actions are available again; a new restore/revert can replace this unfinished transaction.'
+                : '已关闭面板。常规操作已恢复可用；新的恢复/撤销可以替换这次未完成事务。',
+            'info',
+            3200
+        );
+    });
+
+    state.keydownHandler = (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        if (event.key === 'Tab') {
+            const focusable = [continueBtn, rollbackBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            if (focusable.length === 0) {
+                event.preventDefault();
+                panel.focus();
+                return;
+            }
+            const currentIndex = focusable.indexOf(document.activeElement);
+            const nextIndex = event.shiftKey
+                ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+                : (currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1);
+            event.preventDefault();
+            focusable[nextIndex].focus();
+        }
+    };
+    state.focusHandler = (event) => {
+        if (!overlay.contains(event.target)) {
+            event.stopPropagation();
+            const focusable = [continueBtn, rollbackBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            if (focusable.length > 0) {
+                focusable[0].focus();
+            } else {
+                panel.focus();
+            }
+        }
+    };
+
+    document.addEventListener('keydown', state.keydownHandler, true);
+    document.addEventListener('focusin', state.focusHandler, true);
+    overlay.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    }, true);
+    panel.tabIndex = -1;
+    panel.focus();
+
+    state.timer = window.setInterval(() => {
+        if (!state.actionRunning) {
+            refreshStatus().catch(() => { });
+        }
+    }, 1200);
+
+    applyStatus(initialStatus);
+}
+
+async function maybePromptRestoreRecoveryTransaction() {
+    try {
+        const status = await callBackgroundFunction('getRestoreRecoveryTransactionStatus', {
+            markPromptShown: true,
+            uiSource: 'popup'
+        });
+        if (!status || status.success !== true || !status.transaction) {
+            return;
+        }
+        if (status.transaction.canDismissPanel === true) {
+            return;
+        }
+        await showRestoreRecoveryBlockingOverlay(status);
+    } catch (error) {
+        console.warn('[popup] restore recovery prompt failed:', error);
+    }
 }
 
 /**
@@ -4501,6 +4939,22 @@ function handleAutoSyncToggle(event) {
                     action: 'syncBookmarks',
                     isSwitchToAutoBackup: true
                 }, (syncResponse) => {
+                    if (isRestoreRecoveryLockedResponse(syncResponse)) {
+                        promptRestoreRecoveryTransactionFromPopup();
+                        const autoSyncToggle = document.getElementById('autoSyncToggle');
+                        const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
+                        if (autoSyncToggle) autoSyncToggle.checked = wasChecked;
+                        if (autoSyncToggle2) autoSyncToggle2.checked = wasChecked;
+                        const backupModeAuto = document.getElementById('backupModeAuto');
+                        const backupModeManual = document.getElementById('backupModeManual');
+                        if (backupModeAuto) backupModeAuto.checked = wasChecked;
+                        if (backupModeManual) backupModeManual.checked = !wasChecked;
+                        const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
+                        const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
+                        if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = wasChecked ? 'flex' : 'none';
+                        if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = wasChecked ? 'none' : 'flex';
+                        return;
+                    }
                     if (syncResponse && syncResponse.success) {
                         showStatus('切换备份成功！', 'success');
                         // 刷新备份历史
@@ -4758,6 +5212,12 @@ function handleInitUpload() {
         // 恢复按钮状态
         if (uploadToCloud) uploadToCloud.disabled = false;
 
+        if (isRestoreRecoveryLockedResponse(response)) {
+            promptRestoreRecoveryTransactionFromPopup();
+            chrome.storage.local.set({ initialized: false });
+            return;
+        }
+
         if (response && response.success) {
             // 更新备份历史记录
             updateSyncHistory();
@@ -4849,6 +5309,11 @@ function handleManualUpload() {
             const prevDisabled = disabledSnapshot.get(btn);
             btn.disabled = prevDisabled === true;
         });
+
+        if (isRestoreRecoveryLockedResponse(response)) {
+            promptRestoreRecoveryTransactionFromPopup();
+            return;
+        }
 
         if (response && response.success) {
             // ... (保持原有的成功处理逻辑，包括发送 manualBackupCompleted)
@@ -13827,6 +14292,9 @@ function showRestoreModal(versions, source) {
             let appliedStrategy = normalizeRestoreStrategyValue(strategy);
             let patchFallbackUsed = false;
             let restoreRes = await callBackgroundFunction('restoreSelectedVersion', restorePayload);
+            if (isRestoreRecoveryLockedResponse(restoreRes)) {
+                return;
+            }
             if (restoreRes && restoreRes.success === true) {
                 appliedStrategy = normalizeRestoreStrategyValue(restoreRes.strategy || appliedStrategy);
                 patchFallbackUsed = !!restoreRes.fallbackApplied;
@@ -13855,6 +14323,9 @@ function showRestoreModal(versions, source) {
                         restoreRecordMeta,
                         ...(fallbackPreflight ? { preflight: fallbackPreflight } : {})
                     });
+                    if (isRestoreRecoveryLockedResponse(restoreRes)) {
+                        return;
+                    }
                 }
             }
 
@@ -15576,6 +16047,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 初始化连接
     connectToBackground();
+    setTimeout(() => {
+        maybePromptRestoreRecoveryTransaction().catch(() => { });
+    }, 120);
 
     // 初始化UI部分
     loadWebDAVToggleStatus();

@@ -1382,8 +1382,19 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
 // - 导入期间允许 UI 继续读旧快照，等导入结束后再统一刷新
 let isBookmarkImporting = false;
 let isBookmarkRestoring = false; // 书签恢复期间暂停监听
+let isBookmarkRestoringFromUiFlag = false; // 仅由前端页面临时置位的恢复锁（防止按钮永久不可点）
 let isBookmarkBulkChanging = false; // 大量变化期间：暂停昂贵计算
 let bookmarkImportFlushTimer = null;
+
+async function clearUiRestoreGuardFlagIfNeeded() {
+    if (!(isBookmarkRestoring && isBookmarkRestoringFromUiFlag)) return false;
+    isBookmarkRestoring = false;
+    isBookmarkRestoringFromUiFlag = false;
+    try {
+        await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
+    } catch (_) { }
+    return true;
+}
 
 // 大量变化检测：当书签事件短时间内爆发时，进入 Bulk Mode
 const BOOKMARK_BULK_WINDOW_MS = 1500;
@@ -2241,11 +2252,14 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     if (baselineTree && baselineTree.length > 0) {
                         const normalizedCurrentTree = await loadRestoreCurrentTree();
                         if (normalizedCurrentTree) {
-                            const rawDiffSummary = computeBookmarkGitDiffSummary(baselineTree, normalizedCurrentTree);
-                            const diffSummary = normalizeRestoreRecordDiffSummaryPayload(rawDiffSummary);
+                            const diffSummary = normalizedStrategy === 'overwrite'
+                                ? buildOverwriteRestoreDiffSummary(baselineTree, normalizedCurrentTree)
+                                : normalizeRestoreRecordDiffSummaryPayload(
+                                    computeBookmarkGitDiffSummary(baselineTree, normalizedCurrentTree)
+                                );
                             const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(diffSummary, normalizedCurrentTree, {
                                 prevBookmarkCount: countAllBookmarks(baselineTree),
-                                prevFolderCount: countAllFolders(baselineTree)
+                                prevFolderCount: countBookmarkTreeContentFolders(baselineTree)
                             });
                             if (bookmarkStats) {
                                 targetRecord.bookmarkStats = bookmarkStats;
@@ -2398,6 +2412,254 @@ function handleMessageWithRestoreRecoveryWriteLock(message, sendResponse, runUnl
             sendResponse({ success: false, error: error?.message || String(error) })
         })
     return true
+}
+
+const RESTORE_LOCAL_PAYLOAD_TOKEN_TTL_MS = 60 * 60 * 1000;
+const RESTORE_LOCAL_PAYLOAD_TOKEN_MAX_ENTRIES = 24;
+
+const restoreLocalPayloadUploadBuffer = new Map(); // token -> { createdAt, updatedAt, chunks:Array<string>, nextIndex:number }
+const restoreLocalPayloadTokenStore = new Map();   // token -> { createdAt, expiresAt, payload:Object }
+
+function base64ToArrayBuffer(base64Text) {
+    const raw = String(base64Text || '').replace(/\s+/g, '');
+    if (!raw) return new ArrayBuffer(0);
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+function sanitizeRestoreLocalPayloadStringMap(rawMap) {
+    const normalized = {};
+    if (!rawMap || typeof rawMap !== 'object') return normalized;
+
+    for (const [key, value] of Object.entries(rawMap)) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) continue;
+        if (typeof value !== 'string') continue;
+        normalized[normalizedKey] = value;
+    }
+    return normalized;
+}
+
+function extractArrayBufferFromSerializedRestorePayload(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const directArrayBuffer = payload.arrayBuffer;
+    if (directArrayBuffer instanceof ArrayBuffer) {
+        return directArrayBuffer;
+    }
+    if (ArrayBuffer.isView(directArrayBuffer)) {
+        const view = directArrayBuffer;
+        return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    }
+
+    const base64 = typeof payload.arrayBufferBase64 === 'string'
+        ? String(payload.arrayBufferBase64 || '')
+        : '';
+    if (!base64) return null;
+
+    return base64ToArrayBuffer(base64);
+}
+
+function deserializeRestoreLocalPayload(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const normalized = {};
+
+    if (typeof payload.text === 'string') {
+        normalized.text = payload.text;
+    }
+
+    const arrayBuffer = extractArrayBufferFromSerializedRestorePayload(payload);
+    if (arrayBuffer instanceof ArrayBuffer && arrayBuffer.byteLength >= 0) {
+        normalized.arrayBuffer = arrayBuffer;
+    }
+
+    if (typeof payload.changesArtifactText === 'string') {
+        normalized.changesArtifactText = payload.changesArtifactText;
+    }
+
+    const changesByMode = sanitizeRestoreLocalPayloadStringMap(payload.changesArtifactTextByMode);
+    if (Object.keys(changesByMode).length > 0) {
+        normalized.changesArtifactTextByMode = changesByMode;
+    }
+
+    const changesByLocalKey = sanitizeRestoreLocalPayloadStringMap(payload.changesArtifactTextByLocalKey);
+    if (Object.keys(changesByLocalKey).length > 0) {
+        normalized.changesArtifactTextByLocalKey = changesByLocalKey;
+    }
+
+    if (payload.mergeImportTree && typeof payload.mergeImportTree === 'object') {
+        normalized.mergeImportTree = payload.mergeImportTree;
+    }
+
+    return normalized;
+}
+
+function pruneRestoreLocalPayloadTokenStore(now = Date.now()) {
+    for (const [token, entry] of restoreLocalPayloadUploadBuffer.entries()) {
+        const updatedAt = Number(entry?.updatedAt || entry?.createdAt || 0);
+        if (!updatedAt || now - updatedAt > RESTORE_LOCAL_PAYLOAD_TOKEN_TTL_MS) {
+            restoreLocalPayloadUploadBuffer.delete(token);
+        }
+    }
+
+    for (const [token, entry] of restoreLocalPayloadTokenStore.entries()) {
+        const expiresAt = Number(entry?.expiresAt || 0);
+        if (!expiresAt || expiresAt <= now) {
+            restoreLocalPayloadTokenStore.delete(token);
+        }
+    }
+
+    if (restoreLocalPayloadTokenStore.size <= RESTORE_LOCAL_PAYLOAD_TOKEN_MAX_ENTRIES) {
+        return;
+    }
+
+    const sortedEntries = Array.from(restoreLocalPayloadTokenStore.entries())
+        .sort((a, b) => Number(a[1]?.createdAt || 0) - Number(b[1]?.createdAt || 0));
+    const overflow = restoreLocalPayloadTokenStore.size - RESTORE_LOCAL_PAYLOAD_TOKEN_MAX_ENTRIES;
+    for (let i = 0; i < overflow; i += 1) {
+        const stale = sortedEntries[i];
+        if (!stale) continue;
+        restoreLocalPayloadTokenStore.delete(stale[0]);
+    }
+}
+
+function createRestoreLocalPayloadTokenUpload() {
+    const now = Date.now();
+    pruneRestoreLocalPayloadTokenStore(now);
+
+    const token = `restore_payload_${now}_${Math.random().toString(36).slice(2, 10)}`;
+    restoreLocalPayloadUploadBuffer.set(token, {
+        createdAt: now,
+        updatedAt: now,
+        chunks: [],
+        nextIndex: 0
+    });
+    return token;
+}
+
+function appendRestoreLocalPayloadTokenUploadChunk({ token, chunk, index }) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) {
+        throw new Error('Missing restore local payload token');
+    }
+
+    const entry = restoreLocalPayloadUploadBuffer.get(normalizedToken);
+    if (!entry) {
+        throw new Error('Restore local payload token upload session not found or expired');
+    }
+
+    const chunkIndex = Number.isFinite(Number(index)) ? Number(index) : entry.nextIndex;
+    if (!Number.isInteger(chunkIndex) || chunkIndex < 0) {
+        throw new Error('Invalid restore local payload chunk index');
+    }
+    if (chunkIndex !== entry.nextIndex) {
+        throw new Error(`Restore local payload chunk out of order (expected ${entry.nextIndex}, got ${chunkIndex})`);
+    }
+
+    entry.chunks.push(String(chunk || ''));
+    entry.nextIndex += 1;
+    entry.updatedAt = Date.now();
+}
+
+function commitRestoreLocalPayloadTokenUpload({ token, totalChunks }) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) {
+        throw new Error('Missing restore local payload token');
+    }
+
+    const entry = restoreLocalPayloadUploadBuffer.get(normalizedToken);
+    if (!entry) {
+        throw new Error('Restore local payload token upload session not found or expired');
+    }
+
+    const expectedChunks = Number(totalChunks);
+    if (!Number.isInteger(expectedChunks) || expectedChunks < 0) {
+        throw new Error('Invalid restore local payload total chunk count');
+    }
+    if (entry.nextIndex !== expectedChunks || entry.chunks.length !== expectedChunks) {
+        throw new Error(`Restore local payload upload incomplete (expected ${expectedChunks}, got ${entry.chunks.length})`);
+    }
+
+    const text = entry.chunks.join('');
+    let parsed = {};
+    if (text) {
+        try {
+            parsed = JSON.parse(text);
+        } catch (_) {
+            throw new Error('Restore local payload JSON parse failed');
+        }
+    }
+
+    const payload = deserializeRestoreLocalPayload(parsed) || {};
+    const now = Date.now();
+    restoreLocalPayloadTokenStore.set(normalizedToken, {
+        createdAt: now,
+        expiresAt: now + RESTORE_LOCAL_PAYLOAD_TOKEN_TTL_MS,
+        payload
+    });
+    restoreLocalPayloadUploadBuffer.delete(normalizedToken);
+    pruneRestoreLocalPayloadTokenStore(now);
+}
+
+function releaseRestoreLocalPayloadToken(token) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) return false;
+
+    const removedFromUpload = restoreLocalPayloadUploadBuffer.delete(normalizedToken);
+    const removedFromStore = restoreLocalPayloadTokenStore.delete(normalizedToken);
+    return removedFromUpload || removedFromStore;
+}
+
+function getRestoreLocalPayloadByToken(token) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) return null;
+
+    const entry = restoreLocalPayloadTokenStore.get(normalizedToken);
+    if (!entry) return null;
+
+    const now = Date.now();
+    if (!Number.isFinite(Number(entry.expiresAt)) || Number(entry.expiresAt) <= now) {
+        restoreLocalPayloadTokenStore.delete(normalizedToken);
+        return null;
+    }
+
+    return entry.payload || null;
+}
+
+function resolveRestoreLocalPayloadFromMessage(message = {}) {
+    const localPayloadToken = String(message?.localPayloadToken || '').trim();
+    if (localPayloadToken) {
+        const resolved = getRestoreLocalPayloadByToken(localPayloadToken);
+        if (!resolved || typeof resolved !== 'object') {
+            throw new Error('Local restore payload token missing or expired. Please retry this action.');
+        }
+        return resolved;
+    }
+
+    return message?.localPayload;
+}
+
+function resolveMergeImportTreeFromMessage(message = {}) {
+    const mergeImportTreeToken = String(message?.mergeImportTreeToken || '').trim();
+    if (mergeImportTreeToken) {
+        const resolved = getRestoreLocalPayloadByToken(mergeImportTreeToken);
+        const mergeImportTree = resolved?.mergeImportTree;
+        if (!isBookmarkTreeShapeValid(mergeImportTree)) {
+            throw new Error('Merge import tree token missing or invalid. Please retry this action.');
+        }
+        return mergeImportTree;
+    }
+
+    if (isBookmarkTreeShapeValid(message?.mergeImportTree)) {
+        return message.mergeImportTree;
+    }
+
+    return null;
 }
 
 // 监听来自popup的消息
@@ -3091,6 +3353,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === "setBookmarkRestoringFlag") {
             const next = !!message.value;
             isBookmarkRestoring = next;
+            isBookmarkRestoringFromUiFlag = next;
             try {
                 browserAPI.storage.local.set({ bookmarkRestoringFlag: isBookmarkRestoring }, () => { });
             } catch (_) { }
@@ -3137,9 +3400,17 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     message.restoreSessionId
                     || `revert_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
                 ).trim();
+                let recoveryIntentCreated = false;
+                let recoveryTransactionStarted = false;
+                const clearRecoveryIntentIfNeeded = async () => {
+                    if (!recoveryIntentCreated || recoveryTransactionStarted) return;
+                    await clearRestoreRecoveryIntent(normalizedRestoreSessionId);
+                    recoveryIntentCreated = false;
+                };
 
                 try {
                     isBookmarkRestoring = true;
+                    isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
                     } catch (_) { }
@@ -3179,6 +3450,26 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     const requestedStrategy = normalizeRevertStrategySelection(message.strategy);
                     const thresholdConfig = resolveRevertPatchThreshold(message.thresholdPercent);
+
+                    await setRestoreRecoveryIntent({
+                        sessionId: normalizedRestoreSessionId,
+                        operationKind: 'revert',
+                        requestedStrategy,
+                        resolvedStrategy: requestedStrategy,
+                        uiSource: 'background',
+                        sourceType: 'last_backup',
+                        phase: 'intent_preparing_target',
+                        displayTitle: preferredLang === 'en' ? 'Revert to last backup' : '撤销到上次备份',
+                        targetRef: {
+                            recordTime: String(lastBookmarkData?.timestamp || ''),
+                            snapshotKey: '__last_backup__',
+                            sourceType: 'last_backup'
+                        },
+                        meta: {
+                            targetBaselineTimestamp: String(lastBookmarkData?.timestamp || '')
+                        }
+                    });
+                    recoveryIntentCreated = true;
 
                     let baselineNodeCount = Number(lastBookmarkData && lastBookmarkData.bookmarkCount) + Number(lastBookmarkData && lastBookmarkData.folderCount);
                     if (!Number.isFinite(baselineNodeCount) || baselineNodeCount <= 0) {
@@ -3283,6 +3574,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             targetBaselineTimestamp: String(lastBookmarkData?.timestamp || '')
                         }
                     });
+                    recoveryTransactionStarted = true;
                     await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'apply_started');
 
                     let appliedStrategy = decision.strategy;
@@ -3293,7 +3585,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             patchResult = await executePatchBookmarkWithAutoRollback(tree, {
                                 baselineTimestamp: lastBookmarkData.timestamp,
                                 preferredLang,
-                                operation: 'revert'
+                                operation: 'revert',
+                                rollbackSnapshot: currentTree
                             });
                         } catch (patchError) {
                             if (requestedStrategy === 'patch') {
@@ -3306,7 +3599,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     baselineTimestamp: lastBookmarkData.timestamp,
                                     preferredLang
                                 });
-                            }, { preferredLang });
+                            }, {
+                                preferredLang,
+                                rollbackSnapshot: currentTree
+                            });
                         }
                     } else {
                         await executeBookmarkOperationWithAutoRollback(async () => {
@@ -3314,7 +3610,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 baselineTimestamp: lastBookmarkData.timestamp,
                                 preferredLang
                             });
-                        }, { preferredLang });
+                        }, {
+                            preferredLang,
+                            rollbackSnapshot: currentTree
+                        });
                     }
 
                     await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'finalizing');
@@ -3347,6 +3646,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             await clearRestoreRecoveryTransactionForSession(normalizedRestoreSessionId);
                         } catch (_) { }
                     }
+                    try {
+                        await clearRecoveryIntentIfNeeded();
+                    } catch (_) { }
                     const response = { success: false, error: error && error.message ? error.message : String(error) };
                     if (error?.errorCode) {
                         response.errorCode = error.errorCode;
@@ -3357,6 +3659,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse(response);
                 } finally {
                     isBookmarkRestoring = false;
+                    isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
                     } catch (_) { }
@@ -3373,8 +3676,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'restoreToHistoryRecord') {
             // 恢复到指定备份记录
             return handleMessageWithRestoreRecoveryWriteLock(message, sendResponse, async () => {
+                const normalizedRestoreSessionId = String(
+                    message.restoreSessionId
+                    || `history_restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+                ).trim();
+                let recoveryIntentCreated = false;
+                let recoveryTransactionStarted = false;
+                const clearRecoveryIntentIfNeeded = async () => {
+                    if (!recoveryIntentCreated || recoveryTransactionStarted) return;
+                    await clearRestoreRecoveryIntent(normalizedRestoreSessionId);
+                    recoveryIntentCreated = false;
+                };
+
                 try {
                     isBookmarkRestoring = true;
+                    isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
                     } catch (_) { }
@@ -3382,7 +3698,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         await setCanvasMarkerBulkMode(true, {
                             source: 'history_restore_record',
                             reason: 'restore',
-                            sessionId: String(message.restoreSessionId || '').trim()
+                            sessionId: normalizedRestoreSessionId
                         });
                     } catch (_) { }
 
@@ -3407,6 +3723,41 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
+                    const intentDisplayTitle = (() => {
+                        const timeText = String(record.time || '');
+                        const seqText = record.seqNumber != null ? String(record.seqNumber) : '-';
+                        if (requestedStrategy === 'merge') {
+                            return preferredLang === 'en'
+                                ? `Import merged from #${seqText} (${timeText})`
+                                : `导入合并自 #${seqText} (${timeText})`;
+                        }
+                        return preferredLang === 'en'
+                            ? `Restore to #${seqText} (${timeText})`
+                            : `恢复到 #${seqText} (${timeText})`;
+                    })();
+
+                    await setRestoreRecoveryIntent({
+                        sessionId: normalizedRestoreSessionId,
+                        operationKind: 'restore',
+                        requestedStrategy,
+                        resolvedStrategy: normalizedStrategy,
+                        uiSource: 'history',
+                        sourceType: 'history_record',
+                        phase: 'intent_preparing_target',
+                        displayTitle: intentDisplayTitle,
+                        targetRef: {
+                            recordTime: String(record.time || ''),
+                            snapshotKey: String(record.snapshotKey || ''),
+                            sourceType: 'history_record',
+                            fileName: String(record.note || '')
+                        },
+                        meta: {
+                            recordTime: String(record.time || ''),
+                            targetBaselineTimestamp: String(record.time || '')
+                        }
+                    });
+                    recoveryIntentCreated = true;
+
                     let tree = record.bookmarkTree;
                     if (!tree && record.hasData) {
                         const treeKey = `backup_data_${record.time}`;
@@ -3415,6 +3766,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     if (!tree) {
+                        await clearRecoveryIntentIfNeeded();
                         sendResponse({ success: false, error: preferredLang === 'en' ? 'No snapshot data' : '没有可用的快照数据' });
                         return;
                     }
@@ -3433,6 +3785,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                         await setBookmarkChangesDirty(false);
                         await setBadge();
+                        await clearRecoveryIntentIfNeeded();
                         sendResponse({
                             success: true,
                             skipped: true,
@@ -3451,10 +3804,100 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     if (normalizedStrategy === 'merge') {
-                        await executeBookmarkOperationWithAutoRollback(async () => {
-                            await mergeSnapshotTree(tree, { preferredLang });
+                        const mergeNote = (() => {
+                            const timeText = String(record.time || '');
+                            const seqText = record.seqNumber != null ? String(record.seqNumber) : '-';
+                            return preferredLang === 'en'
+                                ? `Import merged from #${seqText} (${timeText})`
+                                : `导入合并自 #${seqText} (${timeText})`;
+                        })();
+                        const mergeOptions = message.mergeOptions && typeof message.mergeOptions === 'object'
+                            ? { ...message.mergeOptions }
+                            : {};
+                        if (!mergeOptions.meta || typeof mergeOptions.meta !== 'object') {
+                            mergeOptions.meta = {
+                                seqNumber: record.seqNumber,
+                                fingerprint: record.fingerprint || null,
+                                note: record.note || '',
+                                recordTime: record.time != null ? String(record.time) : ''
+                            };
+                        }
+                        const mergeImportTreeFromMessage = resolveMergeImportTreeFromMessage(message);
+                        const mergeTree = isBookmarkTreeShapeValid(mergeImportTreeFromMessage)
+                            ? mergeImportTreeFromMessage
+                            : tree;
+                        const mergeRecoveryPlan = buildPredictedMergeTargetSnapshot(currentTree, mergeTree, {
+                            ...mergeOptions,
+                            preferredLang
+                        });
+                        const requestedMergeSessionId = normalizedRestoreSessionId;
+                        const mergeTransaction = await beginRestoreRecoveryTransaction({
+                            sessionId: requestedMergeSessionId,
+                            operationKind: 'restore',
+                            requestedStrategy: 'merge',
+                            resolvedStrategy: 'merge',
+                            uiSource: 'history',
+                            sourceType: 'history_record',
+                            displayTitle: intentDisplayTitle,
+                            startSnapshot: currentTree,
+                            targetSnapshot: mergeRecoveryPlan.targetSnapshot,
+                            meta: {
+                                recordTime: String(record.time || ''),
+                                targetBaselineTimestamp: String(record.time || ''),
+                                displayRequestedStrategy: 'merge',
+                                displayResolvedStrategy: 'merge',
+                                mergeImportFolderId: '',
+                                mergeImportParentId: String(mergeOptions?.importParentId || '').trim(),
+                                mergeImportRootTitle: String(mergeRecoveryPlan?.importRootTitle || '').trim(),
+                                mergeImportKind: String(mergeOptions?.importKind || '').trim().toLowerCase() === 'changes' ? 'changes' : 'snapshot',
+                                mergeImportViewMode: String(mergeOptions?.viewMode || '').trim().toLowerCase(),
+                                mergeImportMeta: mergeOptions?.meta && typeof mergeOptions.meta === 'object'
+                                    ? cloneRestoreRecoverySerializableData(mergeOptions.meta)
+                                    : null,
+                                mergeImportTree: cloneRestoreRecoverySerializableData(mergeTree),
+                                restoreRecordMeta: {
+                                    note: mergeNote,
+                                    sourceSeqNumber: record.seqNumber,
+                                    sourceTime: record.time,
+                                    sourceNote: record.note || '',
+                                    sourceFingerprint: record.fingerprint || '',
+                                    sourceSnapshotKey: record.snapshotKey || '',
+                                    sourceOverwriteMode: String(record.overwriteMode || '').trim().toLowerCase() === 'overwrite' ? 'overwrite' : 'versioned'
+                                }
+                            }
+                        });
+                        const mergeSessionId = String(mergeTransaction?.sessionId || requestedMergeSessionId).trim();
+                        recoveryTransactionStarted = true;
+                        await updateRestoreRecoveryTransactionPhase(mergeSessionId, 'apply_started');
+
+                        const mergeResult = await executeBookmarkOperationWithAutoRollback(async () => {
+                            return await executeMergeBookmarkRestore(mergeTree, {
+                                ...mergeOptions,
+                                importRootTitle: mergeRecoveryPlan.importRootTitle
+                            });
                         }, { preferredLang });
-                        sendResponse({ success: true, strategy: 'merge', requestedStrategy: 'merge' });
+                        await updateRestoreRecoveryTransactionMeta(mergeSessionId, {
+                            mergeImportFolderId: String(mergeResult?.importedFolderId || '').trim(),
+                            mergeImportRootTitle: String(mergeResult?.importedFolderTitle || mergeRecoveryPlan?.importRootTitle || '').trim()
+                        });
+
+                        await updateRestoreRecoveryTransactionPhase(mergeSessionId, 'finalizing');
+                        try {
+                            const completedTransaction = await completeRestoreRecoveryTransaction(mergeSessionId, {
+                                resolvedStrategy: 'merge'
+                            });
+                            await clearRestoreRecoveryTransactionFully(completedTransaction);
+                        } catch (cleanupError) {
+                            console.warn('[restoreToHistoryRecord] merge transaction cleanup failed:', cleanupError);
+                        }
+
+                        sendResponse({
+                            success: true,
+                            strategy: 'merge',
+                            requestedStrategy: 'merge',
+                            folderTitle: String(mergeResult?.importedFolderTitle || ''),
+                            ...mergeResult
+                        });
                         return;
                     }
 
@@ -3520,13 +3963,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     })();
 
                     await beginRestoreRecoveryTransaction({
-                        sessionId: String(message.restoreSessionId || '').trim(),
+                        sessionId: normalizedRestoreSessionId,
                         operationKind: 'restore',
                         requestedStrategy,
                         resolvedStrategy: decision.strategy,
                         uiSource: 'history',
                         sourceType: 'history_record',
-                        displayTitle: historyRestoreNote,
+                        displayTitle: intentDisplayTitle,
                         startSnapshot: currentTree,
                         targetSnapshot: tree,
                         meta: {
@@ -3544,7 +3987,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             }
                         }
                     });
-                    await updateRestoreRecoveryTransactionPhase(String(message.restoreSessionId || '').trim(), 'apply_started');
+                    recoveryTransactionStarted = true;
+                    await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'apply_started');
 
                     let appliedStrategy = decision.strategy;
                     let patchResult = null;
@@ -3554,7 +3998,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             patchResult = await executePatchBookmarkWithAutoRollback(tree, {
                                 baselineTimestamp: record.time,
                                 preferredLang,
-                                operation: 'restore'
+                                operation: 'restore',
+                                rollbackSnapshot: currentTree
                             });
                         } catch (patchError) {
                             if (requestedStrategy === 'patch') {
@@ -3567,7 +4012,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     baselineTimestamp: record.time,
                                     preferredLang
                                 });
-                            }, { preferredLang });
+                            }, {
+                                preferredLang,
+                                rollbackSnapshot: currentTree
+                            });
                         }
                     } else {
                         await executeBookmarkOperationWithAutoRollback(async () => {
@@ -3575,13 +4023,16 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 baselineTimestamp: record.time,
                                 preferredLang
                             });
-                        }, { preferredLang });
+                        }, {
+                            preferredLang,
+                            rollbackSnapshot: currentTree
+                        });
                     }
 
-                    await updateRestoreRecoveryTransactionPhase(String(message.restoreSessionId || '').trim(), 'finalizing');
+                    await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'finalizing');
 
                     try {
-                        const completedTransaction = await completeRestoreRecoveryTransaction(String(message.restoreSessionId || '').trim(), {
+                        const completedTransaction = await completeRestoreRecoveryTransaction(normalizedRestoreSessionId, {
                             resolvedStrategy: appliedStrategy
                         });
                         await clearRestoreRecoveryTransactionFully(completedTransaction);
@@ -3606,9 +4057,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 } catch (error) {
                     if (String(error?.errorCode || '').trim().startsWith('restore_root_')) {
                         try {
-                            await clearRestoreRecoveryTransactionForSession(String(message.restoreSessionId || '').trim());
+                            await clearRestoreRecoveryTransactionForSession(normalizedRestoreSessionId);
                         } catch (_) { }
                     }
+                    try {
+                        await clearRecoveryIntentIfNeeded();
+                    } catch (_) { }
                     const response = { success: false, error: error && error.message ? error.message : String(error) };
                     if (error?.errorCode) {
                         response.errorCode = error.errorCode;
@@ -3619,6 +4073,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse(response);
                 } finally {
                     isBookmarkRestoring = false;
+                    isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
                     } catch (_) { }
@@ -3626,7 +4081,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         await setCanvasMarkerBulkMode(false, {
                             source: 'history_restore_record',
                             reason: 'restore_complete',
-                            sessionId: String(message.restoreSessionId || '').trim()
+                            sessionId: normalizedRestoreSessionId
                         });
                     } catch (_) { }
                 }
@@ -4621,32 +5076,75 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
             return true;
-        } else if (message.action === 'buildOverwriteRestorePreview') {
-            buildOverwriteRestorePreview({
-                restoreRef: message.restoreRef,
-                localPayload: message.localPayload,
-                strategy: message.strategy,
-                thresholdPercent: message.thresholdPercent
-            })
-                .then(result => sendResponse(result))
-                .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
+        } else if (message.action === 'createRestorePayloadToken') {
+            try {
+                const token = createRestoreLocalPayloadTokenUpload();
+                sendResponse({ success: true, token });
+            } catch (err) {
+                sendResponse({ success: false, error: err?.message || String(err) });
+            }
             return true;
-        } else if (message.action === 'computeRestoreDiffSummaryAgainstCurrent') {
-            computeRestoreDiffSummaryAgainstCurrent({
-                restoreRef: message.restoreRef,
-                localPayload: message.localPayload
-            })
-                .then(result => sendResponse(result))
-                .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
+        } else if (message.action === 'appendRestorePayloadTokenChunk') {
+            try {
+                appendRestoreLocalPayloadTokenUploadChunk({
+                    token: message.token,
+                    chunk: message.chunk,
+                    index: message.index
+                });
+                sendResponse({ success: true });
+            } catch (err) {
+                sendResponse({ success: false, error: err?.message || String(err) });
+            }
+            return true;
+        } else if (message.action === 'commitRestorePayloadTokenUpload') {
+            try {
+                commitRestoreLocalPayloadTokenUpload({
+                    token: message.token,
+                    totalChunks: message.totalChunks
+                });
+                sendResponse({ success: true });
+            } catch (err) {
+                sendResponse({ success: false, error: err?.message || String(err) });
+            }
+            return true;
+        } else if (message.action === 'releaseRestorePayloadToken') {
+            try {
+                const released = releaseRestoreLocalPayloadToken(message.token);
+                sendResponse({ success: true, released });
+            } catch (err) {
+                sendResponse({ success: false, error: err?.message || String(err) });
+            }
+            return true;
+        } else if (message.action === 'buildOverwriteRestorePreview') {
+            (async () => {
+                try {
+                    const localPayload = resolveRestoreLocalPayloadFromMessage(message);
+                    const result = await buildOverwriteRestorePreview({
+                        restoreRef: message.restoreRef,
+                        localPayload,
+                        strategy: message.strategy,
+                        thresholdPercent: message.thresholdPercent
+                    });
+                    sendResponse(result);
+                } catch (err) {
+                    sendResponse({ success: false, error: err?.message || String(err) });
+                }
+            })();
             return true;
         } else if (message.action === 'buildMergeRestorePreview') {
-            buildMergeRestorePreview({
-                restoreRef: message.restoreRef,
-                localPayload: message.localPayload,
-                mergeViewMode: message.mergeViewMode
-            })
-                .then(result => sendResponse(result))
-                .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
+            (async () => {
+                try {
+                    const localPayload = resolveRestoreLocalPayloadFromMessage(message);
+                    const result = await buildMergeRestorePreview({
+                        restoreRef: message.restoreRef,
+                        localPayload,
+                        mergeViewMode: message.mergeViewMode
+                    });
+                    sendResponse(result);
+                } catch (err) {
+                    sendResponse({ success: false, error: err?.message || String(err) });
+                }
+            })();
             return true;
         } else if (message.action === 'getBookmarkRootContainers') {
             getBookmarkRootContainers()
@@ -4655,12 +5153,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
         } else if (message.action === 'restoreSelectedVersion') {
             return handleMessageWithRestoreRecoveryWriteLock(message, sendResponse, async () => {
+                const localPayload = resolveRestoreLocalPayloadFromMessage(message);
                 const result = await restoreSelectedVersion({
                     restoreRef: message.restoreRef,
                     strategy: message.strategy,
                     thresholdPercent: message.thresholdPercent,
                     restoreSessionId: message.restoreSessionId,
-                    localPayload: message.localPayload,
+                    localPayload,
                     mergeViewMode: message.mergeViewMode,
                     manualMatches: message.manualMatches,
                     importParentId: message.importParentId,
@@ -4677,6 +5176,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ success: false, error: err?.message || String(err) }))
+            return true;
+        } else if (message.action === 'dismissRestoreRecoveryIntent') {
+            dismissRestoreRecoveryIntent({
+                sessionId: message.sessionId
+            })
+                .then(result => sendResponse(result))
+                .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
             return true;
         } else if (message.action === 'continueRestoreRecoveryTransaction') {
             continueRestoreRecoveryTransaction()
@@ -10182,16 +10688,79 @@ function normalizeRevertStrategySelection(strategy) {
     return 'auto';
 }
 
+function normalizeRestoreRecoveryRequestedStrategy(strategy) {
+    const value = String(strategy || '').toLowerCase();
+    if (value === 'merge') return 'merge';
+    if (value === 'patch') return 'patch';
+    if (value === 'overwrite') return 'overwrite';
+    return 'auto';
+}
+
 function normalizeAppliedRestoreStrategy(strategy) {
     const value = String(strategy || '').toLowerCase();
     if (value === 'patch') return 'patch';
+    if (value === 'merge') return 'merge';
     return 'overwrite';
 }
 
 
 const RESTORE_RECOVERY_TRANSACTION_KEY = 'restoreRecoveryTransaction'
+const RESTORE_RECOVERY_INTENT_KEY = 'restoreRecoveryIntent'
 const RESTORE_RECOVERY_SNAPSHOT_CHUNK_SIZE = 24 * 1024
 const RESTORE_RECOVERY_PROMPT_DISMISS_THRESHOLD = 3
+const RESTORE_RECOVERY_PROMPT_SESSION_MARKER_PREFIX = `${RESTORE_RECOVERY_TRANSACTION_KEY}:promptSeen`
+
+function buildRestoreRecoveryPromptSessionMarkerKey(sessionId = '') {
+    const normalizedSessionId = String(sessionId || '').trim()
+    return normalizedSessionId ? `${RESTORE_RECOVERY_PROMPT_SESSION_MARKER_PREFIX}:${normalizedSessionId}` : ''
+}
+
+function getRestoreRecoverySessionStorage() {
+    const sessionStorage = browserAPI?.storage?.session
+    if (!sessionStorage) return null
+    if (typeof sessionStorage.get !== 'function') return null
+    if (typeof sessionStorage.set !== 'function') return null
+    if (typeof sessionStorage.remove !== 'function') return null
+    return sessionStorage
+}
+
+async function shouldIncrementRestoreRecoveryPromptCountInCurrentSession(sessionId = '') {
+    const markerKey = buildRestoreRecoveryPromptSessionMarkerKey(sessionId)
+    if (!markerKey) return true
+    const sessionStorage = getRestoreRecoverySessionStorage()
+    if (!sessionStorage) return true
+
+    try {
+        const store = await sessionStorage.get([markerKey])
+        if (store && store[markerKey]) {
+            return false
+        }
+        await sessionStorage.set({ [markerKey]: Date.now() })
+        return true
+    } catch (_) {
+        return true
+    }
+}
+
+async function clearRestoreRecoveryPromptSessionMarker(sessionId = '') {
+    const markerKey = buildRestoreRecoveryPromptSessionMarkerKey(sessionId)
+    if (!markerKey) return
+    const sessionStorage = getRestoreRecoverySessionStorage()
+    if (!sessionStorage) return
+    try {
+        await sessionStorage.remove([markerKey])
+    } catch (_) { }
+}
+
+async function markRestoreRecoveryPromptSeenInCurrentSession(sessionId = '') {
+    const markerKey = buildRestoreRecoveryPromptSessionMarkerKey(sessionId)
+    if (!markerKey) return
+    const sessionStorage = getRestoreRecoverySessionStorage()
+    if (!sessionStorage) return
+    try {
+        await sessionStorage.set({ [markerKey]: Date.now() })
+    } catch (_) { }
+}
 
 function normalizeRestoreRecoveryOperationKind(value) {
     return String(value || '').toLowerCase() === 'revert' ? 'revert' : 'restore'
@@ -10207,6 +10776,111 @@ function normalizeRestoreRecoveryUiSource(value) {
 function normalizeRestoreRecoverySnapshot(snapshotTree) {
     if (!isBookmarkTreeShapeValid(snapshotTree)) return null
     return Array.isArray(snapshotTree) ? snapshotTree : [snapshotTree]
+}
+
+function normalizeRestoreRecoveryIntentMeta(meta) {
+    if (!meta || typeof meta !== 'object') return {}
+    const clonedMeta = cloneRestoreRecoverySerializableData(meta)
+    return clonedMeta && typeof clonedMeta === 'object' ? clonedMeta : {}
+}
+
+function normalizeRestoreRecoveryIntentTargetRef(targetRef) {
+    const source = targetRef && typeof targetRef === 'object' ? targetRef : {}
+    const normalizeText = (value) => String(value || '').trim()
+    const normalizedCandidates = Array.isArray(source.fileCandidates)
+        ? source.fileCandidates
+            .map((entry) => normalizeText(entry))
+            .filter((entry) => !!entry)
+            .slice(0, 8)
+        : []
+
+    return {
+        recordTime: normalizeText(source.recordTime || source.time),
+        snapshotKey: normalizeText(source.snapshotKey),
+        sourceType: normalizeText(source.sourceType),
+        fileName: normalizeText(source.fileName || source.originalFileName || source.originalName || source.name),
+        fileUrl: normalizeText(source.fileUrl || source.url),
+        localFileKey: normalizeText(source.localFileKey),
+        changesArtifactName: normalizeText(source.changesArtifactName),
+        fileCandidates: normalizedCandidates
+    }
+}
+
+async function getRawRestoreRecoveryIntent() {
+    const store = await browserAPI.storage.local.get([RESTORE_RECOVERY_INTENT_KEY])
+    const intent = store?.[RESTORE_RECOVERY_INTENT_KEY]
+    if (!intent || typeof intent !== 'object') {
+        return null
+    }
+
+    const sessionId = String(intent.sessionId || '').trim()
+    if (!sessionId) {
+        try {
+            await browserAPI.storage.local.remove([RESTORE_RECOVERY_INTENT_KEY])
+        } catch (_) { }
+        return null
+    }
+
+    return intent
+}
+
+async function setRestoreRecoveryIntent(options = {}) {
+    const sessionId = String(
+        options.sessionId
+        || `restore_recovery_intent_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    ).trim()
+    if (!sessionId) {
+        throw new Error('Missing restore recovery intent session id')
+    }
+
+    const startedAt = Number(options.startedAt) || Date.now()
+    const requestedStrategy = normalizeRestoreRecoveryRequestedStrategy(options.requestedStrategy)
+    const resolvedStrategySource = String(options.resolvedStrategy || '').trim().toLowerCase()
+    const resolvedStrategy = resolvedStrategySource
+        ? normalizeAppliedRestoreStrategy(resolvedStrategySource)
+        : (
+            requestedStrategy === 'patch' || requestedStrategy === 'merge' || requestedStrategy === 'overwrite'
+                ? requestedStrategy
+                : 'overwrite'
+        )
+
+    const nextIntent = {
+        version: 1,
+        status: 'intent',
+        intentOnly: true,
+        sessionId,
+        phase: String(options.phase || 'intent_preparing_target').trim().toLowerCase() || 'intent_preparing_target',
+        operationKind: normalizeRestoreRecoveryOperationKind(options.operationKind),
+        requestedStrategy,
+        resolvedStrategy,
+        uiSource: normalizeRestoreRecoveryUiSource(options.uiSource),
+        sourceType: String(options.sourceType || '').trim().toLowerCase(),
+        displayTitle: String(options.displayTitle || '').trim(),
+        startedAt,
+        startedAtIso: String(options.startedAtIso || new Date(startedAt).toISOString()),
+        updatedAt: Date.now(),
+        targetRef: normalizeRestoreRecoveryIntentTargetRef(options.targetRef),
+        meta: normalizeRestoreRecoveryIntentMeta(options.meta)
+    }
+
+    await browserAPI.storage.local.set({ [RESTORE_RECOVERY_INTENT_KEY]: nextIntent })
+    return nextIntent
+}
+
+async function clearRestoreRecoveryIntent(sessionId = '') {
+    const normalizedSessionId = String(sessionId || '').trim()
+    const intent = await getRawRestoreRecoveryIntent()
+    if (!intent) return false
+
+    const activeSessionId = String(intent.sessionId || '').trim()
+    if (normalizedSessionId && activeSessionId && activeSessionId !== normalizedSessionId) {
+        return false
+    }
+
+    try {
+        await browserAPI.storage.local.remove([RESTORE_RECOVERY_INTENT_KEY])
+    } catch (_) { }
+    return true
 }
 
 function normalizeRestoreRecoveryTransactionMeta(meta) {
@@ -10241,6 +10915,23 @@ function getRestoreRecoveryPromptProgress(transaction = null) {
 
 function shouldBypassRestoreRecoveryWriteLock(transaction = null) {
     return getRestoreRecoveryPromptProgress(transaction).canDismissPanel === true
+}
+
+function getRestoreRecoveryDisplayRequestedStrategy(transaction = null) {
+    const meta = normalizeRestoreRecoveryTransactionMeta(transaction?.meta)
+    const value = String(meta.displayRequestedStrategy || transaction?.requestedStrategy || '').trim().toLowerCase()
+    if (value === 'merge') return 'merge'
+    if (value === 'patch') return 'patch'
+    if (value === 'overwrite') return 'overwrite'
+    return 'auto'
+}
+
+function getRestoreRecoveryDisplayResolvedStrategy(transaction = null) {
+    const meta = normalizeRestoreRecoveryTransactionMeta(transaction?.meta)
+    const value = String(meta.displayResolvedStrategy || transaction?.resolvedStrategy || '').trim().toLowerCase()
+    if (value === 'merge') return 'merge'
+    if (value === 'patch') return 'patch'
+    return 'overwrite'
 }
 
 function buildRestoreRecoverySnapshotKey(kind, sessionId) {
@@ -10347,6 +11038,12 @@ async function clearRestoreRecoveryTransaction(transaction = null) {
     try {
         await browserAPI.storage.local.remove([RESTORE_RECOVERY_TRANSACTION_KEY])
     } catch (_) { }
+    try {
+        await clearRestoreRecoveryIntent(activeTransaction.sessionId)
+    } catch (_) { }
+    try {
+        await clearRestoreRecoveryPromptSessionMarker(activeTransaction.sessionId)
+    } catch (_) { }
 
     return true
 }
@@ -10372,16 +11069,19 @@ async function clearCompletedRestoreRecoveryTransactionIfNeeded() {
 }
 
 async function clearRestoreRecoveryTransactionForSession(sessionId = '') {
-    const transaction = await getRawRestoreRecoveryTransaction()
-    if (!transaction) return false
-
     const normalizedSessionId = String(sessionId || '').trim()
-    if (normalizedSessionId && String(transaction.sessionId || '').trim() !== normalizedSessionId) {
-        return false
+    let transactionCleared = false
+
+    const transaction = await getRawRestoreRecoveryTransaction()
+    if (transaction) {
+        if (!normalizedSessionId || String(transaction.sessionId || '').trim() === normalizedSessionId) {
+            await clearRestoreRecoveryTransactionFully(transaction)
+            transactionCleared = true
+        }
     }
 
-    await clearRestoreRecoveryTransactionFully(transaction)
-    return true
+    const intentCleared = await clearRestoreRecoveryIntent(normalizedSessionId)
+    return transactionCleared || intentCleared
 }
 
 async function clearRestoreRecoveryResidualCaches() {
@@ -10444,7 +11144,7 @@ async function beginRestoreRecoveryTransaction(options = {}) {
         status: 'running',
         phase: String(options.phase || 'snapshot_ready').trim() || 'snapshot_ready',
         operationKind: normalizeRestoreRecoveryOperationKind(options.operationKind),
-        requestedStrategy: normalizeRevertStrategySelection(options.requestedStrategy),
+        requestedStrategy: normalizeRestoreRecoveryRequestedStrategy(options.requestedStrategy),
         resolvedStrategy: normalizeAppliedRestoreStrategy(options.resolvedStrategy),
         uiSource: normalizeRestoreRecoveryUiSource(options.uiSource),
         sourceType: String(options.sourceType || '').trim().toLowerCase(),
@@ -10467,6 +11167,8 @@ async function beginRestoreRecoveryTransaction(options = {}) {
         await storeRestoreRecoverySnapshot(startSnapshotKey, startSnapshot)
         await storeRestoreRecoverySnapshot(targetSnapshotKey, targetSnapshot)
         await browserAPI.storage.local.set({ [RESTORE_RECOVERY_TRANSACTION_KEY]: transaction })
+        await clearRestoreRecoveryIntent(sessionId)
+        await markRestoreRecoveryPromptSeenInCurrentSession(sessionId)
         return transaction
     } catch (error) {
         await clearRestoreRecoveryTransaction(transaction)
@@ -10485,6 +11187,26 @@ async function updateRestoreRecoveryTransactionPhase(sessionId, phase, extra = {
         ...transaction,
         ...((extra && typeof extra === 'object') ? extra : {}),
         phase: String(phase || transaction.phase || 'apply_started').trim() || 'apply_started',
+        updatedAt: Date.now()
+    }
+    await browserAPI.storage.local.set({ [RESTORE_RECOVERY_TRANSACTION_KEY]: nextTransaction })
+    return nextTransaction
+}
+
+async function updateRestoreRecoveryTransactionMeta(sessionId, metaPatch = {}) {
+    const transaction = await getRawRestoreRecoveryTransaction()
+    if (!transaction) return null
+    if (sessionId && String(transaction.sessionId || '').trim() !== String(sessionId || '').trim()) {
+        return null
+    }
+
+    const nextMeta = {
+        ...normalizeRestoreRecoveryTransactionMeta(transaction.meta),
+        ...((metaPatch && typeof metaPatch === 'object') ? metaPatch : {})
+    }
+    const nextTransaction = {
+        ...transaction,
+        meta: nextMeta,
         updatedAt: Date.now()
     }
     await browserAPI.storage.local.set({ [RESTORE_RECOVERY_TRANSACTION_KEY]: nextTransaction })
@@ -10548,6 +11270,8 @@ function decorateRestoreRecoveryTransactionStatus(transaction = null, capabiliti
     const promptProgress = getRestoreRecoveryPromptProgress(transaction)
     return {
         ...transaction,
+        requestedStrategy: getRestoreRecoveryDisplayRequestedStrategy(transaction),
+        resolvedStrategy: getRestoreRecoveryDisplayResolvedStrategy(transaction),
         canContinue: capabilities.canContinue !== false,
         canRollback: capabilities.canRollback !== false,
         promptCount: promptProgress.promptCount,
@@ -10556,14 +11280,37 @@ function decorateRestoreRecoveryTransactionStatus(transaction = null, capabiliti
     }
 }
 
+function decorateRestoreRecoveryIntentStatus(intent = null) {
+    if (!intent || typeof intent !== 'object') return null
+
+    const promptThreshold = 1
+    return {
+        ...intent,
+        requestedStrategy: getRestoreRecoveryDisplayRequestedStrategy(intent),
+        resolvedStrategy: getRestoreRecoveryDisplayResolvedStrategy(intent),
+        canContinue: false,
+        canRollback: false,
+        promptCount: 0,
+        promptThreshold,
+        canDismissPanel: true,
+        intentOnly: true
+    }
+}
+
 async function getRestoreRecoveryTransactionStatus(options = {}) {
     const markPromptShown = options?.markPromptShown === true
     const uiSource = options?.uiSource
 
     let transaction = await getPendingRestoreRecoveryTransaction()
-    if (transaction && markPromptShown) {
-        transaction = await incrementRestoreRecoveryPromptCount(transaction.sessionId, uiSource) || transaction
-        if (!isBookmarkRestoring && shouldBypassRestoreRecoveryWriteLock(transaction)) {
+    if (transaction && isBookmarkRestoringFromUiFlag) {
+        await clearUiRestoreGuardFlagIfNeeded()
+    }
+    if (transaction && markPromptShown && !isBookmarkRestoring) {
+        const shouldIncrementInCurrentSession = await shouldIncrementRestoreRecoveryPromptCountInCurrentSession(transaction.sessionId)
+        if (shouldIncrementInCurrentSession) {
+            transaction = await incrementRestoreRecoveryPromptCount(transaction.sessionId, uiSource) || transaction
+        }
+        if (shouldBypassRestoreRecoveryWriteLock(transaction)) {
             await abandonRestoreRecoveryTransaction(transaction)
             transaction = null
         }
@@ -10573,11 +11320,18 @@ async function getRestoreRecoveryTransactionStatus(options = {}) {
     if (transaction) {
         const capabilities = await getRestoreRecoveryTransactionCapabilities(transaction)
         transactionStatus = decorateRestoreRecoveryTransactionStatus(transaction, capabilities)
+    } else {
+        const intent = await getRawRestoreRecoveryIntent()
+        if (intent) {
+            transactionStatus = decorateRestoreRecoveryIntentStatus(intent)
+        }
     }
+
+    const isRestoreOperationActive = !!(isBookmarkRestoring && !isBookmarkRestoringFromUiFlag)
 
     return {
         success: true,
-        active: !!isBookmarkRestoring,
+        active: isRestoreOperationActive,
         transaction: transactionStatus
     }
 }
@@ -10631,7 +11385,8 @@ function buildRestoreRecoveryWriteLockedResponse(preferredLang = 'zh_CN', transa
         response.transaction = {
             sessionId: String(transaction.sessionId || '').trim(),
             operationKind: String(transaction.operationKind || '').trim(),
-            resolvedStrategy: String(transaction.resolvedStrategy || '').trim(),
+            requestedStrategy: getRestoreRecoveryDisplayRequestedStrategy(transaction),
+            resolvedStrategy: getRestoreRecoveryDisplayResolvedStrategy(transaction),
             uiSource: String(transaction.uiSource || '').trim(),
             sourceType: String(transaction.sourceType || '').trim(),
             displayTitle: String(transaction.displayTitle || '').trim(),
@@ -10657,6 +11412,177 @@ async function getRestoreRecoveryWriteLockedResponse(preferredLang = '') {
     const capabilities = await getRestoreRecoveryTransactionCapabilities(transaction)
     const lang = String(preferredLang || '').trim() || await getCurrentLang()
     return buildRestoreRecoveryWriteLockedResponse(lang, transaction, capabilities)
+}
+
+async function dismissRestoreRecoveryIntent(options = {}) {
+    const sessionId = String(options?.sessionId || '').trim()
+    const intent = await getRawRestoreRecoveryIntent()
+    if (!intent) {
+        return { success: true, dismissed: false }
+    }
+
+    const activeSessionId = String(intent.sessionId || '').trim()
+    if (sessionId && activeSessionId && activeSessionId !== sessionId) {
+        return { success: true, dismissed: false }
+    }
+
+    await clearRestoreRecoveryIntent(sessionId || activeSessionId)
+    return {
+        success: true,
+        dismissed: true,
+        sessionId: sessionId || activeSessionId
+    }
+}
+
+function isRestoreRecoveryBookmarkMissingError(error) {
+    const text = String(error?.message || error || '').trim().toLowerCase()
+    if (!text) return false
+    return text.includes('can\'t find bookmark')
+        || text.includes('cannot find bookmark')
+        || text.includes('bookmark not found')
+        || text.includes('no node')
+        || text.includes('does not exist')
+}
+
+async function cleanupRestoreRecoveryMergeFolderById(folderId) {
+    const normalizedFolderId = String(folderId || '').trim()
+    if (!normalizedFolderId) {
+        return { success: false, missing: false, removedFolderId: '' }
+    }
+
+    try {
+        await browserAPI.bookmarks.removeTree(normalizedFolderId)
+        return { success: true, missing: false, removedFolderId: normalizedFolderId }
+    } catch (error) {
+        if (isRestoreRecoveryBookmarkMissingError(error)) {
+            return { success: false, missing: true, removedFolderId: '' }
+        }
+        return {
+            success: false,
+            missing: false,
+            removedFolderId: '',
+            error: error?.message || String(error)
+        }
+    }
+}
+
+async function cleanupRestoreRecoveryMergeFolderByTitle(parentId, folderTitle) {
+    const normalizedParentId = String(parentId || '').trim()
+    const normalizedFolderTitle = String(folderTitle || '').trim()
+    if (!normalizedParentId || !normalizedFolderTitle) {
+        return { success: false, removedFolderId: '' }
+    }
+
+    let children = []
+    try {
+        children = await browserAPI.bookmarks.getChildren(normalizedParentId)
+    } catch (error) {
+        return {
+            success: false,
+            removedFolderId: '',
+            error: error?.message || String(error)
+        }
+    }
+
+    const matches = (Array.isArray(children) ? children : [])
+        .filter((node) => (
+            node
+            && !node.url
+            && String(node.title || '').trim() === normalizedFolderTitle
+            && node.id != null
+        ))
+        .sort((a, b) => {
+            const aNum = Number(a?.id)
+            const bNum = Number(b?.id)
+            if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+                return bNum - aNum
+            }
+            return String(b?.id || '').localeCompare(String(a?.id || ''))
+        })
+
+    for (const candidate of matches) {
+        const candidateId = String(candidate?.id || '').trim()
+        if (!candidateId) continue
+        const removed = await cleanupRestoreRecoveryMergeFolderById(candidateId)
+        if (removed.success) return removed
+        if (removed.error) return removed
+    }
+
+    return { success: false, removedFolderId: '' }
+}
+
+async function cleanupRestoreRecoveryMergeFolder(transaction = null) {
+    const meta = normalizeRestoreRecoveryTransactionMeta(transaction?.meta)
+    const folderId = String(meta.mergeImportFolderId || '').trim()
+    const parentId = String(meta.mergeImportParentId || '').trim()
+    const rootTitle = String(meta.mergeImportRootTitle || '').trim()
+
+    let removed = await cleanupRestoreRecoveryMergeFolderById(folderId)
+    if (removed.success) return removed
+    if (removed.error) return removed
+
+    const fallbackRemoved = await cleanupRestoreRecoveryMergeFolderByTitle(parentId, rootTitle)
+    if (fallbackRemoved.success || fallbackRemoved.error) {
+        return fallbackRemoved
+    }
+
+    if (removed.missing) {
+        return { success: false, missing: true, removedFolderId: '' }
+    }
+    return { success: false, missing: false, removedFolderId: '' }
+}
+
+function resolveRestoreRecoveryMergeExecutionOptions(transaction = null) {
+    const meta = normalizeRestoreRecoveryTransactionMeta(transaction?.meta)
+    const mergeTree = normalizeRestoreRecoverySnapshot(meta.mergeImportTree)
+    const importParentId = String(meta.mergeImportParentId || '').trim()
+    const importKind = String(meta.mergeImportKind || '').trim().toLowerCase() === 'changes'
+        ? 'changes'
+        : 'snapshot'
+    const viewModeRaw = String(meta.mergeImportViewMode || '').trim().toLowerCase()
+    const viewMode = (viewModeRaw === 'simple' || viewModeRaw === 'detailed' || viewModeRaw === 'collection')
+        ? viewModeRaw
+        : null
+    const mergeMeta = meta.mergeImportMeta && typeof meta.mergeImportMeta === 'object'
+        ? cloneRestoreRecoverySerializableData(meta.mergeImportMeta)
+        : null
+    const importRootTitle = String(meta.mergeImportRootTitle || '').trim()
+
+    if (!mergeTree) return null
+
+    return {
+        mergeTree,
+        options: {
+            importParentId: importParentId || null,
+            importKind,
+            viewMode,
+            meta: mergeMeta,
+            importRootTitle: importRootTitle || undefined
+        }
+    }
+}
+
+async function executeRestoreRecoveryMergeContinue(transaction, preferredLang = 'zh_CN') {
+    const mergeExecution = resolveRestoreRecoveryMergeExecutionOptions(transaction)
+    if (!mergeExecution) {
+        return null
+    }
+
+    const mergeResult = await executeBookmarkOperationWithAutoRollback(async () => {
+        return await executeMergeBookmarkRestore(mergeExecution.mergeTree, mergeExecution.options)
+    }, { preferredLang })
+
+    await updateRestoreRecoveryTransactionMeta(transaction?.sessionId, {
+        mergeImportFolderId: String(mergeResult?.importedFolderId || '').trim(),
+        mergeImportRootTitle: String(mergeResult?.importedFolderTitle || mergeExecution.options.importRootTitle || '').trim()
+    })
+
+    return {
+        strategy: 'merge',
+        requestedStrategy: 'merge',
+        fallbackApplied: false,
+        ...(mergeResult || {})
+    }
 }
 
 async function executeStoredRecoverySnapshotByStrategy(snapshotTree, options = {}) {
@@ -10703,7 +11629,7 @@ async function executeStoredRecoverySnapshotByStrategy(snapshotTree, options = {
 
     return {
         strategy: appliedStrategy,
-        requestedStrategy: normalizeRevertStrategySelection(requestedStrategy),
+        requestedStrategy: normalizeRestoreRecoveryRequestedStrategy(requestedStrategy),
         fallbackApplied: normalizedResolvedStrategy !== appliedStrategy,
         ...(patchResult || {})
     }
@@ -10713,12 +11639,25 @@ async function continueRestoreRecoveryTransaction() {
     const transaction = await getPendingRestoreRecoveryTransaction()
     if (!transaction) {
         const preferredLang = await getCurrentLang()
+        const intent = await getRawRestoreRecoveryIntent()
+        if (intent) {
+            return {
+                success: false,
+                intentOnly: true,
+                error: preferredLang === 'en'
+                    ? 'Detected interruption before target snapshot preparation completed. Please re-run restore/revert.'
+                    : '检测到在目标快照准备完成前发生中断，请重新执行恢复/撤销。'
+            }
+        }
         return {
             success: false,
             error: preferredLang === 'en'
                 ? 'No unfinished restore/revert transaction found'
                 : '未找到未完成的恢复/撤销事务'
         }
+    }
+    if (isBookmarkRestoring && isBookmarkRestoringFromUiFlag) {
+        await clearUiRestoreGuardFlagIfNeeded()
     }
     if (isBookmarkRestoring) {
         const preferredLang = await getCurrentLang()
@@ -10741,12 +11680,13 @@ async function continueRestoreRecoveryTransaction() {
         }
     }
 
-    const requestedStrategy = normalizeRevertStrategySelection(transaction.requestedStrategy)
-    const resolvedStrategy = normalizeAppliedRestoreStrategy(transaction.resolvedStrategy)
+    const requestedStrategy = normalizeRestoreRecoveryRequestedStrategy(transaction.requestedStrategy)
+    const resolvedStrategy = getRestoreRecoveryDisplayResolvedStrategy(transaction)
     const allowPatchFallback = resolvedStrategy === 'patch' && requestedStrategy !== 'patch'
 
     try {
         isBookmarkRestoring = true
+        isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true })
         } catch (_) { }
@@ -10762,13 +11702,37 @@ async function continueRestoreRecoveryTransaction() {
             recoveryAction: 'continue'
         })
 
-        const executionResult = await executeStoredRecoverySnapshotByStrategy(targetSnapshot, {
-            requestedStrategy,
-            resolvedStrategy,
-            baselineTimestamp: String(transaction?.meta?.targetBaselineTimestamp || transaction?.meta?.recordTime || transaction?.startedAtIso || ''),
-            preferredLang,
-            allowPatchFallback
-        })
+        const mergeCleanupResult = resolvedStrategy === 'merge'
+            ? await cleanupRestoreRecoveryMergeFolder(transaction)
+            : null
+        if (resolvedStrategy === 'merge' && mergeCleanupResult?.error) {
+            throw new Error(mergeCleanupResult.error)
+        }
+
+        let executionResult = null
+        if (resolvedStrategy === 'merge') {
+            executionResult = await executeRestoreRecoveryMergeContinue(transaction, preferredLang)
+            if (!executionResult) {
+                executionResult = await executeStoredRecoverySnapshotByStrategy(targetSnapshot, {
+                    requestedStrategy: 'overwrite',
+                    resolvedStrategy: 'overwrite',
+                    baselineTimestamp: String(transaction?.meta?.targetBaselineTimestamp || transaction?.meta?.recordTime || transaction?.startedAtIso || ''),
+                    preferredLang,
+                    allowPatchFallback: false
+                })
+                executionResult.strategy = 'overwrite'
+                executionResult.requestedStrategy = 'merge'
+                executionResult.fallbackApplied = true
+            }
+        } else {
+            executionResult = await executeStoredRecoverySnapshotByStrategy(targetSnapshot, {
+                requestedStrategy,
+                resolvedStrategy,
+                baselineTimestamp: String(transaction?.meta?.targetBaselineTimestamp || transaction?.meta?.recordTime || transaction?.startedAtIso || ''),
+                preferredLang,
+                allowPatchFallback
+            })
+        }
 
         await updateRestoreRecoveryTransactionPhase(transaction.sessionId, 'finalizing', {
             recoveryAction: 'continue'
@@ -10812,6 +11776,7 @@ async function continueRestoreRecoveryTransaction() {
             operationKind: transaction.operationKind,
             resolvedStrategy: executionResult.strategy,
             fallbackApplied: !!executionResult.fallbackApplied,
+            mergeFolderRemoved: mergeCleanupResult ? (mergeCleanupResult.success === true) : null,
             restoreRecordSuccess: restoreRecordResult ? restoreRecordResult.success === true : null,
             restoreRecordError: restoreRecordResult && restoreRecordResult.success !== true
                 ? String(restoreRecordResult.error || '')
@@ -10832,6 +11797,7 @@ async function continueRestoreRecoveryTransaction() {
         return response
     } finally {
         isBookmarkRestoring = false
+        isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false })
         } catch (_) { }
@@ -10849,12 +11815,25 @@ async function rollbackRestoreRecoveryTransaction() {
     const transaction = await getPendingRestoreRecoveryTransaction()
     if (!transaction) {
         const preferredLang = await getCurrentLang()
+        const intent = await getRawRestoreRecoveryIntent()
+        if (intent) {
+            return {
+                success: false,
+                intentOnly: true,
+                error: preferredLang === 'en'
+                    ? 'Detected interruption before target snapshot preparation completed. Please re-run restore/revert.'
+                    : '检测到在目标快照准备完成前发生中断，请重新执行恢复/撤销。'
+            }
+        }
         return {
             success: false,
             error: preferredLang === 'en'
                 ? 'No unfinished restore/revert transaction found'
                 : '未找到未完成的恢复/撤销事务'
         }
+    }
+    if (isBookmarkRestoring && isBookmarkRestoringFromUiFlag) {
+        await clearUiRestoreGuardFlagIfNeeded()
     }
     if (isBookmarkRestoring) {
         const preferredLang = await getCurrentLang()
@@ -10877,12 +11856,13 @@ async function rollbackRestoreRecoveryTransaction() {
         }
     }
 
-    const requestedStrategy = normalizeRevertStrategySelection(transaction.requestedStrategy)
-    const resolvedStrategy = normalizeAppliedRestoreStrategy(transaction.resolvedStrategy)
+    const requestedStrategy = normalizeRestoreRecoveryRequestedStrategy(transaction.requestedStrategy)
+    const resolvedStrategy = getRestoreRecoveryDisplayResolvedStrategy(transaction)
     const rollbackResolvedStrategy = resolvedStrategy === 'patch' ? 'patch' : 'overwrite'
 
     try {
         isBookmarkRestoring = true
+        isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true })
         } catch (_) { }
@@ -10898,13 +11878,37 @@ async function rollbackRestoreRecoveryTransaction() {
             recoveryAction: 'rollback'
         })
 
-        const executionResult = await executeStoredRecoverySnapshotByStrategy(startSnapshot, {
-            requestedStrategy,
-            resolvedStrategy: rollbackResolvedStrategy,
-            baselineTimestamp: String(transaction?.startedAtIso || ''),
-            preferredLang,
-            allowPatchFallback: rollbackResolvedStrategy === 'patch'
-        })
+        const mergeCleanupResult = resolvedStrategy === 'merge'
+            ? await cleanupRestoreRecoveryMergeFolder(transaction)
+            : null
+        if (resolvedStrategy === 'merge' && mergeCleanupResult?.error) {
+            throw new Error(mergeCleanupResult.error)
+        }
+
+        let executionResult = null
+        if (resolvedStrategy === 'merge' && (mergeCleanupResult?.success || mergeCleanupResult?.missing)) {
+            executionResult = {
+                strategy: 'merge',
+                requestedStrategy: 'merge',
+                fallbackApplied: false,
+                created: 0,
+                removed: 0,
+                moved: 0,
+                updated: 0
+            }
+        } else {
+            executionResult = await executeStoredRecoverySnapshotByStrategy(startSnapshot, {
+                requestedStrategy,
+                resolvedStrategy: rollbackResolvedStrategy,
+                baselineTimestamp: String(transaction?.startedAtIso || ''),
+                preferredLang,
+                allowPatchFallback: rollbackResolvedStrategy === 'patch'
+            })
+            if (resolvedStrategy === 'merge') {
+                executionResult.requestedStrategy = 'merge'
+                executionResult.fallbackApplied = true
+            }
+        }
 
         await updateRestoreRecoveryTransactionPhase(transaction.sessionId, 'finalizing', {
             recoveryAction: 'rollback'
@@ -10926,6 +11930,7 @@ async function rollbackRestoreRecoveryTransaction() {
             operationKind: transaction.operationKind,
             resolvedStrategy: executionResult.strategy,
             fallbackApplied: !!executionResult.fallbackApplied,
+            mergeFolderRemoved: mergeCleanupResult ? (mergeCleanupResult.success === true) : null,
             ...(executionResult || {})
         }
     } catch (error) {
@@ -10942,6 +11947,7 @@ async function rollbackRestoreRecoveryTransaction() {
         return response
     } finally {
         isBookmarkRestoring = false
+        isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false })
         } catch (_) { }
@@ -11035,6 +12041,39 @@ function normalizeRestoreRecordDiffSummaryPayload(summary) {
     }
 
     return normalized;
+}
+
+function countBookmarkTreeContentFolders(snapshotTree) {
+    if (!isBookmarkTreeShapeValid(snapshotTree)) {
+        return 0;
+    }
+
+    const bookmarkCount = countAllBookmarks(snapshotTree);
+    const contentCount = countBookmarkTreeContentNodes(snapshotTree);
+    return Math.max(0, contentCount - bookmarkCount);
+}
+
+function buildOverwriteRestoreDiffSummary(previousTree, currentTree) {
+    if (!isBookmarkTreeShapeValid(previousTree) || !isBookmarkTreeShapeValid(currentTree)) {
+        return null;
+    }
+
+    return normalizeRestoreRecordDiffSummaryPayload({
+        bookmarkAdded: countAllBookmarks(currentTree),
+        bookmarkDeleted: countAllBookmarks(previousTree),
+        folderAdded: countBookmarkTreeContentFolders(currentTree),
+        folderDeleted: countBookmarkTreeContentFolders(previousTree),
+        movedCount: 0,
+        modifiedCount: 0,
+        movedBookmarkCount: 0,
+        movedFolderCount: 0,
+        modifiedBookmarkCount: 0,
+        modifiedFolderCount: 0,
+        bookmarkMoved: false,
+        folderMoved: false,
+        bookmarkModified: false,
+        folderModified: false
+    });
 }
 
 function buildBookmarkStatsFromRestoreDiffSummary(diffSummary, currentTree, options = {}) {
@@ -11798,8 +12837,13 @@ function shouldBypassAutoRollbackForError(error) {
 }
 
 async function executeBookmarkOperationWithAutoRollback(operationExecutor, options = {}) {
-    const { preferredLang = 'zh_CN' } = options;
-    const rollbackSnapshot = await browserAPI.bookmarks.getTree();
+    const {
+        preferredLang = 'zh_CN',
+        rollbackSnapshot = null
+    } = options;
+
+    const normalizedRollbackSnapshot = normalizeRestoreRecoverySnapshot(rollbackSnapshot);
+    const rollbackSnapshotTree = normalizedRollbackSnapshot || await browserAPI.bookmarks.getTree();
 
     try {
         return await operationExecutor();
@@ -11813,7 +12857,7 @@ async function executeBookmarkOperationWithAutoRollback(operationExecutor, optio
         let rollbackFinalError = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-                await restoreSnapshotTree(rollbackSnapshot, {
+                await restoreSnapshotTree(rollbackSnapshotTree, {
                     baselineTimestamp: new Date().toISOString(),
                     preferredLang,
                     allowEmpty: true,
@@ -11840,7 +12884,8 @@ async function executeBookmarkOperationWithAutoRollback(operationExecutor, optio
 async function executePatchBookmarkWithAutoRollback(snapshotTree, options = {}) {
     const {
         baselineTimestamp,
-        preferredLang = 'zh_CN'
+        preferredLang = 'zh_CN',
+        rollbackSnapshot = null
     } = options;
 
     return await executeBookmarkOperationWithAutoRollback(async () => {
@@ -11848,7 +12893,10 @@ async function executePatchBookmarkWithAutoRollback(snapshotTree, options = {}) 
             baselineTimestamp,
             preferredLang
         });
-    }, { preferredLang });
+    }, {
+        preferredLang,
+        rollbackSnapshot
+    });
 }
 
 // 通用恢复：将当前书签恢复到指定快照树
@@ -18128,7 +19176,8 @@ async function removeAllChildren(parentId, options = {}) {
 
     await runBatchedTasks(children || [], async (child) => {
         try {
-            if (Array.isArray(child?.children) && child.children.length > 0) {
+            const isFolderNode = !child?.url;
+            if (isFolderNode) {
                 await browserAPI.bookmarks.removeTree(child.id);
             } else {
                 await browserAPI.bookmarks.remove(child.id);
@@ -18418,6 +19467,156 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
     return { created: createdCount };
 }
 
+function cloneRestoreRecoverySerializableData(value) {
+    if (value == null) return value
+    try {
+        return JSON.parse(JSON.stringify(value))
+    } catch (_) {
+        return value
+    }
+}
+
+function findBookmarkNodeByIdInSnapshot(snapshotTree, nodeId = '') {
+    const targetId = String(nodeId || '').trim()
+    if (!targetId) return null
+
+    const queue = (Array.isArray(snapshotTree) ? snapshotTree : [snapshotTree]).filter(Boolean)
+    while (queue.length > 0) {
+        const node = queue.shift()
+        if (!node || typeof node !== 'object') continue
+        if (String(node.id || '').trim() === targetId) {
+            return node
+        }
+        if (Array.isArray(node.children) && node.children.length > 0) {
+            queue.push(...node.children)
+        }
+    }
+
+    return null
+}
+
+function cloneMergeImportNodeForPrediction(node) {
+    if (!node || typeof node !== 'object') return null
+
+    const cloned = {
+        title: String(node.title || '')
+    }
+    if (typeof node.index === 'number' && Number.isFinite(node.index)) {
+        cloned.index = node.index
+    }
+    if (node.url) {
+        cloned.url = String(node.url)
+        return cloned
+    }
+
+    cloned.children = Array.isArray(node.children)
+        ? node.children.map((child) => cloneMergeImportNodeForPrediction(child)).filter(Boolean)
+        : []
+    return cloned
+}
+
+function buildMergeImportRootTitle(preferredLang = 'zh_CN', options = {}) {
+    const explicitTitle = String(options?.importRootTitle || '').trim()
+    if (explicitTitle) return explicitTitle
+
+    const isEn = preferredLang === 'en'
+    const timestampText = String(options?.timestampText || '').trim()
+    const timestamp = timestampText || (() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} `
+            + `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+    })()
+
+    const importKind = options && options.importKind === 'changes' ? 'changes' : 'snapshot'
+    const viewMode = options && (options.viewMode === 'simple' || options.viewMode === 'detailed' || options.viewMode === 'collection')
+        ? options.viewMode
+        : null
+    const meta = options && options.meta && typeof options.meta === 'object' ? options.meta : null
+
+    const viewLabel = viewMode === 'detailed'
+        ? (isEn ? 'Detailed' : '详细')
+        : (viewMode === 'collection'
+            ? (isEn ? 'Collection' : '集合')
+            : (isEn ? 'Simple' : '简略'))
+    const seqText = meta && meta.seqNumber != null ? String(meta.seqNumber) : '-'
+    const fingerprint = meta && meta.fingerprint ? ` [${String(meta.fingerprint).slice(0, 7)}]` : ''
+    const modeSuffix = viewMode ? ` (${viewLabel})` : ''
+
+    if (importKind === 'changes') {
+        return isEn
+            ? `Imported Changes${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`
+            : `导入变化${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`
+    }
+    return isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`
+}
+
+function buildPredictedMergeTargetSnapshot(currentTree, bookmarkTree, options = {}) {
+    const preferredLang = String(options?.preferredLang || 'zh_CN')
+    const isEn = preferredLang === 'en'
+    const clonedCurrentTree = cloneRestoreRecoverySerializableData(currentTree)
+    if (!isBookmarkTreeShapeValid(clonedCurrentTree)) {
+        throw new Error(isEn ? 'Failed to capture current bookmarks before merge restore' : '导入合并前捕获当前书签失败')
+    }
+
+    const roots = Array.isArray(clonedCurrentTree) ? clonedCurrentTree : [clonedCurrentTree]
+    const rootNode = roots[0]
+    if (!rootNode || typeof rootNode !== 'object') {
+        throw new Error(isEn ? 'Cannot find bookmark root container' : '找不到可用的书签根目录')
+    }
+
+    const containerState = buildBookmarkContainerState(rootNode)
+    let targetContainer = null
+    if (options && options.importParentId) {
+        const candidate = findBookmarkNodeByIdInSnapshot(roots, String(options.importParentId))
+        if (candidate && !candidate.url && String(candidate.id || '') !== '0') {
+            targetContainer = candidate
+        }
+    }
+    if (!targetContainer) {
+        targetContainer = containerState.otherBookmarks || containerState.bookmarkBar || containerState.children[0]
+    }
+    if (!targetContainer) {
+        throw new Error(isEn ? 'Cannot find bookmark root container' : '找不到可用的书签根目录')
+    }
+
+    const importRootTitle = buildMergeImportRootTitle(preferredLang, options)
+    const importRootNode = {
+        title: importRootTitle,
+        children: []
+    }
+
+    const sourceNodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree]
+    for (const sourceNode of sourceNodes) {
+        if (!Array.isArray(sourceNode?.children)) continue
+        for (const topFolder of sourceNode.children || []) {
+            if (!topFolder || typeof topFolder !== 'object') continue
+            if (topFolder.url) {
+                const directNode = cloneMergeImportNodeForPrediction(topFolder)
+                if (directNode) {
+                    importRootNode.children.push(directNode)
+                }
+                continue
+            }
+
+            const childNodes = Array.isArray(topFolder.children) ? topFolder.children : []
+            importRootNode.children.push({
+                title: String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签'),
+                children: childNodes.map((child) => cloneMergeImportNodeForPrediction(child)).filter(Boolean)
+            })
+        }
+    }
+
+    if (!Array.isArray(targetContainer.children)) {
+        targetContainer.children = []
+    }
+    targetContainer.children.push(importRootNode)
+
+    return {
+        targetSnapshot: roots,
+        importRootTitle
+    }
+}
+
 async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
     const lang = await getCurrentLang();
     assertBookmarkTreeContent(bookmarkTree, lang, 'merge');
@@ -18444,32 +19643,7 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
 
     const isEn = lang === 'en';
 
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
-        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-    const importKind = options && options.importKind === 'changes' ? 'changes' : 'snapshot';
-    const viewMode = options && (options.viewMode === 'simple' || options.viewMode === 'detailed' || options.viewMode === 'collection') ? options.viewMode : null;
-    const meta = options && options.meta && typeof options.meta === 'object' ? options.meta : null;
-
-    const viewLabel = viewMode === 'detailed'
-        ? (isEn ? 'Detailed' : '详细')
-        : (viewMode === 'collection'
-            ? (isEn ? 'Collection' : '集合')
-            : (isEn ? 'Simple' : '简略'));
-
-    const seqText = meta && meta.seqNumber != null ? String(meta.seqNumber) : '-';
-    const fingerprint = meta && meta.fingerprint ? ` [${String(meta.fingerprint).slice(0, 7)}]` : '';
-    const modeSuffix = viewMode ? ` (${viewLabel})` : '';
-
-    const importRootTitle = (() => {
-        if (importKind === 'changes') {
-            return isEn
-                ? `Imported Changes${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`
-                : `导入变化${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`;
-        }
-        return isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`;
-    })();
+    const importRootTitle = buildMergeImportRootTitle(lang, options)
 
     const importRootFolder = await browserAPI.bookmarks.create({
         parentId: targetContainer.id,
@@ -19902,6 +21076,12 @@ function isCurrentChangesArtifactImportableTreeNode(node) {
     const changeType = String(node.changeType || '').trim();
     if (changeType) return true;
 
+    const nodeType = String(node.type || '').trim();
+    if (nodeType) return true;
+
+    const title = String(node.title || '').trim();
+    if (title) return true;
+
     const children = Array.isArray(node.children) ? node.children : [];
     return children.some((child) => isCurrentChangesArtifactImportableTreeNode(child));
 }
@@ -20160,10 +21340,21 @@ function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode
 }
 
 async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
-    const normalizedRestoreSessionId = String(restoreSessionId || '').trim();
+    const normalizedRestoreSessionId = String(
+        restoreSessionId
+        || `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    ).trim();
+    let recoveryIntentCreated = false;
+    let recoveryTransactionStarted = false;
+    const clearRecoveryIntentIfNeeded = async () => {
+        if (!recoveryIntentCreated || recoveryTransactionStarted) return;
+        await clearRestoreRecoveryIntent(normalizedRestoreSessionId);
+        recoveryIntentCreated = false;
+    };
 
     try {
         isBookmarkRestoring = true;
+        isBookmarkRestoringFromUiFlag = false;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
         } catch (_) { }
@@ -20189,6 +21380,41 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             normalizedStrategy = 'merge';
         }
 
+        const restoreIntentDisplayTitle = String(
+            restoreRecordMeta?.note
+            || restoreRef?.recordTime
+            || restoreRef?.snapshotKey
+            || restoreRef?.changesArtifact?.name
+            || restoreRef?.originalFile
+            || restoreRef?.sourceType
+            || ''
+        ).trim();
+
+        await setRestoreRecoveryIntent({
+            sessionId: normalizedRestoreSessionId,
+            operationKind: 'restore',
+            requestedStrategy,
+            resolvedStrategy: normalizedStrategy,
+            uiSource: 'popup',
+            sourceType,
+            phase: 'intent_preparing_target',
+            displayTitle: restoreIntentDisplayTitle,
+            targetRef: {
+                recordTime: String(restoreRef?.recordTime || restoreRef?.time || ''),
+                snapshotKey: String(restoreRef?.snapshotKey || ''),
+                sourceType,
+                fileName: String(restoreRef?.originalFile || restoreRef?.changesArtifact?.name || restoreRef?.localFileKey || ''),
+                fileUrl: String(restoreRef?.fileUrl || restoreRef?.url || ''),
+                localFileKey: String(restoreRef?.localFileKey || ''),
+                changesArtifactName: String(restoreRef?.changesArtifact?.name || ''),
+                fileCandidates: Array.isArray(restoreRef?.fileCandidates) ? restoreRef.fileCandidates : []
+            },
+            meta: {
+                targetBaselineTimestamp: String(restoreRef?.recordTime || restoreRef?.time || '')
+            }
+        });
+        recoveryIntentCreated = true;
+
         let preRestoreTree = null;
         let preRestoreCapturedAtIso = '';
 
@@ -20196,15 +21422,6 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             preRestoreTree = await browserAPI.bookmarks.getTree();
             if (isBookmarkTreeShapeValid(preRestoreTree)) {
                 preRestoreCapturedAtIso = new Date().toISOString();
-                await browserAPI.storage.local.set({
-                    restoreBaselineSnapshot: {
-                        bookmarkTree: preRestoreTree,
-                        capturedAt: Date.now(),
-                        capturedAtIso: preRestoreCapturedAtIso,
-                        source: 'restoreSelectedVersion',
-                        restoreSessionId: normalizedRestoreSessionId || null
-                    }
-                });
             } else {
                 preRestoreTree = null;
             }
@@ -20227,6 +21444,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             : null;
 
         if (forceChangesViewForMerge && !restoreRef?.changesArtifact) {
+            await clearRecoveryIntentIfNeeded();
             return { success: false, error: 'Changes artifact missing for merge changes mode' };
         }
 
@@ -20264,6 +21482,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             } catch (mergeExtractError) {
                 if (forceChangesViewForMerge) {
                     console.error('[restoreSelectedVersion] changes artifact extract failed in forced changes mode:', mergeExtractError);
+                    await clearRecoveryIntentIfNeeded();
                     return {
                         success: false,
                         error: `Changes artifact extract failed: ${mergeExtractError?.message || 'Unknown error'}`
@@ -20283,6 +21502,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         }
 
         if (!tree) {
+            await clearRecoveryIntentIfNeeded();
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
 
@@ -20307,7 +21527,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 const restoreRecordResult = await handleTriggerRestoreBackupMessage({
                     ...restoreRecordMeta,
                     strategy: appliedRestoreStrategy,
-                    restoreSessionId: normalizedRestoreSessionId
+                    restoreSessionId: normalizedRestoreSessionId,
+                    baselineTreeOverride: isBookmarkTreeShapeValid(preRestoreTree) ? preRestoreTree : null,
+                    baselineTimeOverride: String(preRestoreCapturedAtIso || '')
                 });
                 const restoreRecordSuccess = restoreRecordResult?.success === true;
                 restoreRecordFields = {
@@ -20330,35 +21552,104 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
 
         if (!hasBookmarkTreeContent(tree)) {
             if (normalizedStrategy === 'merge') {
+                await clearRecoveryIntentIfNeeded();
                 return { success: false, error: buildEmptySnapshotError(lang, 'merge') };
             }
 
             const currentCount = await getCurrentRestorableNodeCount();
             if (currentCount > 0) {
+                await clearRecoveryIntentIfNeeded();
                 return { success: false, error: buildEmptySnapshotError(lang, 'overwrite') };
             }
 
-            return await finalizeRestoreSuccess({
+            const emptySnapshotResult = await finalizeRestoreSuccess({
                 strategy: 'overwrite',
                 requestedStrategy,
                 created: 0,
                 skipped: true,
                 message: buildEmptySnapshotNoopMessage(lang, 'overwrite')
             });
+            await clearRecoveryIntentIfNeeded();
+            return emptySnapshotResult;
         }
 
         assertBookmarkTreeContent(tree, lang, normalizedStrategy === 'merge' ? 'merge' : 'overwrite');
 
         if (normalizedStrategy === 'merge') {
+            if (!isBookmarkTreeShapeValid(preRestoreTree)) {
+                preRestoreTree = await browserAPI.bookmarks.getTree();
+                if (!isBookmarkTreeShapeValid(preRestoreTree)) {
+                    throw new Error(lang === 'en' ? 'Failed to capture current bookmarks before restore' : '恢复前捕获当前书签失败');
+                }
+                if (!preRestoreCapturedAtIso) {
+                    preRestoreCapturedAtIso = new Date().toISOString();
+                }
+            }
+
+            const mergeRecoveryPlan = buildPredictedMergeTargetSnapshot(preRestoreTree, tree, {
+                ...(mergeOptions || {}),
+                preferredLang: lang
+            });
+            const mergeTransaction = await beginRestoreRecoveryTransaction({
+                sessionId: normalizedRestoreSessionId,
+                operationKind: 'restore',
+                requestedStrategy: 'merge',
+                resolvedStrategy: 'merge',
+                uiSource: 'popup',
+                sourceType,
+                displayTitle: restoreIntentDisplayTitle,
+                startSnapshot: preRestoreTree,
+                targetSnapshot: mergeRecoveryPlan.targetSnapshot,
+                startedAtIso: preRestoreCapturedAtIso || new Date().toISOString(),
+                meta: {
+                    targetBaselineTimestamp: String(restoreRef?.recordTime || restoreRef?.time || ''),
+                    displayRequestedStrategy: 'merge',
+                    displayResolvedStrategy: 'merge',
+                    mergeImportFolderId: '',
+                    mergeImportParentId: String(mergeOptions?.importParentId || '').trim(),
+                    mergeImportRootTitle: String(mergeRecoveryPlan?.importRootTitle || '').trim(),
+                    mergeImportKind: String(mergeOptions?.importKind || '').trim().toLowerCase() === 'changes' ? 'changes' : 'snapshot',
+                    mergeImportViewMode: String(mergeOptions?.viewMode || '').trim().toLowerCase(),
+                    mergeImportMeta: mergeOptions?.meta && typeof mergeOptions.meta === 'object'
+                        ? cloneRestoreRecoverySerializableData(mergeOptions.meta)
+                        : null,
+                    mergeImportTree: cloneRestoreRecoverySerializableData(tree),
+                    restoreRecordMeta: restoreRecordMeta && typeof restoreRecordMeta === 'object'
+                        ? { ...restoreRecordMeta }
+                        : null
+                }
+            });
+            const mergeSessionId = String(mergeTransaction?.sessionId || normalizedRestoreSessionId).trim();
+            recoveryTransactionStarted = true;
+            await updateRestoreRecoveryTransactionPhase(mergeSessionId, 'apply_started');
+
             const result = await executeBookmarkOperationWithAutoRollback(async () => {
-                return await executeMergeBookmarkRestore(tree, mergeOptions);
+                return await executeMergeBookmarkRestore(tree, {
+                    ...(mergeOptions || {}),
+                    importRootTitle: mergeRecoveryPlan.importRootTitle
+                });
             }, { preferredLang: lang });
+            await updateRestoreRecoveryTransactionMeta(mergeSessionId, {
+                mergeImportFolderId: String(result?.importedFolderId || '').trim(),
+                mergeImportRootTitle: String(result?.importedFolderTitle || mergeRecoveryPlan?.importRootTitle || '').trim()
+            });
+
+            await updateRestoreRecoveryTransactionPhase(mergeSessionId, 'finalizing');
+            try {
+                const completedTransaction = await completeRestoreRecoveryTransaction(mergeSessionId, {
+                    resolvedStrategy: 'merge'
+                });
+                await clearRestoreRecoveryTransactionFully(completedTransaction);
+            } catch (cleanupError) {
+                console.warn('[restoreSelectedVersion] merge transaction cleanup failed:', cleanupError);
+            }
 
             return await finalizeRestoreSuccess({ strategy: 'merge', requestedStrategy: 'merge', ...result });
         }
 
         const stableIdComparable = isRestoreSourceStableIdComparable(restoreRef);
         if (!stableIdComparable && requestedStrategy === 'patch') {
+            await clearRecoveryIntentIfNeeded();
             return {
                 success: false,
                 error: lang === 'en'
@@ -20488,7 +21779,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             resolvedStrategy: decision.strategy,
             uiSource: 'popup',
             sourceType,
-            displayTitle: String(restoreRecordMeta?.note || restoreRef?.recordTime || restoreRef?.snapshotKey || restoreRef?.sourceType || '').trim(),
+            displayTitle: restoreIntentDisplayTitle,
             startSnapshot: preRestoreTree,
             targetSnapshot: tree,
             startedAtIso: preRestoreCapturedAtIso || new Date().toISOString(),
@@ -20499,6 +21790,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                     : null
             }
         });
+        recoveryTransactionStarted = true;
         await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'apply_started');
 
         let appliedStrategy = decision.strategy;
@@ -20510,7 +21802,8 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 patchResult = await executePatchBookmarkWithAutoRollback(tree, {
                     baselineTimestamp: restoreRef?.recordTime || restoreRef?.time || null,
                     preferredLang: lang,
-                    operation: 'restore'
+                    operation: 'restore',
+                    rollbackSnapshot: preRestoreTree
                 });
             } catch (patchError) {
                 if (requestedStrategy === 'patch') {
@@ -20525,7 +21818,10 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 }
                 overwriteResult = await executeBookmarkOperationWithAutoRollback(async () => {
                     return await executeOverwriteBookmarkRestore(tree, overwriteContext);
-                }, { preferredLang: lang });
+                }, {
+                    preferredLang: lang,
+                    rollbackSnapshot: preRestoreTree
+                });
             }
         } else {
             const overwriteContext = await ensureOverwriteExecutionContext();
@@ -20535,7 +21831,10 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             }
             overwriteResult = await executeBookmarkOperationWithAutoRollback(async () => {
                 return await executeOverwriteBookmarkRestore(tree, overwriteContext);
-            }, { preferredLang: lang });
+            }, {
+                preferredLang: lang,
+                rollbackSnapshot: preRestoreTree
+            });
         }
 
         await updateRestoreRecoveryTransactionPhase(normalizedRestoreSessionId, 'finalizing');
@@ -20574,6 +21873,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 await clearRestoreRecoveryTransactionForSession(normalizedRestoreSessionId);
             } catch (_) { }
         }
+        try {
+            await clearRecoveryIntentIfNeeded();
+        } catch (_) { }
         console.error('[restoreSelectedVersion] Failed:', e);
         const response = { success: false, error: e.message };
         if (e?.errorCode) {
@@ -20585,6 +21887,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         return response;
     } finally {
         isBookmarkRestoring = false;
+        isBookmarkRestoringFromUiFlag = false;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
         } catch (_) { }
@@ -20669,9 +21972,13 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             }
             decision.changeRatio = null;
         }
-        // 预演展示采用“可视化口径”（与当前变化卡片一致），
-        // 执行策略仍沿用上面的 ID 严格口径 decision。
-        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+        const resolvedStrategy = String(decision?.strategy || '').toLowerCase() === 'patch'
+            ? 'patch'
+            : 'overwrite';
+        const diffSummary = resolvedStrategy === 'overwrite'
+            ? (buildOverwriteRestoreDiffSummary(currentTree, targetTree)
+                || computeBookmarkGitDiffSummary(currentTree, targetTree))
+            : computeBookmarkGitDiffSummary(currentTree, targetTree);
         const changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
         const changeEntries = Array.from(changeMap.entries()).map(([id, change]) => [String(id), change]);
 
@@ -20682,7 +21989,7 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             targetTree,
             changeEntries,
             requestedStrategy,
-            resolvedStrategy: decision.strategy,
+            resolvedStrategy,
             changeRatio: decision.changeRatio,
             changeScore: decision.changeScore,
             baselineNodeCount: decision.baselineNodeCount,
@@ -20693,64 +22000,6 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
         };
     } catch (e) {
         console.error('[buildOverwriteRestorePreview] Failed:', e);
-        const response = { success: false, error: e.message };
-        if (e?.errorCode) {
-            response.errorCode = e.errorCode;
-        }
-        if (e?.errorDetails && typeof e.errorDetails === 'object') {
-            response.errorDetails = e.errorDetails;
-        }
-        return response;
-    }
-}
-
-// [New] Lightweight diff summary (Current Browser -> Selected Version)
-// Returns { diffSummary } only (no trees) for restore list display.
-async function computeRestoreDiffSummaryAgainstCurrent({ restoreRef, localPayload }) {
-    try {
-        if (!restoreRef) {
-            return { success: false, error: 'Missing restoreRef' };
-        }
-
-        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
-        if (!tree) {
-            return { success: false, error: 'No bookmark tree data found for selected version' };
-        }
-
-        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
-        if (!overwritePlan.success) {
-            return buildOverwriteRestorePlanFailureResponse(overwritePlan);
-        }
-        const referenceRootIds = Array.isArray(containerState?.rootIds) && containerState.rootIds.length > 0
-            ? containerState.rootIds
-            : ['1', '2'];
-
-        const currentTree = await browserAPI.bookmarks.getTree();
-
-        let targetTree = tree;
-        try {
-            targetTree = JSON.parse(JSON.stringify(tree));
-        } catch (_) { }
-
-        ensureRestoreTreeIds(targetTree);
-
-        try {
-            applyRestoreTopLevelRootIdRemap(targetTree, currentTree);
-        } catch (_) { }
-
-        try {
-            normalizeTreeIds(targetTree, currentTree, {
-                referenceRootIds,
-                strictGlobalUrlMatch: true
-            });
-        } catch (_) { }
-
-        ensureRestoreTreeIds(targetTree);
-
-        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
-        return { success: true, diffSummary };
-    } catch (e) {
-        console.error('[computeRestoreDiffSummaryAgainstCurrent] Failed:', e);
         const response = { success: false, error: e.message };
         if (e?.errorCode) {
             response.errorCode = e.errorCode;
@@ -20788,7 +22037,10 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
             preflightToken
         };
     } catch (e) {
-        console.error('[buildMergeRestorePreview] Failed:', e);
+        const errorText = String(e?.message || e || '').trim().toLowerCase();
+        if (!errorText.includes('current changes artifact contains no importable nodes')) {
+            console.error('[buildMergeRestorePreview] Failed:', e);
+        }
         return { success: false, error: e.message };
     }
 }

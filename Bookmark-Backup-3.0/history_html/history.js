@@ -4539,6 +4539,80 @@ function calculateBookmarkFolderDiffs(currentStats, syncHistory, cachedRecord) {
     };
 }
 
+function resolveAbsoluteDisplayStats(stats = {}, options = {}) {
+    const sourceStats = stats && typeof stats === 'object' ? stats : {};
+    const bookmarkDiff = Number.isFinite(Number(options.bookmarkDiff)) ? Number(options.bookmarkDiff) : 0;
+    const folderDiff = Number.isFinite(Number(options.folderDiff)) ? Number(options.folderDiff) : 0;
+    const canCalculateDiff = options.canCalculateDiff === true;
+
+    const normalizeOptionalCount = (value) => (
+        typeof value === 'number' && Number.isFinite(value)
+            ? Math.max(0, Math.floor(value))
+            : null
+    );
+    const deriveFlagCount = (countValue, flagValue) => {
+        const explicitCount = normalizeOptionalCount(countValue);
+        if (explicitCount !== null) return explicitCount;
+        return flagValue ? 1 : 0;
+    };
+
+    const explicitBookmarkAdded = normalizeOptionalCount(sourceStats.bookmarkAdded);
+    const explicitBookmarkDeleted = normalizeOptionalCount(sourceStats.bookmarkDeleted);
+    const explicitFolderAdded = normalizeOptionalCount(sourceStats.folderAdded);
+    const explicitFolderDeleted = normalizeOptionalCount(sourceStats.folderDeleted);
+
+    const bookmarkAddedCount = explicitBookmarkAdded !== null
+        ? explicitBookmarkAdded
+        : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0);
+    const bookmarkDeletedCount = explicitBookmarkDeleted !== null
+        ? explicitBookmarkDeleted
+        : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
+    const folderAddedCount = explicitFolderAdded !== null
+        ? explicitFolderAdded
+        : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0);
+    const folderDeletedCount = explicitFolderDeleted !== null
+        ? explicitFolderDeleted
+        : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0);
+
+    const explicitMovedTotal = normalizeOptionalCount(options.movedTotal);
+    const explicitModifiedTotal = normalizeOptionalCount(options.modifiedTotal);
+
+    const movedTotal = explicitMovedTotal !== null
+        ? explicitMovedTotal
+        : (() => {
+            const movedCount = normalizeOptionalCount(sourceStats.movedCount);
+            if (movedCount !== null) return movedCount;
+            return deriveFlagCount(sourceStats.movedBookmarkCount, sourceStats.bookmarkMoved)
+                + deriveFlagCount(sourceStats.movedFolderCount, sourceStats.folderMoved);
+        })();
+    const modifiedTotal = explicitModifiedTotal !== null
+        ? explicitModifiedTotal
+        : (() => {
+            const modifiedCount = normalizeOptionalCount(sourceStats.modifiedCount);
+            if (modifiedCount !== null) return modifiedCount;
+            return deriveFlagCount(sourceStats.modifiedBookmarkCount, sourceStats.bookmarkModified)
+                + deriveFlagCount(sourceStats.modifiedFolderCount, sourceStats.folderModified);
+        })();
+
+    const hasQuantityChange = bookmarkAddedCount > 0
+        || bookmarkDeletedCount > 0
+        || folderAddedCount > 0
+        || folderDeletedCount > 0;
+    const hasStructuralChange = movedTotal > 0 || modifiedTotal > 0;
+
+    return {
+        bookmarkAddedCount,
+        bookmarkDeletedCount,
+        folderAddedCount,
+        folderDeletedCount,
+        movedTotal,
+        modifiedTotal,
+        hasQuantityChange,
+        hasStructuralChange,
+        hasAnyChange: hasQuantityChange || hasStructuralChange
+    };
+}
+
 function buildChangeSummary(diffMeta, stats, lang) {
     const effectiveLang = lang === 'en' ? 'en' : 'zh_CN';
     const summary = {
@@ -4565,16 +4639,20 @@ function buildChangeSummary(diffMeta, stats, lang) {
     const hasNumericalChange = diffMeta.hasNumericalChange === true;
     const currentBookmarks = diffMeta.currentBookmarkCount ?? 0;
     const currentFolders = diffMeta.currentFolderCount ?? 0;
-
-    // 新口径：若 background 提供了新增/删除分开计数，则优先用它（支持“加减相同数量但内容不同”）
-    const bookmarkAdded = typeof stats?.bookmarkAdded === 'number' ? stats.bookmarkAdded : null;
-    const bookmarkDeleted = typeof stats?.bookmarkDeleted === 'number' ? stats.bookmarkDeleted : null;
-    const folderAdded = typeof stats?.folderAdded === 'number' ? stats.folderAdded : null;
-    const folderDeleted = typeof stats?.folderDeleted === 'number' ? stats.folderDeleted : null;
-    const hasDetailedQuantity = (bookmarkAdded !== null) || (bookmarkDeleted !== null) || (folderAdded !== null) || (folderDeleted !== null);
-    const hasQuantityChange = hasDetailedQuantity
-        ? ((bookmarkAdded || 0) > 0 || (bookmarkDeleted || 0) > 0 || (folderAdded || 0) > 0 || (folderDeleted || 0) > 0)
-        : hasNumericalChange;
+    const {
+        bookmarkAddedCount: bookmarkAdded,
+        bookmarkDeletedCount: bookmarkDeleted,
+        folderAddedCount: folderAdded,
+        folderDeletedCount: folderDeleted,
+        movedTotal,
+        modifiedTotal,
+        hasQuantityChange,
+        hasStructuralChange
+    } = resolveAbsoluteDisplayStats(stats, {
+        bookmarkDiff,
+        folderDiff,
+        canCalculateDiff: hasNumericalChange
+    });
 
     const i18nBookmarksLabel = window.i18nLabels?.bookmarksLabel || (effectiveLang === 'en' ? 'bookmarks' : '个书签');
     const i18nFoldersLabel = window.i18nLabels?.foldersLabel || (effectiveLang === 'en' ? 'folders' : '个文件夹');
@@ -4588,82 +4666,47 @@ function buildChangeSummary(diffMeta, stats, lang) {
     if (hasQuantityChange) {
         summary.hasQuantityChange = true;
         const parts = [];
+        const joinDelta = (deltaParts) => {
+            const sep = '<span style="display:inline-block;width:3px;"></span>/<span style="display:inline-block;width:3px;"></span>';
+            return deltaParts.join(sep);
+        };
 
-        if (hasDetailedQuantity) {
-            const joinDelta = (deltaParts) => {
-                const sep = '<span style="display:inline-block;width:3px;"></span>/<span style="display:inline-block;width:3px;"></span>';
-                return deltaParts.join(sep);
-            };
+        const buildDual = (added, deleted, label) => {
+            const deltaParts = [];
+            if (added > 0) deltaParts.push(`<span style="color:var(--positive-color, #4CAF50);font-weight:bold;">+${added}</span>`);
+            if (deleted > 0) deltaParts.push(`<span style="color:var(--negative-color, #F44336);font-weight:bold;">-${deleted}</span>`);
+            if (deltaParts.length === 0) return '';
+            const numbersHTML = joinDelta(deltaParts);
+            return effectiveLang === 'en' ? `${numbersHTML} ${label}` : `${numbersHTML}${label}`;
+        };
 
-            const buildDual = (added, deleted, label) => {
-                const deltaParts = [];
-                if (added > 0) deltaParts.push(`<span style="color:var(--positive-color, #4CAF50);font-weight:bold;">+${added}</span>`);
-                if (deleted > 0) deltaParts.push(`<span style="color:var(--negative-color, #F44336);font-weight:bold;">-${deleted}</span>`);
-                if (deltaParts.length === 0) return '';
-                const numbersHTML = joinDelta(deltaParts);
-                return effectiveLang === 'en' ? `${numbersHTML} ${label}` : `${numbersHTML}${label}`;
-            };
+        const bookmarkLabel = effectiveLang === 'en' ? 'BKM' : '书签';
+        const folderLabel = effectiveLang === 'en' ? 'FLD' : '文件夹';
 
-            const bookmarkLabel = effectiveLang === 'en' ? 'BKM' : '书签';
-            const folderLabel = effectiveLang === 'en' ? 'FLD' : '文件夹';
+        const bPart = buildDual(bookmarkAdded, bookmarkDeleted, bookmarkLabel);
+        const fPart = buildDual(folderAdded, folderDeleted, folderLabel);
 
-            const bPart = buildDual(bookmarkAdded || 0, bookmarkDeleted || 0, bookmarkLabel);
-            const fPart = buildDual(folderAdded || 0, folderDeleted || 0, folderLabel);
-
-            if (bPart) parts.push(bPart);
-            if (fPart) parts.push(fPart);
-        } else {
-            if (bookmarkDiff !== 0) {
-                const sign = bookmarkDiff > 0 ? '+' : '';
-                const color = bookmarkDiff > 0 ? 'var(--positive-color, #4CAF50)' : 'var(--negative-color, #F44336)';
-                const label = effectiveLang === 'en' ? 'BKM' : '书签';
-                parts.push(`<span style="color:${color};font-weight:bold;">${sign}${bookmarkDiff}</span>${effectiveLang === 'en' ? ` ${label}` : label}`);
-            }
-
-            if (folderDiff !== 0) {
-                const sign = folderDiff > 0 ? '+' : '';
-                const color = folderDiff > 0 ? 'var(--positive-color, #4CAF50)' : 'var(--negative-color, #F44336)';
-                const label = effectiveLang === 'en' ? 'FLD' : '文件夹';
-                parts.push(`<span style="color:${color};font-weight:bold;">${sign}${folderDiff}</span>${effectiveLang === 'en' ? ` ${label}` : label}`);
-            }
-        }
+        if (bPart) parts.push(bPart);
+        if (fPart) parts.push(fPart);
 
         summary.quantityDiffLine = parts.join(effectiveLang === 'en' ? ` <span style="color:var(--text-tertiary);">|</span> ` : '、');
     }
 
-    const bookmarkMoved = Boolean(stats?.bookmarkMoved);
-    const folderMoved = Boolean(stats?.folderMoved);
-    const bookmarkModified = Boolean(stats?.bookmarkModified);
-    const folderModified = Boolean(stats?.folderModified);
-
-    const hasBookmarkStructural = bookmarkMoved || bookmarkModified;
-    const hasFolderStructural = folderMoved || folderModified;
-
-    if (hasBookmarkStructural || hasFolderStructural) {
+    if (hasStructuralChange) {
         summary.hasStructuralChange = true;
-
-        // 构建具体的结构变化列表
         const structuralParts = [];
-        const movedCount = typeof stats?.movedCount === 'number'
-            ? stats.movedCount
-            : (typeof stats?.movedBookmarkCount === 'number' ? stats.movedBookmarkCount : 0) + (typeof stats?.movedFolderCount === 'number' ? stats.movedFolderCount : 0);
-        const modifiedCount = typeof stats?.modifiedCount === 'number'
-            ? stats.modifiedCount
-            : (typeof stats?.modifiedBookmarkCount === 'number' ? stats.modifiedBookmarkCount : 0) + (typeof stats?.modifiedFolderCount === 'number' ? stats.modifiedFolderCount : 0);
 
-        if (bookmarkMoved || folderMoved) {
-            const movedLabel = effectiveLang === 'en' ? (movedCount > 0 ? `${movedCount} moved` : 'Moved') : (movedCount > 0 ? `${movedCount}个移动` : '移动');
+        if (movedTotal > 0) {
+            const movedLabel = effectiveLang === 'en' ? `${movedTotal} moved` : `${movedTotal}个移动`;
             structuralParts.push(movedLabel);
             summary.structuralItems.push(movedLabel);
         }
-        if (bookmarkModified || folderModified) {
-            const modifiedLabel = effectiveLang === 'en' ? (modifiedCount > 0 ? `${modifiedCount} modified` : 'Modified') : (modifiedCount > 0 ? `${modifiedCount}个修改` : '修改');
+        if (modifiedTotal > 0) {
+            const modifiedLabel = effectiveLang === 'en' ? `${modifiedTotal} modified` : `${modifiedTotal}个修改`;
             structuralParts.push(modifiedLabel);
             summary.structuralItems.push(modifiedLabel);
         }
 
-
-        // 用具体的变化类型替代通用的"变动"标签
         const separator = effectiveLang === 'en' ? ' <span style="color:var(--text-tertiary);">|</span> ' : '、';
         const structuralText = structuralParts.join(separator);
         summary.structuralLine = `<span style="color:var(--accent-secondary, #FF9800);font-weight:bold;">${structuralText}</span>`;
@@ -5064,11 +5107,24 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     const folderDiff = diffMeta.folderDiff || 0;
     const isZh = currentLang === 'zh_CN';
 
-    // 数量变化部分 - 书签和文件夹合并显示（与原逻辑一致）
-    const bookmarkAddedCount = typeof stats.bookmarkAdded === 'number' ? stats.bookmarkAdded : (bookmarkDiff > 0 ? bookmarkDiff : 0);
-    const folderAddedCount = typeof stats.folderAdded === 'number' ? stats.folderAdded : (folderDiff > 0 ? folderDiff : 0);
-    const bookmarkDeletedCount = typeof stats.bookmarkDeleted === 'number' ? stats.bookmarkDeleted : (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
-    const folderDeletedCount = typeof stats.folderDeleted === 'number' ? stats.folderDeleted : (folderDiff < 0 ? Math.abs(folderDiff) : 0);
+    const { movedCount, modifiedCount } = await __computeMovedModifiedCountsForCurrentChanges(changeData, stats);
+    const displayStats = resolveAbsoluteDisplayStats(stats, {
+        bookmarkDiff,
+        folderDiff,
+        canCalculateDiff: hasQuantityChange,
+        movedTotal: movedCount,
+        modifiedTotal: modifiedCount
+    });
+    const {
+        bookmarkAddedCount,
+        folderAddedCount,
+        bookmarkDeletedCount,
+        folderDeletedCount,
+        movedTotal,
+        modifiedTotal,
+        hasQuantityChange: normalizedHasQuantityChange,
+        hasStructuralChange: normalizedHasStructuralChange
+    } = displayStats;
 
     const addedParts = [];
     if (bookmarkAddedCount > 0) addedParts.push(`${bookmarkAddedCount} ${isZh ? '个书签' : 'bookmarks'}`);
@@ -5078,13 +5134,10 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     if (bookmarkDeletedCount > 0) deletedParts.push(`${bookmarkDeletedCount} ${isZh ? '个书签' : 'bookmarks'}`);
     if (folderDeletedCount > 0) deletedParts.push(`${folderDeletedCount} ${isZh ? '个文件夹' : 'folders'}`);
 
-    // 结构变化部分
-    const { movedCount, modifiedCount } = await __computeMovedModifiedCountsForCurrentChanges(changeData, stats);
-
-    const addedVisible = hasQuantityChange && addedParts.length > 0;
-    const deletedVisible = hasQuantityChange && deletedParts.length > 0;
-    const movedVisible = (movedCount > 0) || (stats.bookmarkMoved || stats.folderMoved);
-    const modifiedVisible = (modifiedCount > 0) || (stats.bookmarkModified || stats.folderModified);
+    const addedVisible = normalizedHasQuantityChange && addedParts.length > 0;
+    const deletedVisible = normalizedHasQuantityChange && deletedParts.length > 0;
+    const movedVisible = normalizedHasStructuralChange && movedTotal > 0;
+    const modifiedVisible = normalizedHasStructuralChange && modifiedTotal > 0;
 
     __setCurrentChangesOpLine(added, {
         visible: addedVisible,
@@ -5101,8 +5154,8 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     });
 
     const movedText = isZh
-        ? (movedCount > 0 ? `${movedCount} 个移动` : '移动')
-        : (movedCount > 0 ? `${movedCount} moved` : 'Moved');
+        ? (movedTotal > 0 ? `${movedTotal} 个移动` : '移动')
+        : (movedTotal > 0 ? `${movedTotal} moved` : 'Moved');
     __setCurrentChangesOpLine(moved, {
         visible: movedVisible,
         prefix: '>>',
@@ -5111,8 +5164,8 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     });
 
     const modifiedText = isZh
-        ? (modifiedCount > 0 ? `${modifiedCount} 个修改` : '修改')
-        : (modifiedCount > 0 ? `${modifiedCount} modified` : 'Modified');
+        ? (modifiedTotal > 0 ? `${modifiedTotal} 个修改` : '修改')
+        : (modifiedTotal > 0 ? `${modifiedTotal} modified` : 'Modified');
     __setCurrentChangesOpLine(modified, {
         visible: modifiedVisible,
         prefix: '~',
@@ -5121,7 +5174,7 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     });
 
     // 如果没有任何变化（hasChanges=true 但 diff 汇总没有变化的场景）
-    const showUnchanged = !addedVisible && !deletedVisible && !movedVisible && !modifiedVisible && !hasQuantityChange && !hasStructureChange;
+    const showUnchanged = !addedVisible && !deletedVisible && !movedVisible && !modifiedVisible && !normalizedHasQuantityChange && !normalizedHasStructuralChange;
     __setCurrentChangesOpLine(unchanged, {
         visible: showUnchanged,
         prefix: '=',
@@ -10542,6 +10595,73 @@ function countBookmarkTreeContentNodes(snapshotTree) {
     return count;
 }
 
+function countBookmarkTreeContentFolders(snapshotTree) {
+    if (!snapshotTree) return 0;
+
+    const stats = calculateNodeStats(snapshotTree);
+    const bookmarkCount = Number(stats && stats.bookmarks ? stats.bookmarks : 0);
+    const contentCount = countBookmarkTreeContentNodes(snapshotTree);
+    return Math.max(0, contentCount - bookmarkCount);
+}
+
+function buildOverwriteRestoreDiffSummary(previousTree, currentTree) {
+    if (!previousTree || !currentTree) return null;
+
+    const previousStats = calculateNodeStats(previousTree);
+    const currentStats = calculateNodeStats(currentTree);
+
+    return {
+        bookmarkAdded: Number(currentStats && currentStats.bookmarks ? currentStats.bookmarks : 0),
+        bookmarkDeleted: Number(previousStats && previousStats.bookmarks ? previousStats.bookmarks : 0),
+        folderAdded: countBookmarkTreeContentFolders(currentTree),
+        folderDeleted: countBookmarkTreeContentFolders(previousTree),
+        movedCount: 0,
+        modifiedCount: 0,
+        movedBookmarkCount: 0,
+        movedFolderCount: 0,
+        modifiedBookmarkCount: 0,
+        modifiedFolderCount: 0,
+        bookmarkMoved: false,
+        folderMoved: false,
+        bookmarkModified: false,
+        folderModified: false
+    };
+}
+
+function buildPreviewCommitStatsFromDiffSummary(diffSummary) {
+    const summary = (diffSummary && typeof diffSummary === 'object') ? diffSummary : {};
+    const changes = {
+        bookmarkAdded: Number(summary.bookmarkAdded || 0),
+        bookmarkDeleted: Number(summary.bookmarkDeleted || 0),
+        folderAdded: Number(summary.folderAdded || 0),
+        folderDeleted: Number(summary.folderDeleted || 0),
+        bookmarkMoved: !!summary.bookmarkMoved,
+        folderMoved: !!summary.folderMoved,
+        bookmarkModified: !!summary.bookmarkModified,
+        folderModified: !!summary.folderModified,
+        bookmarkMovedCount: Number(summary.movedBookmarkCount || 0),
+        folderMovedCount: Number(summary.movedFolderCount || 0),
+        bookmarkModifiedCount: Number(summary.modifiedBookmarkCount || 0),
+        folderModifiedCount: Number(summary.modifiedFolderCount || 0),
+        hasNoChange: false,
+        isFirst: false
+    };
+
+    const hasNumericalChange =
+        changes.bookmarkAdded > 0
+        || changes.bookmarkDeleted > 0
+        || changes.folderAdded > 0
+        || changes.folderDeleted > 0;
+    const hasStructuralChange =
+        changes.bookmarkMoved
+        || changes.folderMoved
+        || changes.bookmarkModified
+        || changes.folderModified;
+    changes.hasNoChange = !hasNumericalChange && !hasStructuralChange;
+
+    return changes;
+}
+
 function hasBookmarkTreeContent(snapshotTree) {
     return countBookmarkTreeContentNodes(snapshotTree) > 0;
 }
@@ -10672,8 +10792,13 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         }
         rawSummary = summarizeChangeMap(rawChangeMap);
 
+        const anticipatedResolvedStrategy = normalizeRestoreStrategyValue(
+            decision && decision.strategy ? decision.strategy : normalizedRequestedStrategy
+        );
         try {
-            precomputedDiffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+            precomputedDiffSummary = anticipatedResolvedStrategy === 'overwrite'
+                ? buildOverwriteRestoreDiffSummary(currentTree, targetTree)
+                : computeBookmarkGitDiffSummary(currentTree, targetTree);
         } catch (_) {
             precomputedDiffSummary = null;
         }
@@ -10704,6 +10829,7 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         ? 'merge'
         : normalizeRestoreStrategyValue(decision && decision.strategy ? decision.strategy : normalizedRequestedStrategy);
 
+
     if (resolvedStrategy === 'merge') {
         const summary = summarizeMergeImportPayload(targetTree);
         added = summary.added;
@@ -10715,7 +10841,14 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         changeMap = resolvedStrategy === 'overwrite'
             ? normalizeChangeMapForOverwriteAddDeleteOnly(sourceMap)
             : sourceMap;
-        const summary = summarizeChangeMap(changeMap);
+        const summary = resolvedStrategy === 'overwrite' && precomputedDiffSummary
+            ? {
+                added: Number(precomputedDiffSummary.bookmarkAdded || 0) + Number(precomputedDiffSummary.folderAdded || 0),
+                deleted: Number(precomputedDiffSummary.bookmarkDeleted || 0) + Number(precomputedDiffSummary.folderDeleted || 0),
+                moved: 0,
+                modified: 0
+            }
+            : summarizeChangeMap(changeMap);
         added = summary.added;
         deleted = summary.deleted;
         moved = summary.moved;
@@ -10758,13 +10891,8 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
     let html = `
         <span style="font-size: 12px; color: var(--text-secondary);">${prefix}</span>
     `;
-    if (resolvedStrategy === 'patch') {
-        html += `
-        <span>${isZh ? '新增' : 'Added'}: <strong>${added}</strong></span>
-        <span style="margin-left:8px;">${isZh ? '删除' : 'Deleted'}: <strong>${deleted}</strong></span>
-        <span style="margin-left:8px;">${isZh ? '移动' : 'Moved'}: <strong>${moved}</strong></span>
-        <span style="margin-left:8px;">${isZh ? '修改' : 'Modified'}: <strong>${modified}</strong></span>
-    `;
+    if (resolvedStrategy === 'patch' || resolvedStrategy === 'overwrite') {
+        html += renderCommitStatsInline(buildPreviewCommitStatsFromDiffSummary(precomputedDiffSummary));
     } else if (resolvedStrategy === 'merge') {
         html += `
         <span>${isZh ? '新增' : 'Added'}: <strong>${added}</strong></span>
@@ -11003,6 +11131,8 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
             });
             treeHtml = generateImportMergePreviewTreeHtml(wrappedPreviewTree, {
                 maxDepth: 2,
+                lazyDepth: 1,
+                lazyKey: previewRecordKey,
                 customTitle: previewMeta.treeTitle,
                 importResultView: true,
                 viewMode: normalizedSelectedMergeMode
@@ -11049,6 +11179,48 @@ function bindRestorePreviewTreeEvents(previewContent, recordTimeKey) {
 
     leafContainers.forEach(treeContainer => {
         treeContainer.addEventListener('click', (e) => {
+            const loadMoreBtn = e.target && e.target.closest ? e.target.closest('.tree-load-more') : null;
+            if (loadMoreBtn && treeContainer.contains(loadMoreBtn)) {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    const children = loadMoreBtn.closest('.tree-children');
+                    if (!children) return;
+
+                    const lazyKey = treeContainer.dataset && treeContainer.dataset.lazyKey
+                        ? treeContainer.dataset.lazyKey
+                        : String(recordTimeKey || '');
+                    const ctx = window.__historyTreeLazyContexts instanceof Map
+                        ? window.__historyTreeLazyContexts.get(String(lazyKey))
+                        : null;
+                    if (!ctx || typeof ctx.renderChildren !== 'function') return;
+
+                    const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+                    const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+                    const parentId = loadMoreBtn.dataset.parentId
+                        || (children.dataset ? children.dataset.parentId : '')
+                        || '';
+                    const html = ctx.renderChildren(
+                        parentId,
+                        children.dataset ? children.dataset.childLevel : '',
+                        children.dataset ? children.dataset.nextForceInclude : '',
+                        startIndex
+                    );
+                    if (typeof html === 'string' && html) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        const fragment = document.createDocumentFragment();
+                        while (tempDiv.firstChild) fragment.appendChild(tempDiv.firstChild);
+                        try { loadMoreBtn.remove(); } catch (_) { }
+                        children.appendChild(fragment);
+                    }
+                    if (children.dataset) {
+                        children.dataset.childrenLoaded = 'true';
+                    }
+                } catch (_) { }
+                return;
+            }
+
             const treeItem = e.target && e.target.closest ? e.target.closest('.tree-item') : null;
             if (!treeItem) return;
             if (e.target.closest && e.target.closest('a')) return;
@@ -11939,7 +12111,8 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 importParentId: restoreImportTarget?.id || null,
                 mergeViewMode: selectedMergeViewMode,
                 preflightMergeSource: preflightInfo?.mergeSource || '',
-                preflightMergeTree: mergePreflightTree
+                preflightMergeTree: mergePreflightTree,
+                restoreSessionId
             });
         } else if (strategy === 'patch' || strategy === 'auto') {
             setRestoreProgress(10, strategy === 'auto'
@@ -12301,6 +12474,68 @@ async function executeOverwriteRestore(bookmarkTree) {
     return { success: true, created: createdCount, deleted: deletedCount };
 }
 
+const HISTORY_RESTORE_PAYLOAD_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+
+async function releaseHistoryRestorePayloadToken(token) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) return;
+    try {
+        await browserAPI.runtime.sendMessage({
+            action: 'releaseRestorePayloadToken',
+            token: normalizedToken
+        });
+    } catch (_) { }
+}
+
+async function uploadHistoryMergeImportTreeToken(mergeImportTree) {
+    const createRes = await browserAPI.runtime.sendMessage({ action: 'createRestorePayloadToken' });
+    if (!createRes || createRes.success !== true || !createRes.token) {
+        throw new Error((createRes && createRes.error) ? String(createRes.error) : 'Failed to create merge payload token');
+    }
+
+    const token = String(createRes.token || '').trim();
+    if (!token) {
+        throw new Error('Failed to create merge payload token');
+    }
+
+    try {
+        const payloadText = JSON.stringify({ mergeImportTree });
+        const chunks = [];
+        for (let offset = 0; offset < payloadText.length; offset += HISTORY_RESTORE_PAYLOAD_UPLOAD_CHUNK_SIZE) {
+            chunks.push(payloadText.slice(offset, offset + HISTORY_RESTORE_PAYLOAD_UPLOAD_CHUNK_SIZE));
+        }
+        if (chunks.length === 0) {
+            chunks.push('');
+        }
+
+        for (let index = 0; index < chunks.length; index += 1) {
+            const appendRes = await browserAPI.runtime.sendMessage({
+                action: 'appendRestorePayloadTokenChunk',
+                token,
+                index,
+                chunk: chunks[index]
+            });
+            if (!appendRes || appendRes.success !== true) {
+                throw new Error((appendRes && appendRes.error) ? String(appendRes.error) : 'Failed to upload merge payload chunk');
+            }
+        }
+
+        const commitRes = await browserAPI.runtime.sendMessage({
+            action: 'commitRestorePayloadTokenUpload',
+            token,
+            totalChunks: chunks.length
+        });
+        if (!commitRes || commitRes.success !== true) {
+            throw new Error((commitRes && commitRes.error) ? String(commitRes.error) : 'Failed to commit merge payload upload');
+        }
+
+        return token;
+    } catch (error) {
+        await releaseHistoryRestorePayloadToken(token);
+        throw error;
+    }
+}
+
 // 导入式合并（不删除）：把目标版本导入到书签树下的新文件夹中
 // 优先导入“变化视图（简略/详细/集合）”；若该记录未记录变化，则把整个版本作为导入合并进入
 async function executeMergeRestore(bookmarkTree, options = {}) {
@@ -12388,23 +12623,6 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
     };
 
     const viewMode = resolveViewMode();
-    const viewModeLabel = useChangesView
-        ? getRestoreMergeViewModeLabel(viewMode, isZh)
-        : (isZh ? '快照' : 'Snapshot');
-
-    const now = new Date();
-    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
-        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-    const seqText = currentRestoreRecord && currentRestoreRecord.seqNumber != null ? String(currentRestoreRecord.seqNumber) : '-';
-    const folderTitle = isZh
-        ? `导入合并(${viewModeLabel}) - #${seqText} - ${ts}`
-        : `Import Merge (${viewModeLabel}) - #${seqText} - ${ts}`;
-
-    const importRootFolder = await browserAPI.bookmarks.create({
-        parentId: targetContainer.id,
-        title: folderTitle
-    });
 
     const importProgressText = useChangesView
         ? (isZh ? '正在导入变化视图（简略/详细/集合）...' : 'Importing changes view (Simple/Detailed/Collection)...')
@@ -12430,53 +12648,53 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
         treeToImport = bookmarkTree;
     }
 
-    const createNodeRecursive = async (node, parentId) => {
-        if (!node) return 0;
-        if (node.url) {
-            await browserAPI.bookmarks.create({
-                parentId,
-                title: node.title || '',
-                url: node.url,
-                index: node.index
-            });
-            return 1;
-        }
-        const folder = await browserAPI.bookmarks.create({
-            parentId,
-            title: node.title || '',
-            index: node.index
-        });
-        let count = 1;
-        if (node.children && node.children.length) {
-            for (const child of node.children) {
-                count += await createNodeRecursive(child, folder.id);
+    let mergeImportTreeToken = '';
+    try {
+        mergeImportTreeToken = await uploadHistoryMergeImportTreeToken(treeToImport);
+        const response = await browserAPI.runtime.sendMessage({
+            action: 'restoreToHistoryRecord',
+            time: currentRestoreRecord?.time,
+            strategy: 'merge',
+            restoreSessionId: String(options && options.restoreSessionId ? options.restoreSessionId : '').trim(),
+            ...(mergeImportTreeToken
+                ? { mergeImportTreeToken }
+                : { mergeImportTree: treeToImport }),
+            mergeOptions: {
+                importParentId: targetContainer.id,
+                importKind: useChangesView ? 'changes' : 'snapshot',
+                viewMode: useChangesView ? viewMode : null,
+                meta: {
+                    seqNumber: currentRestoreRecord?.seqNumber ?? null,
+                    fingerprint: currentRestoreRecord?.fingerprint || null,
+                    note: currentRestoreRecord?.note || '',
+                    recordTime: currentRestoreRecord?.time != null ? String(currentRestoreRecord.time) : ''
+                }
             }
+        });
+
+        if (isRestoreRecoveryLockedResponse(response)) {
+            promptRestoreRecoveryTransactionFromHistory();
+            return response;
         }
-        return count;
-    };
+        if (!response || response.success !== true) {
+            throw new Error((response && response.error)
+                ? String(response.error)
+                : (isZh ? '导入合并失败' : 'Import merge failed'));
+        }
 
-    let createdCount = 1;
-    const topNodes = collectMergeImportTopNodes(treeToImport);
-    const totalTop = Math.max(1, topNodes.length);
-    let processedTop = 0;
-
-    for (const topNode of topNodes) {
-        if (!topNode) continue;
-        createdCount += await createNodeRecursive(topNode, importRootFolder.id);
-
-        processedTop += 1;
-        const pct = 25 + Math.min(55, Math.round((processedTop / totalTop) * 55));
-        setRestoreProgress(pct, importProgressText);
+        return {
+            success: true,
+            created: Number.isFinite(Number(response.created)) ? Number(response.created) : 0,
+            folderId: response.importedFolderId || response.folderId || '',
+            folderTitle: response.importedFolderTitle || response.folderTitle || '',
+            sourceType: useChangesView ? 'changes' : 'snapshot',
+            viewMode: useChangesView ? viewMode : 'snapshot'
+        };
+    } finally {
+        if (mergeImportTreeToken) {
+            await releaseHistoryRestorePayloadToken(mergeImportTreeToken);
+        }
     }
-
-    return {
-        success: true,
-        created: createdCount,
-        folderId: importRootFolder.id,
-        folderTitle,
-        sourceType: useChangesView ? 'changes' : 'snapshot',
-        viewMode: useChangesView ? viewMode : 'snapshot'
-    };
 }
 
 function calculateChanges(record, index, historyContext) {
@@ -12503,10 +12721,15 @@ function calculateChanges(record, index, historyContext) {
     const folderDiff = bookmarkStats.folderDiff || 0;
 
     // 新口径：新增/删除分开计数（支持“加减相同数量但内容不同”）
-    const bookmarkAdded = typeof bookmarkStats.bookmarkAdded === 'number' ? bookmarkStats.bookmarkAdded : (bookmarkDiff > 0 ? bookmarkDiff : 0);
-    const bookmarkDeleted = typeof bookmarkStats.bookmarkDeleted === 'number' ? bookmarkStats.bookmarkDeleted : (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
-    const folderAdded = typeof bookmarkStats.folderAdded === 'number' ? bookmarkStats.folderAdded : (folderDiff > 0 ? folderDiff : 0);
-    const folderDeleted = typeof bookmarkStats.folderDeleted === 'number' ? bookmarkStats.folderDeleted : (folderDiff < 0 ? Math.abs(folderDiff) : 0);
+    const displayStats = resolveAbsoluteDisplayStats(bookmarkStats, {
+        bookmarkDiff,
+        folderDiff,
+        canCalculateDiff: true
+    });
+    const bookmarkAdded = displayStats.bookmarkAddedCount;
+    const bookmarkDeleted = displayStats.bookmarkDeletedCount;
+    const folderAdded = displayStats.folderAddedCount;
+    const folderDeleted = displayStats.folderDeletedCount;
 
     // 获取结构变化标记（来自 bookmarkStats）
     const bookmarkMoved = bookmarkStats.bookmarkMoved || false;
@@ -16625,11 +16848,42 @@ function applyRecordExpandedState(recordTime, treeContainer) {
                         const html = ctx.renderChildren(
                             item.dataset.nodeId,
                             children.dataset.childLevel,
-                            children.dataset.nextForceInclude
+                            children.dataset.nextForceInclude,
+                            0
                         );
                         children.innerHTML = html;
                         children.dataset.childrenLoaded = 'true';
                         progressed = true;
+                    }
+
+                    // 恢复“已展开状态”时，补齐该层所有批次，保持 WYSIWYG。
+                    let loadMoreBtn = children.querySelector(':scope > .tree-load-more');
+                    let batchGuard = 0;
+                    while (loadMoreBtn && batchGuard++ < 256) {
+                        const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+                        const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+                        const parentId = loadMoreBtn.dataset.parentId || item.dataset.nodeId;
+                        const moreHtml = ctx.renderChildren(
+                            parentId,
+                            children.dataset.childLevel,
+                            children.dataset.nextForceInclude,
+                            startIndex
+                        );
+
+                        if (!moreHtml) {
+                            try { loadMoreBtn.remove(); } catch (_) { }
+                            break;
+                        }
+
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = moreHtml;
+                        const fragment = document.createDocumentFragment();
+                        while (tempDiv.firstChild) fragment.appendChild(tempDiv.firstChild);
+                        try { loadMoreBtn.remove(); } catch (_) { }
+                        children.appendChild(fragment);
+                        children.dataset.childrenLoaded = 'true';
+                        progressed = true;
+                        loadMoreBtn = children.querySelector(':scope > .tree-load-more');
                     }
                     remaining.delete(id);
                 }
@@ -16751,6 +17005,48 @@ function renderDetailModalContent(record, mode) {
                 }
 
                 treeContainer.addEventListener('click', (e) => {
+                    const loadMoreBtn = e.target && e.target.closest ? e.target.closest('.tree-load-more') : null;
+                    if (loadMoreBtn && treeContainer.contains(loadMoreBtn)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                            const children = loadMoreBtn.closest('.tree-children');
+                            if (!children) return;
+
+                            const lazyKey = treeContainer.dataset && treeContainer.dataset.lazyKey
+                                ? treeContainer.dataset.lazyKey
+                                : String(record.time);
+                            const ctx = window.__historyTreeLazyContexts instanceof Map
+                                ? window.__historyTreeLazyContexts.get(String(lazyKey))
+                                : null;
+                            if (!ctx || typeof ctx.renderChildren !== 'function') return;
+
+                            const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+                            const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+                            const parentId = loadMoreBtn.dataset.parentId
+                                || (children.dataset ? children.dataset.parentId : '')
+                                || '';
+                            const html = ctx.renderChildren(
+                                parentId,
+                                children.dataset ? children.dataset.childLevel : '',
+                                children.dataset ? children.dataset.nextForceInclude : '',
+                                startIndex
+                            );
+                            if (typeof html === 'string' && html) {
+                                const tempDiv = document.createElement('div');
+                                tempDiv.innerHTML = html;
+                                const fragment = document.createDocumentFragment();
+                                while (tempDiv.firstChild) fragment.appendChild(tempDiv.firstChild);
+                                try { loadMoreBtn.remove(); } catch (_) { }
+                                children.appendChild(fragment);
+                            }
+                            if (children.dataset) {
+                                children.dataset.childrenLoaded = 'true';
+                            }
+                        } catch (_) { /* ignore */ }
+                        return;
+                    }
+
                     const treeItem = e.target.closest('.tree-item');
                     if (!treeItem) return;
 
@@ -17525,12 +17821,12 @@ function flattenBookmarkTree(tree, result = []) {
 function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
     const maxDepth = typeof options.maxDepth === 'number' ? options.maxDepth : 3;
+    const lazyKey = options.lazyKey ? String(options.lazyKey) : '';
+    const lazyEnabled = !!lazyKey;
+    const lazyDepth = Number.isFinite(options.lazyDepth) ? Number(options.lazyDepth) : null;
+    const previewChildBatchSizeRaw = Number.isFinite(Number(options.childBatchSize)) ? Number(options.childBatchSize) : 100;
+    const previewChildBatchSize = Math.max(50, Math.min(2000, Math.round(previewChildBatchSizeRaw)));
     const importResultView = options.importResultView === true;
-    const previewViewMode = (() => {
-        const text = String(options && options.viewMode ? options.viewMode : '').trim().toLowerCase();
-        return (text === 'simple' || text === 'detailed' || text === 'collection') ? text : '';
-    })();
-    const suppressCollectionNodeMarkers = importResultView && previewViewMode === 'collection';
 
     const resolveNodeChangeType = (node) => {
         if (node && node.isImportPathContext === true) return '';
@@ -17667,6 +17963,70 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
 
     const legend = legendItems.join('');
     const safeTitle = (t) => escapeHtml(String(t == null ? '' : t));
+    const rootChildren = treeRoot && Array.isArray(treeRoot.children) ? treeRoot.children : [];
+    const nodeById = new Map();
+    const runtimeNodeIdMap = new WeakMap();
+    let runtimeNodeIdSeed = 0;
+
+    const getRuntimeNodeId = (node) => {
+        if (!node || typeof node !== 'object') return '';
+        const existing = runtimeNodeIdMap.get(node);
+        if (existing) return existing;
+        const sourceId = node.id != null ? String(node.id) : '';
+        const generated = sourceId
+            ? `${lazyKey || 'preview'}:id:${sourceId}:${runtimeNodeIdSeed++}`
+            : `${lazyKey || 'preview'}:auto:${runtimeNodeIdSeed++}`;
+        runtimeNodeIdMap.set(node, generated);
+        return generated;
+    };
+
+    const buildLoadMoreButtonHtml = ({ parentId, startIndex, childLevel, remainingCount }) => {
+        if (!lazyEnabled || remainingCount <= 0) return '';
+        const label = isZh
+            ? `加载更多（剩余 ${remainingCount} 项）`
+            : `Load more (${remainingCount} remaining)`;
+        return `<button type="button" class="tree-load-more" data-parent-id="${escapeHtml(String(parentId || ''))}" data-start-index="${escapeHtml(String(startIndex))}" data-child-level="${escapeHtml(String(childLevel))}">${escapeHtml(label)}</button>`;
+    };
+
+    const renderNodeChildrenBatch = (parentNode, childLevel, startIndex = 0) => {
+        const childList = parentNode && Array.isArray(parentNode.children) ? parentNode.children : [];
+        if (!childList.length) return '';
+
+        const parsedStart = Number.parseInt(String(startIndex), 10);
+        const safeStart = Number.isFinite(parsedStart) ? Math.max(0, parsedStart) : 0;
+        const batchLimit = lazyEnabled ? previewChildBatchSize : childList.length;
+        const slice = childList.slice(safeStart, safeStart + batchLimit);
+        const nextStart = safeStart + slice.length;
+
+        let html = slice.map((child) => renderNode(child, childLevel)).join('');
+        if (lazyEnabled && nextStart < childList.length) {
+            html += buildLoadMoreButtonHtml({
+                parentId: parentNode.id,
+                startIndex: nextStart,
+                childLevel,
+                remainingCount: childList.length - nextStart
+            });
+        }
+        return html;
+    };
+
+    if (lazyEnabled) {
+        const stack = rootChildren.slice();
+        while (stack.length > 0) {
+            const node = stack.pop();
+            if (!node || typeof node !== 'object') continue;
+
+            const nodeId = getRuntimeNodeId(node);
+            if (nodeId) {
+                nodeById.set(nodeId, node);
+            }
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                    stack.push(node.children[i]);
+                }
+            }
+        }
+    }
 
     const renderNode = (node, level = 0) => {
         if (!node) return '';
@@ -17674,32 +18034,43 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         const cleanTitle = sanitizeImportResultTitle(node.title || '');
         const title = safeTitle(cleanTitle || (isZh ? '(无标题)' : '(Untitled)'));
         const url = node.url ? String(node.url) : '';
+        const nodeId = lazyEnabled ? getRuntimeNodeId(node) : (node.id != null ? String(node.id) : '');
         const isFolder = !url && Array.isArray(node.children);
         const hasChildren = isFolder && node.children.length > 0;
 
         const isImportResultRootNode = node && node.isImportResultRoot === true;
-        const suppressNodeMarkers = suppressCollectionNodeMarkers && !isImportResultRootNode;
+        const suppressNodeMarkers = importResultView && !isImportResultRootNode;
         const { changeClass, statusIcon } = suppressNodeMarkers
             ? { changeClass: '', statusIcon: '' }
             : getChangeMeta(resolveNodeChangeType(node));
         const extraNodeClass = isImportResultRootNode ? 'import-result-root-node' : '';
         const treeItemClass = `${changeClass}${extraNodeClass ? ` ${extraNodeClass}` : ''}`.trim();
-        const shouldExpand = level < maxDepth;
+        const canLazyNode = lazyEnabled && !!nodeId;
+        let shouldExpand = level < maxDepth;
+        if (canLazyNode && lazyDepth != null && level + 1 > lazyDepth) {
+            shouldExpand = false;
+        }
 
         if (isFolder) {
-            const childrenHtml = hasChildren
-                ? node.children.map(child => renderNode(child, level + 1)).join('')
+            let shouldLazyRenderChildren = false;
+            if (canLazyNode && hasChildren) {
+                if (!shouldExpand) shouldLazyRenderChildren = true;
+                if (lazyDepth != null && level + 1 > lazyDepth) shouldLazyRenderChildren = true;
+            }
+
+            const childrenHtml = (!shouldLazyRenderChildren && hasChildren)
+                ? renderNodeChildrenBatch(node, level + 1, 0)
                 : '';
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${treeItemClass}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
+                    <div class="tree-item ${treeItemClass}" data-node-id="${escapeHtml(nodeId)}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                         <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
                         <span class="tree-label">${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
-                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}">
+                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(nodeId)}" data-child-level="${level + 1}">
                         ${childrenHtml}
                     </div>
                 </div>
@@ -17709,7 +18080,7 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         const favicon = typeof getFaviconUrl === 'function' ? getFaviconUrl(url) : '';
         return `
             <div class="tree-node">
-                <div class="tree-item ${treeItemClass}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
+                <div class="tree-item ${treeItemClass}" data-node-id="${escapeHtml(nodeId)}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                     <span class="tree-toggle" style="opacity: 0"></span>
                     ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : '<i class="tree-icon fas fa-bookmark"></i>'}
                     <a href="${escapeHtml(url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
@@ -17719,14 +18090,29 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         `;
     };
 
-    let treeContent = '';
-    if (treeRoot && Array.isArray(treeRoot.children)) {
-        treeRoot.children.forEach(child => {
-            treeContent += renderNode(child, 0);
-        });
+    if (lazyEnabled) {
+        try {
+            if (!window.__historyTreeLazyContexts) {
+                window.__historyTreeLazyContexts = new Map();
+            }
+            window.__historyTreeLazyContexts.set(lazyKey, {
+                renderChildren: (parentId, childLevel, _nextForceInclude, startIndex = 0) => {
+                    const parent = nodeById.get(String(parentId));
+                    if (!parent || !Array.isArray(parent.children)) return '';
+                    const level = Number.isFinite(Number(childLevel)) ? Number(childLevel) : 0;
+                    return renderNodeChildrenBatch(parent, level, startIndex);
+                }
+            });
+        } catch (_) { }
     }
 
+    let treeContent = '';
+    rootChildren.forEach(child => {
+        treeContent += renderNode(child, 0);
+    });
+
     const customTitle = options.customTitle ? String(options.customTitle) : '';
+    const lazyAttr = lazyEnabled ? ` data-lazy-key="${escapeHtml(lazyKey)}"` : '';
 
     return `
         <div class="detail-section">
@@ -17734,7 +18120,7 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
                 <span class="detail-title-left">${safeTitle(customTitle || (isZh ? '导入合并预览' : 'Import Merge Preview'))}</span>
                 <span class="detail-title-legend">${legend}</span>
             </div>
-            <div class="history-tree-container bookmark-tree">
+            <div class="history-tree-container bookmark-tree"${lazyAttr}>
                 ${treeContent || `<div class="detail-empty">${isZh ? '无变化' : 'No changes'}</div>`}
             </div>
         </div>
@@ -17761,12 +18147,48 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
     const hideModeLabel = options.hideModeLabel === true;
     const collectionView = options.collectionView === true;
     const hideSectionTitle = options.hideSectionTitle === true;
+    const previewChildBatchSizeRaw = Number.isFinite(Number(options.childBatchSize)) ? Number(options.childBatchSize) : 100;
+    const previewChildBatchSize = Math.max(50, Math.min(2000, Math.round(previewChildBatchSizeRaw)));
 
     // Backup history tree lazy context (per record).
     // This lets us lazily render children only when a folder is expanded.
     try {
         if (!window.__historyTreeLazyContexts) window.__historyTreeLazyContexts = new Map();
     } catch (_) { /* ignore */ }
+
+    const canBatchLoadChildren = !!(lazyKey || recordTimeKey);
+
+    const buildLoadMoreButtonHtml = ({ parentId, startIndex, childLevel, nextForceInclude, remainingCount }) => {
+        if (!canBatchLoadChildren || remainingCount <= 0) return '';
+        const forceAttr = nextForceInclude === true ? ' data-next-force-include="true"' : '';
+        const label = isZh
+            ? `加载更多（剩余 ${remainingCount} 项）`
+            : `Load more (${remainingCount} remaining)`;
+        return `<button type="button" class="tree-load-more" data-parent-id="${escapeHtml(String(parentId || ''))}" data-start-index="${escapeHtml(String(startIndex))}" data-child-level="${escapeHtml(String(childLevel))}"${forceAttr}>${escapeHtml(label)}</button>`;
+    };
+
+    const renderHistoryChildrenBatch = (parentNode, childLevel, forceInclude, underDeletedAncestor, startIndex = 0) => {
+        const childList = parentNode && Array.isArray(parentNode.children) ? parentNode.children : [];
+        if (!childList.length) return '';
+
+        const parsedStart = Number.parseInt(String(startIndex), 10);
+        const safeStart = Number.isFinite(parsedStart) ? Math.max(0, parsedStart) : 0;
+        const batchLimit = canBatchLoadChildren ? previewChildBatchSize : childList.length;
+        const slice = childList.slice(safeStart, safeStart + batchLimit);
+        const nextStart = safeStart + slice.length;
+
+        let html = slice.map(child => renderHistoryTreeNode(child, childLevel, forceInclude, underDeletedAncestor)).join('');
+        if (canBatchLoadChildren && nextStart < childList.length) {
+            html += buildLoadMoreButtonHtml({
+                parentId: parentNode.id,
+                startIndex: nextStart,
+                childLevel,
+                nextForceInclude: forceInclude,
+                remainingCount: childList.length - nextStart
+            });
+        }
+        return html;
+    };
 
     // 为“路径上的灰点/聚合徽标”构建祖先映射（与 Current Changes / 永久栏目一致）
     // - hintSet: Set<folderId> 需要显示灰点（此文件夹下有变化）
@@ -18029,7 +18451,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                 shouldLazyRenderChildren = true;
             }
             const childrenHtml = (!shouldLazyRenderChildren && hasChildren)
-                ? node.children.map(child => renderHistoryTreeNode(child, level + 1, nextForceInclude, nextUnderDeletedAncestor)).join('')
+                ? renderHistoryChildrenBatch(node, level + 1, nextForceInclude, nextUnderDeletedAncestor, 0)
                 : '';
 
             return `
@@ -18066,14 +18488,14 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
         const contextKey = lazyKey || recordTimeKey;
         if (window.__historyTreeLazyContexts && contextKey) {
             window.__historyTreeLazyContexts.set(contextKey, {
-                renderChildren: (parentId, childLevel, nextForceInclude) => {
+                renderChildren: (parentId, childLevel, nextForceInclude, startIndex = 0) => {
                     const parent = nodeById.get(String(parentId));
                     if (!parent || !Array.isArray(parent.children)) return '';
                     const lvl = Number.isFinite(Number(childLevel)) ? Number(childLevel) : 0;
                     const force = String(nextForceInclude) === 'true';
                     const parentChange = changeMap.get(parentId);
                     const parentIsDeletedFolder = !!(parent && !parent.url && parent.children && parentChange && typeof parentChange.type === 'string' && parentChange.type.split('+').includes('deleted'));
-                    return parent.children.map(ch => renderHistoryTreeNode(ch, lvl, force, parentIsDeletedFolder)).join('');
+                    return renderHistoryChildrenBatch(parent, lvl, force, parentIsDeletedFolder, startIndex);
                 }
             });
         }
@@ -19172,17 +19594,6 @@ function setupEventDelegation() {
 
         try {
             switch (action) {
-                case 'copyCurrentDiff':
-                    await window.copyCurrentDiff();
-                    break;
-                case 'copyHistoryDiff':
-                    // 获取recordTime（可能在button上或父元素上）
-                    const recordTime = button.dataset.recordTime || button.closest('[data-record-time]')?.dataset.recordTime;
-                    if (recordTime) {
-                        await window.copyHistoryDiff(recordTime);
-                    }
-                    break;
-
                 case 'copyJSONDiff':
                     await copyJSONDiff();
                     break;
@@ -19469,6 +19880,7 @@ function showToast(message) {
 function formatRestoreRecoveryPhaseLabel(phase, lang = currentLang) {
     const normalized = String(phase || '').toLowerCase();
     const isEn = lang === 'en';
+    if (normalized === 'intent_preparing_target') return isEn ? 'Preparing Target Snapshot' : '正在准备目标快照';
     if (normalized === 'snapshot_ready') return isEn ? 'Snapshot Ready' : '快照已就绪';
     if (normalized === 'destructive_started') return isEn ? 'Destructive Phase' : '破坏性阶段';
     if (normalized === 'apply_started') return isEn ? 'Applying Changes' : '正在应用变更';
@@ -19504,6 +19916,9 @@ function closeRestoreRecoveryBlockingOverlayInHistory() {
 
     if (state.timer) {
         window.clearInterval(state.timer);
+    }
+    if (state.actionHintTimer) {
+        window.clearInterval(state.actionHintTimer);
     }
     if (state.keydownHandler) {
         document.removeEventListener('keydown', state.keydownHandler, true);
@@ -19574,8 +19989,8 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             <div id="restoreRecoveryBlockingMessage" style="padding:12px 14px;border-radius:12px;background:var(--accent-light);color:var(--accent-primary);border:1px solid var(--border-color);font-size:13px;line-height:1.7;"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
                 <button id="restoreRecoveryDismissBtn" style="display:none;min-width:168px;padding:10px 16px;border:1px dashed var(--border-color);border-radius:10px;background:transparent;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close Panel Only' : '仅关闭当前面板'}</button>
-                <button id="restoreRecoveryContinueBtn" style="min-width:168px;padding:10px 16px;border:none;border-radius:10px;background:var(--accent-primary);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
                 <button id="restoreRecoveryRollbackBtn" style="min-width:168px;padding:10px 16px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
+                <button id="restoreRecoveryContinueBtn" style="min-width:168px;padding:10px 16px;border:none;border-radius:10px;background:var(--accent-primary);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
             </div>
         </div>
     `;
@@ -19600,12 +20015,33 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         continueBtn,
         rollbackBtn,
         actionRunning: false,
+        actionType: '',
+        actionStartedAt: 0,
         lastStatus: null,
         timer: null,
+        actionHintTimer: null,
         keydownHandler: null,
         focusHandler: null
     };
     restoreRecoveryBlockingOverlayState = state;
+
+    const continueIdleText = isEn ? 'Continue to Target' : '继续到目标状态';
+    const rollbackIdleText = isEn ? 'Rollback to Start' : '回滚到开始前状态';
+
+    const applyActionButtonLabels = (actionType = '') => {
+        if (actionType === 'continue') {
+            continueBtn.textContent = isEn ? 'Continuing…' : '继续处理中…';
+            rollbackBtn.textContent = rollbackIdleText;
+            return;
+        }
+        if (actionType === 'rollback') {
+            rollbackBtn.textContent = isEn ? 'Rolling back…' : '回滚处理中…';
+            continueBtn.textContent = continueIdleText;
+            return;
+        }
+        continueBtn.textContent = continueIdleText;
+        rollbackBtn.textContent = rollbackIdleText;
+    };
 
     const setMessage = (textValue, tone = 'info') => {
         if (tone === 'error') {
@@ -19624,7 +20060,11 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         const transaction = status?.transaction || {};
         const rows = [
             [isEn ? 'Operation' : '操作类型', String(transaction.operationKind || '').toLowerCase() === 'revert' ? (isEn ? 'Revert' : '撤销') : (isEn ? 'Restore' : '恢复')],
-            [isEn ? 'Strategy' : '执行策略', String(transaction.resolvedStrategy || '').toLowerCase() === 'patch' ? (isEn ? 'Patch' : '补丁') : (isEn ? 'Overwrite' : '覆盖')],
+            [isEn ? 'Strategy' : '执行策略', String(transaction.resolvedStrategy || '').toLowerCase() === 'patch'
+                ? (isEn ? 'Patch' : '补丁')
+                : (String(transaction.resolvedStrategy || '').toLowerCase() === 'merge'
+                    ? (isEn ? 'Merge' : '导入合并')
+                    : (isEn ? 'Overwrite' : '覆盖'))],
             [isEn ? 'Source' : '来源位置', formatRestoreRecoveryUiSourceLabel(transaction.uiSource, currentLang)],
             [isEn ? 'Phase' : '当前阶段', formatRestoreRecoveryPhaseLabel(transaction.phase, currentLang)],
             [isEn ? 'Started' : '开始时间', formatRestoreRecoveryTimeLabel(transaction.startedAt || transaction.updatedAt, currentLang)]
@@ -19658,10 +20098,12 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         }
         const canContinue = transaction.canContinue !== false;
         const canRollback = transaction.canRollback !== false;
+        const isIntentOnly = transaction.intentOnly === true;
         const isActive = status?.active === true;
         const promptCount = Math.max(0, Number(transaction.promptCount) || 0);
         const promptThreshold = Math.max(1, Number(transaction.promptThreshold) || 3);
         const canDismissPanel = transaction.canDismissPanel === true;
+        const allowDismiss = canDismissPanel || isIntentOnly;
         renderSummary(status);
 
         if (promptCount > 0) {
@@ -19676,8 +20118,8 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
 
         continueBtn.disabled = state.actionRunning || isActive || !canContinue;
         rollbackBtn.disabled = state.actionRunning || isActive || !canRollback;
-        dismissBtn.disabled = state.actionRunning || isActive || !canDismissPanel;
-        dismissBtn.style.display = canDismissPanel ? 'inline-flex' : 'none';
+        dismissBtn.disabled = state.actionRunning || isActive || !allowDismiss;
+        dismissBtn.style.display = allowDismiss ? 'inline-flex' : 'none';
 
         continueBtn.style.opacity = continueBtn.disabled ? '0.55' : '1';
         rollbackBtn.style.opacity = rollbackBtn.disabled ? '0.55' : '1';
@@ -19685,12 +20127,24 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         continueBtn.style.cursor = continueBtn.disabled ? 'not-allowed' : 'pointer';
         rollbackBtn.style.cursor = rollbackBtn.disabled ? 'not-allowed' : 'pointer';
         dismissBtn.style.cursor = dismissBtn.disabled ? 'not-allowed' : 'pointer';
+        if (!state.actionRunning) {
+            applyActionButtonLabels('');
+        }
 
         if (state.actionRunning) {
             return;
         }
         if (isActive) {
             setMessage(isEn ? 'A restore/revert task is currently running in the background. Please wait…' : '后台正在执行恢复/撤销任务，请稍候……', 'info');
+            return;
+        }
+        if (isIntentOnly) {
+            setMessage(
+                isEn
+                    ? 'Detected interruption before target snapshot finished preparing. Continue/Rollback is unavailable now. Please re-run restore/revert from the original entry.'
+                    : '检测到在目标快照准备完成前发生中断。当前无法继续或回滚，请从原入口重新执行恢复/撤销。',
+                'error'
+            );
             return;
         }
         if (!canContinue && !canRollback) {
@@ -19708,8 +20162,8 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         if (promptThreshold > 1 && promptCount === promptThreshold - 1) {
             setMessage(
                 isEn
-                    ? 'Final reminder: skip it again, and this panel will no longer appear; rollback to the pre-start snapshot will no longer be available.'
-                    : '最后一次提醒：若这次仍不处理，下次将不再显示此面板，且无法再回滚到开始前快照。',
+                    ? `Final reminder (${promptCount}/${promptThreshold}): skip it again and, after the next browser restart, this panel will no longer appear; rollback to the pre-start snapshot will no longer be available.`
+                    : `最后一次提醒（${promptCount}/${promptThreshold}）：若这次仍不处理，在下次浏览器重启后将不再显示此面板，且无法再回滚到开始前快照。`,
                 'error'
             );
             return;
@@ -19743,21 +20197,56 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     };
 
     const runAction = async (action) => {
+        const actionType = action === 'continueRestoreRecoveryTransaction' ? 'continue' : 'rollback';
         state.actionRunning = true;
+        state.actionType = actionType;
+        state.actionStartedAt = Date.now();
         continueBtn.disabled = true;
         rollbackBtn.disabled = true;
         dismissBtn.disabled = true;
         continueBtn.style.opacity = '0.55';
         rollbackBtn.style.opacity = '0.55';
         dismissBtn.style.opacity = '0.55';
-        setMessage(action === 'continueRestoreRecoveryTransaction'
-            ? (isEn ? 'Continuing to the target state…' : '正在继续到目标状态……')
-            : (isEn ? 'Rolling back to the state before it started…' : '正在回滚到开始前状态……'), 'info');
+        applyActionButtonLabels(actionType);
+
+        const renderActionProgressMessage = () => {
+            const elapsedSeconds = Math.max(0, Math.floor((Date.now() - state.actionStartedAt) / 1000));
+            if (actionType === 'continue') {
+                setMessage(
+                    isEn
+                        ? `Continuing to the target state… (${elapsedSeconds}s)`
+                        : `正在继续到目标状态……（${elapsedSeconds}秒）`,
+                    'info'
+                );
+                return;
+            }
+            setMessage(
+                isEn
+                    ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
+                    : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
+                'info'
+            );
+        };
+
+        renderActionProgressMessage();
+        if (state.actionHintTimer) {
+            window.clearInterval(state.actionHintTimer);
+        }
+        state.actionHintTimer = window.setInterval(() => {
+            if (!state.actionRunning) return;
+            renderActionProgressMessage();
+        }, 1000);
 
         try {
             const result = await browserAPI.runtime.sendMessage({ action });
             if (!result || result.success !== true) {
                 state.actionRunning = false;
+                state.actionType = '';
+                if (state.actionHintTimer) {
+                    window.clearInterval(state.actionHintTimer);
+                    state.actionHintTimer = null;
+                }
+                applyActionButtonLabels('');
                 await refreshStatus();
                 setMessage(
                     isEn
@@ -19767,12 +20256,25 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 );
                 return;
             }
+            state.actionRunning = false;
+            state.actionType = '';
+            if (state.actionHintTimer) {
+                window.clearInterval(state.actionHintTimer);
+                state.actionHintTimer = null;
+            }
+            applyActionButtonLabels('');
             showToast(action === 'continueRestoreRecoveryTransaction'
                 ? (isEn ? 'Continue completed.' : '继续完成。')
                 : (isEn ? 'Rollback completed.' : '回滚完成。'));
             setTimeout(() => window.location.reload(), 250);
         } catch (error) {
             state.actionRunning = false;
+            state.actionType = '';
+            if (state.actionHintTimer) {
+                window.clearInterval(state.actionHintTimer);
+                state.actionHintTimer = null;
+            }
+            applyActionButtonLabels('');
             await refreshStatus();
             setMessage(
                 isEn
@@ -19793,18 +20295,35 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     });
     dismissBtn.addEventListener('click', () => {
         if (dismissBtn.disabled) return;
+        const isIntentOnly = state.lastStatus?.transaction?.intentOnly === true;
         const confirmed = window.confirm(
-            isEn
-                ? 'This only closes the current panel. The unfinished transaction record remains, but regular actions are no longer blocked after repeated prompts. If you start a new restore/revert, it will replace this unfinished transaction. Close this panel now?'
-                : '这只会关闭当前面板。未完成事务记录仍会保留，但在多次提醒后常规操作已不再被阻止；如果你发起新的恢复/撤销，它会替换这次未完成事务。确定现在关闭这个面板吗？'
+            isIntentOnly
+                ? (isEn
+                    ? 'This closes the current interruption reminder. Continue/Rollback is unavailable for this record and you should re-run restore/revert from the original entry. Close now?'
+                    : '这会关闭当前中断提醒。该记录无法继续/回滚，你需要从原入口重新执行恢复/撤销。确定现在关闭吗？')
+                : (isEn
+                    ? 'This only closes the current panel. The unfinished transaction record remains, but regular actions are no longer blocked after repeated prompts. If you start a new restore/revert, it will replace this unfinished transaction. Close this panel now?'
+                    : '这只会关闭当前面板。未完成事务记录仍会保留，但在多次提醒后常规操作已不再被阻止；如果你发起新的恢复/撤销，它会替换这次未完成事务。确定现在关闭这个面板吗？')
         );
         if (!confirmed) return;
-        closeRestoreRecoveryBlockingOverlayInHistory();
-        showToast(
-            isEn
-                ? 'Panel closed. Regular actions are available again; a new restore/revert can replace this unfinished transaction.'
-                : '已关闭面板。常规操作已恢复可用；新的恢复/撤销可以替换这次未完成事务。'
-        );
+        const dismissTask = isIntentOnly
+            ? browserAPI.runtime.sendMessage({
+                action: 'dismissRestoreRecoveryIntent',
+                sessionId: state.lastStatus?.transaction?.sessionId || ''
+            }).catch(() => null)
+            : Promise.resolve(null);
+        Promise.resolve(dismissTask).finally(() => {
+            closeRestoreRecoveryBlockingOverlayInHistory();
+            showToast(
+                isIntentOnly
+                    ? (isEn
+                        ? 'Reminder closed. Please re-run restore/revert from the original entry if needed.'
+                        : '已关闭提醒。如需处理，请从原入口重新执行恢复/撤销。')
+                    : (isEn
+                        ? 'Panel closed. Regular actions are available again; a new restore/revert can replace this unfinished transaction.'
+                        : '已关闭面板。常规操作已恢复可用；新的恢复/撤销可以替换这次未完成事务。')
+            );
+        });
     });
 
     state.keydownHandler = (event) => {
@@ -19814,7 +20333,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             return;
         }
         if (event.key === 'Tab') {
-            const focusable = [continueBtn, rollbackBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length === 0) {
                 event.preventDefault();
                 panel.focus();
@@ -19831,7 +20350,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     state.focusHandler = (event) => {
         if (!overlay.contains(event.target)) {
             event.stopPropagation();
-            const focusable = [continueBtn, rollbackBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length > 0) {
                 focusable[0].focus();
             } else {
@@ -19843,6 +20362,9 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     document.addEventListener('keydown', state.keydownHandler, true);
     document.addEventListener('focusin', state.focusHandler, true);
     overlay.addEventListener('click', (event) => {
+        if (event.target !== overlay) {
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
     }, true);
@@ -19868,7 +20390,7 @@ async function maybePromptRestoreRecoveryTransactionInHistory() {
         if (!status || status.success !== true || !status.transaction) {
             return;
         }
-        if (status.transaction.canDismissPanel === true) {
+        if (status.transaction.canDismissPanel === true && status.transaction.intentOnly !== true) {
             return;
         }
         await showRestoreRecoveryBlockingOverlayInHistory(status);
@@ -19891,180 +20413,6 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
-
-// =============================================================================
-// 复制Diff功能
-// =============================================================================
-
-// 复制当前Changes视图的diff（JSON格式，限制数量以防止卡顿）
-window.copyCurrentDiff = async function () {
-    try {
-        const changeData = await getDetailedChanges(false);
-
-        // 获取当前书签树用于生成git diff
-        const currentTree = await new Promise(resolve => {
-            browserAPI.bookmarks.getTree(resolve);
-        });
-
-        // 获取上一次备份的树
-        let oldTree = null;
-        const lastData = await new Promise(resolve => {
-            browserAPI.storage.local.get(['lastBookmarkData'], (data) => {
-                resolve(data.lastBookmarkData);
-            });
-        });
-
-        if (lastData && lastData.bookmarkTree) {
-            oldTree = lastData.bookmarkTree;
-        }
-
-        // 生成Git diff格式
-        let diffText = '';
-
-        if (oldTree && currentTree) {
-            // 生成文件树的git diff
-            const oldLines = bookmarkTreeToLines(oldTree);
-            const newLines = bookmarkTreeToLines(currentTree);
-            const hunks = generateGitDiff(oldLines, newLines);
-            diffText = hunksToGitDiffText(hunks, 'bookmarks.html', 'bookmarks.html', currentLang);
-        }
-
-        // 添加变化统计头部
-        let result = '';
-        result += `# 书签变化统计\n`;
-        result += `# 生成时间: ${new Date().toLocaleString()}\n`;
-        result += `#\n`;
-
-        if (changeData.stats) {
-            result += `# 数量变化: `;
-            if (changeData.stats.bookmarkDiff !== 0) {
-                result += `书签 ${changeData.stats.bookmarkDiff > 0 ? '+' : ''}${changeData.stats.bookmarkDiff}`;
-            }
-            if (changeData.stats.folderDiff !== 0) {
-                if (changeData.stats.bookmarkDiff !== 0) result += ', ';
-                result += `文件夹 ${changeData.stats.folderDiff > 0 ? '+' : ''}${changeData.stats.folderDiff}`;
-            }
-            result += `\n`;
-        }
-
-        // 变化明细
-        if (changeData.added && changeData.added.length > 0) {
-            result += `# 新增: ${changeData.added.length}项\n`;
-        }
-        if (changeData.deleted && changeData.deleted.length > 0) {
-            result += `# 删除: ${changeData.deleted.length}项\n`;
-        }
-        if (changeData.moved && changeData.moved.length > 0) {
-            result += `# 移动: ${changeData.moved.length}项\n`;
-        }
-        if (changeData.modified && changeData.modified.length > 0) {
-            result += `# 修改: ${changeData.modified.length}项\n`;
-        }
-        result += `#\n`;
-
-        result += diffText;
-
-        await navigator.clipboard.writeText(result);
-        showToast(currentLang === 'zh_CN' ? 'Git Diff已复制到剪贴板' : 'Git Diff copied to clipboard');
-    } catch (error) {
-        console.error('[复制Diff] 失败:', error);
-        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
-    }
-};
-
-
-
-// 复制历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
-window.copyHistoryDiff = async function (recordTime) {
-    try {
-        const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
-        if (recordIndex === -1) {
-            showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
-            return;
-        }
-
-        const record = syncHistory[recordIndex];
-        let result = '';
-
-        // 生成diff文件头
-        result += `# 备份历史记录 - Git Diff\n`;
-        result += `# 备份时间: ${record.time || new Date().toLocaleString()}\n`;
-        result += `# 备份类型: ${record.type || 'unknown'}\n`;
-        result += `# 备份方向: ${record.direction || 'unknown'}\n`;
-        result += `# 备份状态: ${record.status || 'unknown'}\n`;
-        if (record.note) {
-            result += `# 备份备注: ${record.note}\n`;
-        }
-        result += `#\n`;
-
-        // 添加统计信息
-        if (record.bookmarkStats) {
-            result += `# 当前统计:\n`;
-            result += `# - 书签数: ${record.bookmarkStats.currentBookmarkCount || 0}\n`;
-            result += `# - 文件夹数: ${record.bookmarkStats.currentFolderCount || 0}\n`;
-            if (record.bookmarkStats.prevBookmarkCount !== undefined) {
-                result += `# - 书签变化: ${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff || 0}\n`;
-            }
-            if (record.bookmarkStats.prevFolderCount !== undefined) {
-                result += `# - 文件夹变化: ${record.bookmarkStats.folderDiff > 0 ? '+' : ''}${record.bookmarkStats.folderDiff || 0}\n`;
-            }
-            result += `#\n`;
-        }
-
-        // 如果是第一次备份
-        if (record.isFirstBackup) {
-            result += `# ===== 首次备份 - 初始内容 =====\n`;
-            if (record.bookmarkTree) {
-                const lines = bookmarkTreeToLines(record.bookmarkTree);
-                result += `diff --git a/bookmarks.html b/bookmarks.html\n`;
-                result += `new file mode 100644\n`;
-                result += `index 0000000..1111111\n`;
-                result += `--- /dev/null\n`;
-                result += `+++ b/bookmarks.html\n`;
-
-                // 生成所有行为新增
-                lines.forEach((line, idx) => {
-                    result += `+${line.line}\n`;
-                });
-            }
-        } else if (recordIndex > 0) {
-            // 获取前一个备份
-            const prevRecord = syncHistory[recordIndex - 1];
-            if (prevRecord && record.bookmarkTree && prevRecord.bookmarkTree) {
-                // 对比两个备份
-                const oldLines = bookmarkTreeToLines(prevRecord.bookmarkTree);
-                const newLines = bookmarkTreeToLines(record.bookmarkTree);
-                const hunks = generateGitDiff(oldLines, newLines);
-                const diffText = hunksToGitDiffText(hunks, 'bookmarks.html', 'bookmarks.html', currentLang);
-                result += diffText;
-            } else {
-                result += `# 无法生成完整的diff（缺少前一个备份的数据）\n`;
-                if (record.bookmarkStats) {
-                    result += `# 数量变化:\n`;
-                    if (record.bookmarkStats.bookmarkDiff !== 0) {
-                        result += `#   书签: ${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff}\n`;
-                    }
-                    if (record.bookmarkStats.folderDiff !== 0) {
-                        result += `#   文件夹: ${record.bookmarkStats.folderDiff > 0 ? '+' : ''}${record.bookmarkStats.folderDiff}\n`;
-                    }
-                }
-            }
-        } else {
-            result += `# 无法生成diff（这是第一个备份）\n`;
-        }
-
-        await navigator.clipboard.writeText(result);
-
-        const message = record.isFirstBackup
-            ? (currentLang === 'zh_CN' ? '已复制首次备份的Git Diff' : 'Copied first backup Git Diff')
-            : (currentLang === 'zh_CN' ? 'Git Diff已复制到剪贴板' : 'Git Diff copied to clipboard');
-        showToast(message);
-    } catch (error) {
-        console.error('[复制历史Diff] 失败:', error);
-        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
-    }
-};
-
 
 // 从书签树提取书签列表（扁平化，包含路径信息）
 function extractBookmarksFromTree(tree) {
@@ -20109,7 +20457,7 @@ window.exportHistoryDiffToHTML = async function (recordTime) {
 
         const record = syncHistory[recordIndex];
 
-        // 获取diff数据（与copyHistoryDiff相同的逻辑）
+        // 获取历史记录 diff 数据
         let diffData;
 
         if (record.isFirstBackup && record.bookmarkTree) {

@@ -28,6 +28,10 @@ const searchUiState = {
     selectedIndex: -1,
     results: [],
     activeMode: 'current-changes',
+    currentChangesTypeFilter: null,
+    currentChangesTypeCounts: null,
+    currentChangesExpandedDomainGroups: new Set(),
+    currentChangesDomainGroupHostFilters: new Map(),
     isMenuOpen: false,
     isHelpOpen: false
 };
@@ -40,7 +44,9 @@ let currentChangesSearchDb = {
     version: null,
     size: 0,
     items: [],
-    itemById: new Map()
+    itemById: new Map(),
+    changedItems: [],
+    changedItemById: new Map()
 };
 
 // ==================== 搜索上下文管理器 (Phase 4) ====================
@@ -94,8 +100,8 @@ window.SearchContextManager = {
         if (ctx.view === 'current-changes') {
             // Note: current-changes search is text-based (title/url/path). It does not support +/- change filters.
             placeholder = currentLang === 'zh_CN'
-                ? '标题 / URL / 路径（空格=并且）'
-                : 'Title / URL / path (space = AND)';
+                ? '标题 / URL / 域名 / 路径（空格=并且）'
+                : 'Title / URL / domain / path (space = AND)';
         } else if (ctx.view === 'history') {
             placeholder = currentLang === 'zh_CN'
                 ? '序号 / 备注 / 哈希 / 日期 / 类型 / 方向 / 变化'
@@ -216,6 +222,10 @@ function resetMainSearchUI(options = {}) {
             searchUiState.query = '';
             searchUiState.results = [];
             searchUiState.selectedIndex = -1;
+            searchUiState.currentChangesTypeFilter = null;
+            searchUiState.currentChangesTypeCounts = null;
+            searchUiState.currentChangesExpandedDomainGroups = new Set();
+            searchUiState.currentChangesDomainGroupHostFilters = new Map();
         }
     } catch (_) { }
 
@@ -233,7 +243,8 @@ try {
 /**
  * 更新搜索结果选中项
  */
-function updateSearchResultSelection(nextIndex) {
+function updateSearchResultSelection(nextIndex, options = {}) {
+    const { scrollIntoView = true } = options;
     const panel = getSearchResultsPanel();
     if (!panel) return;
     const items = panel.querySelectorAll('.search-result-item');
@@ -248,15 +259,152 @@ function updateSearchResultSelection(nextIndex) {
     const selectedEl = items[clamped];
     if (selectedEl) {
         selectedEl.classList.add('selected');
-        // 仅在面板内滚动，不影响页面滚动
-        try {
-            selectedEl.scrollIntoView({ block: 'nearest' });
-        } catch (_) { }
+        if (scrollIntoView) {
+            // 仅在面板内滚动，不影响页面滚动
+            try {
+                selectedEl.scrollIntoView({ block: 'nearest' });
+            } catch (_) { }
+        }
     }
     searchUiState.selectedIndex = clamped;
 }
 
 // ==================== 搜索结果渲染 ====================
+
+function renderSearchUrlLink(url, options = {}) {
+    const href = String(url || '').trim();
+    if (!href) return '';
+
+    const {
+        text = href,
+        className = 'search-result-url-link'
+    } = options;
+
+    const label = String(text || href).trim() || href;
+    return `<a class="${escapeHtml(className)}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(label)}">${escapeHtml(label)}</a>`;
+}
+
+function renderSearchMetaContent(item, metaText) {
+    const text = String(metaText || '').trim();
+    const itemUrl = String(item?.url || '').trim();
+    if (item?.nodeType === 'bookmark' && itemUrl && (!text || text === itemUrl)) {
+        return renderSearchUrlLink(itemUrl, { text: text || itemUrl });
+    }
+    return text ? escapeHtml(text) : '';
+}
+
+function buildSearchChangeBadgesHtml(item, options = {}) {
+    const isZh = !!options.isZh;
+    const parts = Array.isArray(item?.changeTypeParts) ? item.changeTypeParts : [];
+    const badges = [];
+    if (parts.includes('added') || item?.changeType === 'added') badges.push(`<span class="search-change-prefix added"${isZh ? ' title="新增"' : ' title="Added"'}>+</span>`);
+    if (parts.includes('deleted') || item?.changeType === 'deleted') badges.push(`<span class="search-change-prefix deleted"${isZh ? ' title="删除"' : ' title="Deleted"'}>-</span>`);
+    if (parts.includes('moved')) badges.push(`<span class="search-change-prefix moved"${isZh ? ' title="移动"' : ' title="Moved"'}>>></span>`);
+    if (parts.includes('modified')) badges.push(`<span class="search-change-prefix modified"${isZh ? ' title="修改"' : ' title="Modified"'}>~</span>`);
+    return badges.length ? `<span class="search-change-icons">${badges.join('')}</span>` : '';
+}
+
+function normalizeSearchDomainHostValue(host) {
+    return String(host || '').trim().toLowerCase();
+}
+
+function getSearchDomainSubgroups(item) {
+    return (Array.isArray(item?.domainSubgroups) ? item.domainSubgroups : [])
+        .filter((subgroup) => subgroup && normalizeSearchDomainHostValue(subgroup.host));
+}
+
+function resolveSearchDomainSubgroupSelection(item, selectedHost) {
+    const normalizedSelectedHost = normalizeSearchDomainHostValue(selectedHost);
+    if (!normalizedSelectedHost) return '';
+
+    const subgroups = getSearchDomainSubgroups(item);
+    return subgroups.some((subgroup) => normalizeSearchDomainHostValue(subgroup.host) === normalizedSelectedHost)
+        ? normalizedSelectedHost
+        : '';
+}
+
+function renderSearchDomainGroupSelectorRow(item, groupIdRaw, options = {}) {
+    const variant = options.variant === 'detail' ? 'detail' : 'main';
+    const groupId = escapeHtml(String(groupIdRaw || ''));
+    const rowClass = variant === 'detail' ? 'detail-domain-selector-row' : 'changes-domain-selector-row';
+    const chipClass = variant === 'detail' ? 'detail-domain-selector-chip' : 'changes-domain-selector-chip';
+    const selectedHost = resolveSearchDomainSubgroupSelection(item, options.selectedHost);
+    const groupIndexAttr = Number.isFinite(Number(options.groupIndex))
+        ? ` data-parent-index="${Number(options.groupIndex)}"`
+        : '';
+    const subdomainGroups = getSearchDomainSubgroups(item)
+        .filter((subgroup) => !subgroup.isRootHost);
+
+    if (!subdomainGroups.length) return '';
+
+    const chipsHtml = subdomainGroups.map((subgroup) => {
+        const host = normalizeSearchDomainHostValue(subgroup.host);
+        const safeHost = escapeHtml(String(subgroup.host || '').trim());
+        const isActive = host === selectedHost;
+        return `
+            <button type="button" class="${chipClass}${isActive ? ' active' : ''}" data-domain-group-id="${groupId}" data-domain-host="${escapeHtml(host)}" aria-pressed="${isActive ? 'true' : 'false'}" title="${safeHost}">
+                ${safeHost}
+            </button>
+        `;
+    }).join('');
+
+    return `<div class="${rowClass}" data-domain-group-id="${groupId}"${groupIndexAttr}>${chipsHtml}</div>`;
+}
+
+function renderSearchDomainGroupChildren(item, groupIdRaw, options = {}) {
+    const variant = options.variant === 'detail' ? 'detail' : 'main';
+    const isZh = !!options.isZh;
+    const groupId = escapeHtml(String(groupIdRaw || ''));
+    const childRowClass = variant === 'detail' ? 'detail-domain-child-row' : 'changes-domain-child-row';
+    const childMainClass = variant === 'detail' ? 'detail-domain-child-main' : 'changes-domain-child-main';
+    const childTitleClass = variant === 'detail' ? 'detail-domain-child-title' : 'changes-domain-child-title';
+    const childMetaClass = variant === 'detail' ? 'detail-domain-child-meta' : 'changes-domain-child-meta';
+    const childHostClass = variant === 'detail' ? 'detail-domain-child-host' : 'changes-domain-child-host';
+
+    const flatChildren = Array.isArray(item?.domainChildren) ? item.domainChildren : [];
+    const selectedHost = resolveSearchDomainSubgroupSelection(item, options.selectedHost);
+    const subgroups = Array.isArray(item?.domainSubgroups) && item.domainSubgroups.length > 0
+        ? item.domainSubgroups
+        : [{
+            host: String(item?.domainKey || item?.title || '').trim(),
+            isRootHost: true,
+            bookmarkCount: flatChildren.length,
+            items: flatChildren
+        }];
+    const visibleSubgroups = selectedHost
+        ? subgroups.filter((subgroup) => normalizeSearchDomainHostValue(subgroup?.host) === selectedHost)
+        : subgroups;
+    const shouldShowHostBadge = !selectedHost && visibleSubgroups.filter((subgroup) => subgroup && subgroup.host).length > 1;
+
+    return visibleSubgroups.map((subgroup) => {
+        const subgroupItems = Array.isArray(subgroup?.items) ? subgroup.items : [];
+        if (!subgroupItems.length) return '';
+
+        return subgroupItems.map((child) => {
+            const childIdRaw = String(child?.id || '').trim();
+            if (!childIdRaw) return '';
+            const childBadgesHtml = buildSearchChangeBadgesHtml(child, { isZh });
+            const childTitle = escapeHtml(child?.title || (isZh ? '（无标题）' : '(Untitled)'));
+            const childHost = String(child?.__dh || subgroup?.host || '').trim();
+            const hostBadgeHtml = (shouldShowHostBadge && childHost)
+                ? `<span class="${childHostClass}" title="${escapeHtml(childHost)}">${escapeHtml(childHost)}</span>`
+                : '';
+            return `
+                <div class="${childRowClass}" data-domain-group-id="${groupId}" data-domain-child-id="${escapeHtml(childIdRaw)}">
+                    <div class="${childMainClass}">
+                        <div class="${childTitleClass}">
+                            ${childBadgesHtml}
+                            ${hostBadgeHtml}
+                            <i class="fas fa-bookmark" style="color:#f59e0b; font-size:11px;"></i>
+                            <span>${childTitle}</span>
+                        </div>
+                        ${child?.url ? `<div class="${childMetaClass}">${renderSearchUrlLink(child.url, { text: child.url })}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }).join('');
+}
 
 /**
  * 渲染搜索结果面板
@@ -282,27 +430,89 @@ function renderSearchResultsPanel(results, options = {}) {
     searchUiState.query = query;
     searchUiState.results = Array.isArray(results) ? results : [];
     searchUiState.selectedIndex = -1;
+
+    const isCurrentChangesView = view === 'current-changes';
+    const currentChangesTypeCounts = isCurrentChangesView
+        ? (options.currentChangesTypeCounts || searchUiState.currentChangesTypeCounts || getSearchTypeCounts(searchUiState.results))
+        : null;
+    const currentChangesTypeFilter = isCurrentChangesView
+        ? (options.currentChangesTypeFilter || resolveSearchTypeFilter(searchUiState.currentChangesTypeFilter, currentChangesTypeCounts))
+        : null;
+
+    if (isCurrentChangesView) {
+        searchUiState.currentChangesTypeCounts = currentChangesTypeCounts;
+        searchUiState.currentChangesTypeFilter = currentChangesTypeFilter;
+        if (!(searchUiState.currentChangesExpandedDomainGroups instanceof Set)) {
+            searchUiState.currentChangesExpandedDomainGroups = new Set();
+        }
+        if (!(searchUiState.currentChangesDomainGroupHostFilters instanceof Map)) {
+            searchUiState.currentChangesDomainGroupHostFilters = new Map();
+        }
+        if (currentChangesTypeFilter !== 'domain') {
+            searchUiState.currentChangesExpandedDomainGroups.clear();
+            searchUiState.currentChangesDomainGroupHostFilters.clear();
+        }
+    }
+
     try {
         panel.dataset.panelType = 'results';
     } catch (_) { }
 
     if (!searchUiState.results.length) {
+        const typeToggleHtml = isCurrentChangesView
+            ? buildSearchTypeToggleHtml(currentChangesTypeCounts, currentChangesTypeFilter, { variant: 'main' })
+            : '';
         const emptyText = options.emptyText || i18n.searchNoResults[currentLang];
-        panel.innerHTML = `<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
+        panel.innerHTML = `${typeToggleHtml}<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
         showSearchResultsPanel();
         return;
     }
 
+    const isZh = currentLang === 'zh_CN';
+
     const rowsHtml = searchUiState.results.map((item, idx) => {
+        if (isCurrentChangesView && item && item.nodeType === 'domain_group') {
+            const groupIdRaw = String(item.id || `domain-group-${idx}`);
+            const groupId = escapeHtml(groupIdRaw);
+            const safeTitle = escapeHtml(item.title || (isZh ? '域名分组' : 'Domain group'));
+            const metaText = item.meta ? escapeHtml(item.meta) : '';
+            const isExpanded = searchUiState.currentChangesExpandedDomainGroups.has(groupIdRaw);
+            const chevronClass = isExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
+            const selectedHost = searchUiState.currentChangesDomainGroupHostFilters instanceof Map
+                ? (searchUiState.currentChangesDomainGroupHostFilters.get(groupIdRaw) || '')
+                : '';
+            const childRowsHtml = isExpanded
+                ? `${renderSearchDomainGroupSelectorRow(item, groupIdRaw, { variant: 'main', groupIndex: idx, selectedHost })}${renderSearchDomainGroupChildren(item, groupIdRaw, { variant: 'main', isZh, selectedHost })}`
+                : '';
+
+            return `
+                <div class="search-result-item changes-domain-group-item ${isExpanded ? 'expanded' : ''}" role="option" data-index="${idx}" data-node-id="${escapeHtml(item.id)}" data-domain-group-id="${groupId}">
+                    <div class="search-result-row">
+                        <div class="search-result-main">
+                            <div class="search-result-title">
+                                <span class="search-result-index">${idx + 1}</span>
+                                <span class="changes-domain-group-chevron"><i class="fas ${chevronClass}"></i></span>
+                                <i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>
+                                <span>${safeTitle}</span>
+                            </div>
+                            ${metaText ? `<div class="search-result-meta">${metaText}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+                ${childRowsHtml}
+            `;
+        }
+
         const safeTitle = escapeHtml(item.title || (currentLang === 'zh_CN' ? '（无标题）' : '(Untitled)'));
 
         // Meta Logic: Path or URL
         // If meta is provided (e.g. "Added on 2024..."), use it.
         // If not, and it's a bookmark, try to show URL.
-        let metaText = item.meta ? escapeHtml(item.meta) : '';
+        let metaText = item.meta ? String(item.meta) : '';
         if (!metaText && item.nodeType === 'bookmark' && item.url) {
-            metaText = escapeHtml(item.url);
+            metaText = String(item.url);
         }
+        const metaHtml = renderSearchMetaContent(item, metaText);
 
         // Badges (Moved up to be available for all blocks)
         const parts = Array.isArray(item.changeTypeParts) ? item.changeTypeParts : [];
@@ -314,7 +524,6 @@ function renderSearchResultsPanel(results, options = {}) {
 
         const badgesHtml = badges.length ? badges.join('') : '';
         const changeIconsHtml = badgesHtml ? `<span class="search-change-icons">${badgesHtml}</span>` : '';
-
         // Favicon / Icon Logic - 使用全局 FaviconCache 统一缓存系统
         // 策略: 优先使用 FaviconCache 获取的真实 favicon，
         // 如果获取不到（返回 fallbackIcon）则使用黄色书签 SVG 图标
@@ -352,6 +561,11 @@ function renderSearchResultsPanel(results, options = {}) {
             iconHtml = `<div class="search-result-icon-box-inline" style="display:flex; align-items:center; justify-content:center; width:20px; height:20px; flex-shrink:0;">
                 <i class="fas fa-folder" style="color:#2563eb; font-size:14px;"></i>
             </div>`;
+        } else if (item.nodeType === 'domain_group') {
+            // 域名分组使用地球图标
+            iconHtml = `<div class="search-result-icon-box-inline" style="display:flex; align-items:center; justify-content:center; width:20px; height:20px; flex-shrink:0;">
+                <i class="fas fa-globe" style="color:#0ea5e9; font-size:14px;"></i>
+            </div>`;
         }
 
 
@@ -364,19 +578,22 @@ function renderSearchResultsPanel(results, options = {}) {
                 <div class="search-result-left">
                     ${iconHtml}
                 </div>
-                <div class="search-result-content">
-                    <div class="search-result-title-row">
-                        ${changeIconsHtml}
-                        <span class="search-result-title-text" style="${item.nodeType === 'group_action' ? 'color:var(--accent-primary); font-weight:700;' : ''}">${safeTitle}</span>
-                        ${!iconHtml ? `<span class="search-result-index-tag">${idx + 1}</span>` : ''} 
+                    <div class="search-result-content">
+                        <div class="search-result-title-row">
+                            ${changeIconsHtml}
+                            <span class="search-result-title-text" style="${item.nodeType === 'group_action' ? 'color:var(--accent-primary); font-weight:700;' : ''}">${safeTitle}</span>
+                            ${!iconHtml ? `<span class="search-result-index-tag">${idx + 1}</span>` : ''} 
+                        </div>
+                        ${metaHtml ? `<div class="search-result-meta-row">${metaHtml}</div>` : ''}
                     </div>
-                    ${metaText ? `<div class="search-result-meta-row">${metaText}</div>` : ''}
                 </div>
-            </div>
         `;
     }).join('');
 
-    panel.innerHTML = rowsHtml;
+    const typeToggleHtml = isCurrentChangesView
+        ? buildSearchTypeToggleHtml(currentChangesTypeCounts, currentChangesTypeFilter, { variant: 'main' })
+        : '';
+    panel.innerHTML = `${typeToggleHtml}${rowsHtml}`;
     showSearchResultsPanel();
     updateSearchResultSelection(0);
 }
@@ -392,7 +609,9 @@ function resetCurrentChangesSearchDb(reason = '') {
         version: null,
         size: 0,
         items: [],
-        itemById: new Map()
+        itemById: new Map(),
+        changedItems: [],
+        changedItemById: new Map()
     };
 }
 
@@ -400,9 +619,24 @@ function resetCurrentChangesSearchDb(reason = '') {
  * 获取当前变化搜索签名（用于缓存失效判断）
  */
 function getCurrentChangesSearchSignature() {
-    const version = lastTreeSnapshotVersion || '';
-    const size = (treeChangeMap instanceof Map) ? treeChangeMap.size : 0;
-    return `${version}:${size}`;
+    const version = lastTreeSnapshotVersion || lastTreeFingerprint || '';
+    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : null;
+    const size = changeMap ? changeMap.size : 0;
+    return [
+        String(version),
+        String(size),
+        getSearchChangeMapDigest(changeMap)
+    ].join('|');
+}
+
+function getHistoryDetailSearchSignature(options = {}) {
+    const { changeMap, currentTree, oldTree, recordTime } = options;
+    return [
+        String(recordTime || ''),
+        getSearchChangeMapDigest(changeMap),
+        getSearchTreeDigest(currentTree),
+        getSearchTreeDigest(oldTree)
+    ].join('|');
 }
 
 /**
@@ -444,6 +678,808 @@ function collectNodeInfoForIds(tree, idSet) {
     return result;
 }
 
+const SEARCH_MULTI_LEVEL_DOMAIN_SUFFIXES = new Set([
+    'co.uk', 'org.uk', 'gov.uk', 'ac.uk',
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+    'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+    'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp',
+    'co.kr', 'ne.kr', 'or.kr', 'ac.kr', 'go.kr',
+    'co.in', 'net.in', 'org.in', 'gov.in', 'ac.in', 'edu.in'
+]);
+
+function extractSearchHostFromUrl(url) {
+    if (!url) return '';
+    try {
+        const parsed = new URL(String(url));
+        const host = String(parsed.hostname || '').trim().toLowerCase();
+        return host ? host.replace(/\.$/, '') : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function getSearchRegistrableDomain(host) {
+    const h = String(host || '').trim().toLowerCase().replace(/\.$/, '');
+    if (!h) return '';
+    if (h === 'localhost') return h;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
+    if (/^[0-9a-f:]+$/i.test(h) && h.includes(':')) return h;
+
+    const parts = h.split('.').filter(Boolean);
+    if (parts.length <= 2) return h;
+
+    const last2 = parts.slice(-2).join('.');
+    if (SEARCH_MULTI_LEVEL_DOMAIN_SUFFIXES.has(last2)) {
+        return parts.slice(-3).join('.');
+    }
+    return last2;
+}
+
+function getSearchTypeCounts(items, options = {}) {
+    const list = Array.isArray(items) ? items : [];
+    const domainSource = Array.isArray(options.domainItems) ? options.domainItems : null;
+    let bookmarkCount = 0;
+    let folderCount = 0;
+    let domainCount = 0;
+
+    for (const item of list) {
+        if (!item) continue;
+        if (item.nodeType === 'bookmark') {
+            bookmarkCount += 1;
+            continue;
+        }
+        if (item.nodeType === 'folder') {
+            folderCount += 1;
+        }
+    }
+
+    const domainList = domainSource || list;
+    for (const item of domainList) {
+        if (item && item.nodeType === 'bookmark' && item.__dh) {
+            domainCount += 1;
+        }
+    }
+
+    return { bookmarkCount, folderCount, domainCount };
+}
+
+function resolveSearchTypeFilter(typeFilter, counts) {
+    const requested = String(typeFilter || '').trim().toLowerCase();
+    const { bookmarkCount = 0, folderCount = 0, domainCount = 0 } = counts || {};
+
+    if (requested === 'bookmark' && bookmarkCount > 0) return 'bookmark';
+    if (requested === 'folder' && folderCount > 0) return 'folder';
+    if (requested === 'domain' && domainCount > 0) return 'domain';
+    return null;
+}
+
+function buildSearchDomainGroupedResults(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return [];
+
+    const isZh = typeof currentLang !== 'undefined' && currentLang === 'zh_CN';
+    const groupMap = new Map();
+    let firstOrderSeed = 0;
+
+    for (const item of list) {
+        if (!item || item.nodeType !== 'bookmark') continue;
+
+        const host = String(item.__dh || extractSearchHostFromUrl(item.url || '') || '').trim().toLowerCase();
+        if (!host) continue;
+        const root = String(item.__dr || getSearchRegistrableDomain(host) || host).trim().toLowerCase();
+        const key = root || host;
+        if (!key) continue;
+
+        let group = groupMap.get(key);
+        if (!group) {
+            group = {
+                key,
+                items: [],
+                hostSet: new Set(),
+                subgroups: new Map(),
+                firstOrder: firstOrderSeed++
+            };
+            groupMap.set(key, group);
+        }
+
+        group.items.push(item);
+        group.hostSet.add(host);
+
+        let subgroup = group.subgroups.get(host);
+        if (!subgroup) {
+            subgroup = {
+                key: host,
+                host,
+                isRootHost: host === key,
+                items: [],
+                firstOrder: group.subgroups.size
+            };
+            group.subgroups.set(host, subgroup);
+        }
+        subgroup.items.push(item);
+    }
+
+    const groups = Array.from(groupMap.values());
+    groups.sort((a, b) => {
+        return (a.firstOrder || 0) - (b.firstOrder || 0);
+    });
+
+    return groups.map((group, idx) => {
+        const primary = group.items[0] || {};
+        const bookmarkCount = group.items.length;
+        const hostCount = group.hostSet.size;
+        const domainSubgroups = Array.from(group.subgroups.values())
+            .sort((a, b) => (a.firstOrder || 0) - (b.firstOrder || 0))
+            .map((subgroup) => ({
+                host: subgroup.host,
+                isRootHost: !!subgroup.isRootHost,
+                bookmarkCount: subgroup.items.length,
+                items: subgroup.items
+            }));
+        const subdomainCount = domainSubgroups.filter((subgroup) => !subgroup.isRootHost).length;
+        const meta = isZh
+            ? `${bookmarkCount} 个书签${subdomainCount > 0 ? `，${subdomainCount} 个子域名` : ''}`
+            : `${bookmarkCount} bookmarks${subdomainCount > 0 ? `, ${subdomainCount} subdomains` : ''}`;
+
+        return {
+            id: primary.id || `domain-group-${group.key}-${idx}`,
+            title: group.key,
+            meta,
+            url: '',
+            nodeType: 'domain_group',
+            type: 'domain-group',
+            changeType: primary.changeType || '',
+            changeTypeParts: [],
+            idPathCandidates: Array.isArray(primary.idPathCandidates) ? primary.idPathCandidates : [],
+            domainChildren: group.items,
+            domainSubgroups,
+            domainKey: group.key,
+            domainBookmarkCount: bookmarkCount,
+            domainHostCount: hostCount
+        };
+    });
+}
+
+function filterSearchItemsByType(items, typeFilter, options = {}) {
+    const list = Array.isArray(items) ? items : [];
+    const domainMatchedItems = Array.isArray(options.domainMatchedItems) ? options.domainMatchedItems : null;
+    const counts = getSearchTypeCounts(list, { domainItems: domainMatchedItems });
+    const activeFilter = resolveSearchTypeFilter(typeFilter, counts);
+    const domainGrouped = options && options.domainGrouped !== false;
+
+    let filtered = list;
+    if (activeFilter === 'bookmark') {
+        filtered = list.filter(item => item && item.nodeType === 'bookmark');
+    } else if (activeFilter === 'folder') {
+        filtered = list.filter(item => item && item.nodeType === 'folder');
+    } else if (activeFilter === 'domain') {
+        const domainItems = Array.isArray(domainMatchedItems)
+            ? domainMatchedItems.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh)
+            : list.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh);
+        filtered = domainGrouped ? buildSearchDomainGroupedResults(domainItems) : domainItems;
+    }
+
+    return { filtered, counts, activeFilter };
+}
+
+function buildSearchTypeToggleHtml(typeCounts, activeFilter, options = {}) {
+    const counts = typeCounts || {};
+    const isDetail = options.variant === 'detail';
+    const isZh = typeof currentLang !== 'undefined' && currentLang === 'zh_CN';
+    const rowClass = isDetail ? 'detail-search-type-toggle' : 'changes-search-type-toggle';
+    const btnClass = isDetail ? 'detail-search-type-btn' : 'changes-search-type-btn';
+
+    const makeBtn = (type, label, icon, count, color) => {
+        if (!(Number.isFinite(Number(count)) && Number(count) > 0)) return '';
+        const active = activeFilter === type ? 'active' : '';
+        return `<button type="button" class="${btnClass} ${active}" data-type="${type}" data-color="${color}">
+            <i class="fas ${icon}"></i>
+            <span>${escapeHtml(label)}</span>
+            <b>${count}</b>
+        </button>`;
+    };
+
+    const bookmarkLabel = isZh ? '书签' : 'Bookmark';
+    const folderLabel = isZh ? '文件夹' : 'Folder';
+    const domainLabel = isZh ? '域名' : 'Domain';
+
+    const bookmarkBtn = makeBtn('bookmark', bookmarkLabel, 'fa-bookmark', counts.bookmarkCount, '#f59e0b');
+    const folderBtn = makeBtn('folder', folderLabel, 'fa-folder', counts.folderCount, '#2563eb');
+    const domainBtn = makeBtn('domain', domainLabel, 'fa-globe', counts.domainCount, '#0ea5e9');
+
+    if (!bookmarkBtn && !folderBtn && !domainBtn) return '';
+
+    return `<div class="${rowClass}">${bookmarkBtn}${folderBtn}${domainBtn}</div>`;
+}
+
+function createSearchSignatureHasher() {
+    let hash = 2166136261 >>> 0;
+
+    return {
+        push(value) {
+            const text = String(value == null ? '' : value);
+            for (let i = 0; i < text.length; i += 1) {
+                hash ^= text.charCodeAt(i);
+                hash = Math.imul(hash, 16777619) >>> 0;
+            }
+            hash ^= 31;
+            hash = Math.imul(hash, 16777619) >>> 0;
+        },
+        digest() {
+            return hash.toString(36);
+        }
+    };
+}
+
+function getSearchTreeDigest(tree) {
+    if (!Array.isArray(tree) || !tree[0]) return '0:0';
+
+    const hasher = createSearchSignatureHasher();
+    const stack = [tree[0]];
+    let nodeCount = 0;
+
+    while (stack.length > 0) {
+        const node = stack.pop();
+        if (!node || typeof node !== 'object') continue;
+
+        nodeCount += 1;
+        hasher.push(node.id);
+        hasher.push(node.title);
+        hasher.push(node.url);
+        hasher.push(Array.isArray(node.children) ? node.children.length : 0);
+
+        if (Array.isArray(node.children) && node.children.length > 0) {
+            for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                stack.push(node.children[i]);
+            }
+        }
+    }
+
+    return `${nodeCount}:${hasher.digest()}`;
+}
+
+function getSearchChangeMapDigest(changeMap) {
+    if (!(changeMap instanceof Map) || changeMap.size === 0) return '0:0';
+
+    const hasher = createSearchSignatureHasher();
+    const ids = Array.from(changeMap.keys()).map(v => String(v)).sort();
+    hasher.push(ids.length);
+
+    for (const id of ids) {
+        const change = changeMap.get(id) || {};
+        const moved = change && typeof change.moved === 'object' ? change.moved : null;
+        const modified = change && typeof change.modified === 'object' ? change.modified : null;
+
+        hasher.push(id);
+        hasher.push(change.type || '');
+        hasher.push(change.parentId || '');
+        hasher.push(change.oldParentId || '');
+        hasher.push(moved?.oldPath || '');
+        hasher.push(moved?.newPath || '');
+        hasher.push(modified?.oldTitle || '');
+        hasher.push(modified?.newTitle || '');
+        hasher.push(modified?.oldUrl || '');
+        hasher.push(modified?.newUrl || '');
+    }
+
+    return `${ids.length}:${hasher.digest()}`;
+}
+
+function toSearchSlashFolders(pathText) {
+    if (!pathText) return '';
+    try {
+        return typeof breadcrumbToSlashFolders === 'function' ? String(breadcrumbToSlashFolders(pathText) || '') : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function toSearchSlashFull(pathText) {
+    if (!pathText) return '';
+    try {
+        return typeof breadcrumbToSlashFull === 'function' ? String(breadcrumbToSlashFull(pathText) || '') : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function collectDescendantIdsUnderFolders(tree, folderIdSet) {
+    const descendants = new Set();
+    if (!tree || !tree[0] || !(folderIdSet instanceof Set) || folderIdSet.size === 0) return descendants;
+
+    try {
+        const dfs = (node, insideChangedFolder = false) => {
+            if (!node || node.id == null) return;
+            const id = String(node.id);
+            const isChangedFolder = folderIdSet.has(id);
+            const nextInside = insideChangedFolder || isChangedFolder;
+
+            if (insideChangedFolder && id) {
+                descendants.add(id);
+            }
+
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                for (const child of node.children) dfs(child, nextInside);
+            }
+        };
+        dfs(tree[0], false);
+    } catch (_) { }
+
+    return descendants;
+}
+
+function collectDescendantIdsUnderFoldersFromTrees(trees, folderIdSet) {
+    const merged = new Set();
+    if (!Array.isArray(trees) || !(folderIdSet instanceof Set) || folderIdSet.size === 0) return merged;
+
+    for (const tree of trees) {
+        const descendants = collectDescendantIdsUnderFolders(tree, folderIdSet);
+        if (!(descendants instanceof Set) || descendants.size === 0) continue;
+        descendants.forEach((idRaw) => {
+            const id = String(idRaw || '').trim();
+            if (id) merged.add(id);
+        });
+    }
+
+    return merged;
+}
+
+function collectAncestorIdsFromParentIndexes(targetIdSet, parentIndexes) {
+    const ancestors = new Set();
+    if (!(targetIdSet instanceof Set) || targetIdSet.size === 0 || !Array.isArray(parentIndexes)) return ancestors;
+
+    for (const idRaw of targetIdSet) {
+        const id = String(idRaw || '').trim();
+        if (!id) continue;
+
+        for (const parentIndex of parentIndexes) {
+            if (!(parentIndex instanceof Map)) continue;
+            let currentId = id;
+            let guard = 0;
+            while (guard++ < 2048) {
+                const parentRaw = parentIndex.get(currentId);
+                const parentId = parentRaw != null ? String(parentRaw).trim() : '';
+                if (!parentId || parentId === currentId) break;
+                ancestors.add(parentId);
+                currentId = parentId;
+            }
+        }
+    }
+
+    return ancestors;
+}
+
+function collectIdsFromCollectionNodes(nodes, outSet) {
+    if (!Array.isArray(nodes) || !(outSet instanceof Set)) return;
+    const stack = [...nodes];
+    let guard = 0;
+    while (stack.length > 0 && guard++ < 200000) {
+        const node = stack.pop();
+        if (!node || typeof node !== 'object') continue;
+        const id = String(node.id || '').trim();
+        if (id) outSet.add(id);
+        if (Array.isArray(node.children) && node.children.length > 0) {
+            for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                stack.push(node.children[i]);
+            }
+        }
+    }
+}
+
+function buildCurrentChangesCollectionScopedIdSet(changeMap) {
+    const outSet = new Set();
+    try {
+        if (!(changeMap instanceof Map)) return outSet;
+        if (!Array.isArray(cachedCurrentTree) || !cachedCurrentTree[0]) return outSet;
+        if (typeof buildCurrentChangesExportTreeManual !== 'function') return outSet;
+
+        let treeToRender = cachedCurrentTree;
+        try {
+            if (Array.isArray(cachedOldTree) && cachedOldTree[0] && typeof rebuildTreeWithDeleted === 'function' && typeof hasDeletedChangeInMap === 'function') {
+                if (hasDeletedChangeInMap(changeMap)) {
+                    treeToRender = rebuildTreeWithDeleted(cachedOldTree, cachedCurrentTree, changeMap);
+                }
+            }
+        } catch (_) {
+            treeToRender = cachedCurrentTree;
+        }
+
+        const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+        const collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
+            mode: 'collection',
+            lang,
+            stats: {}
+        });
+        collectIdsFromCollectionNodes(collectionChildren, outSet);
+    } catch (_) { }
+
+    return outSet;
+}
+
+function buildCollectionScopedIdSetFromTree(treeToRender, changeMap) {
+    const outSet = new Set();
+    try {
+        if (!(changeMap instanceof Map)) return outSet;
+        if (!Array.isArray(treeToRender) || !treeToRender[0]) return outSet;
+        if (typeof buildCurrentChangesExportTreeManual !== 'function') return outSet;
+
+        const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+        const collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
+            mode: 'collection',
+            lang,
+            stats: {}
+        });
+        collectIdsFromCollectionNodes(collectionChildren, outSet);
+    } catch (_) { }
+
+    return outSet;
+}
+
+function getCurrentChangesSearchScopeMode() {
+    try {
+        if (typeof __getChangesPreviewMode === 'function') {
+            const mode = String(__getChangesPreviewMode() || '').toLowerCase();
+            if (mode === 'compact' || mode === 'collection' || mode === 'detailed') return mode;
+        }
+    } catch (_) { }
+    return 'detailed';
+}
+
+function isTreeItemVisuallyVisibleInRoot(itemEl, rootEl) {
+    if (!itemEl) return false;
+    try {
+        if (itemEl.getClientRects().length === 0) return false;
+        let cursor = itemEl;
+        while (cursor && cursor !== rootEl && cursor !== document.body) {
+            const style = window.getComputedStyle(cursor);
+            if (!style) break;
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            cursor = cursor.parentElement;
+        }
+    } catch (_) {
+        return true;
+    }
+    return true;
+}
+
+function getCurrentChangesVisibleNodeIdSet(options = {}) {
+    const visibleOnly = options && options.visibleOnly === true;
+    try {
+        const root = document.getElementById('changesTreePreviewInline');
+        if (!root) return null;
+        const nodes = root.querySelectorAll('.tree-item[data-node-id]');
+        if (!nodes || nodes.length === 0) return null;
+        const idSet = new Set();
+        nodes.forEach((nodeEl) => {
+            if (visibleOnly && !isTreeItemVisuallyVisibleInRoot(nodeEl, root)) return;
+            const raw = nodeEl?.getAttribute('data-node-id');
+            const id = String(raw || '').trim();
+            if (id) idSet.add(id);
+        });
+        return idSet.size > 0 ? idSet : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function buildCurrentChangesDomOrderMap(rootEl, options = {}) {
+    const visibleOnly = options && options.visibleOnly === true;
+    const orderMap = new Map();
+    if (!rootEl) return orderMap;
+
+    try {
+        const nodes = rootEl.querySelectorAll('.tree-item[data-node-id]');
+        let order = 0;
+        nodes.forEach((nodeEl) => {
+            if (visibleOnly && !isTreeItemVisuallyVisibleInRoot(nodeEl, rootEl)) return;
+            const raw = nodeEl && typeof nodeEl.getAttribute === 'function'
+                ? nodeEl.getAttribute('data-node-id')
+                : '';
+            const id = String(raw || '').trim();
+            if (!id || orderMap.has(id)) return;
+            orderMap.set(id, order++);
+        });
+    } catch (_) { }
+
+    return orderMap;
+}
+
+function buildCurrentChangesTreeOrderMapFromRoot(rootNode) {
+    const orderMap = new Map();
+    if (!rootNode || typeof rootNode !== 'object') return orderMap;
+
+    try {
+        const stack = [rootNode];
+        let order = 0;
+        while (stack.length > 0) {
+            const node = stack.pop();
+            if (!node || node.id == null) continue;
+
+            const id = String(node.id || '').trim();
+            if (id && !orderMap.has(id)) {
+                orderMap.set(id, order++);
+            }
+
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                    stack.push(node.children[i]);
+                }
+            }
+        }
+    } catch (_) { }
+
+    return orderMap;
+}
+
+function buildCurrentChangesNodeIdSetFromRoot(rootNode) {
+    const idSet = new Set();
+    if (!rootNode || typeof rootNode !== 'object') return idSet;
+
+    try {
+        const stack = [rootNode];
+        while (stack.length > 0) {
+            const node = stack.pop();
+            if (!node || node.id == null) continue;
+
+            const id = String(node.id || '').trim();
+            if (id) idSet.add(id);
+
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                    stack.push(node.children[i]);
+                }
+            }
+        }
+    } catch (_) { }
+
+    return idSet;
+}
+
+function getCurrentChangesSearchRenderTreeRootFromData() {
+    try {
+        if (!Array.isArray(cachedCurrentTree) || !cachedCurrentTree[0]) return null;
+
+        let treeToRender = cachedCurrentTree;
+        try {
+            const changeMap = treeChangeMap instanceof Map ? treeChangeMap : null;
+            if (changeMap && changeMap.size > 0 &&
+                Array.isArray(cachedOldTree) && cachedOldTree[0] &&
+                typeof rebuildTreeWithDeleted === 'function' &&
+                typeof hasDeletedChangeInMap === 'function' &&
+                hasDeletedChangeInMap(changeMap)) {
+                treeToRender = rebuildTreeWithDeleted(cachedOldTree, cachedCurrentTree, changeMap);
+            }
+        } catch (_) {
+            treeToRender = cachedCurrentTree;
+        }
+
+        return (Array.isArray(treeToRender) && treeToRender[0]) ? treeToRender[0] : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function getCurrentChangesPreviewTreeOrderMap(previewRootEl) {
+    let rootNode = null;
+    try {
+        rootNode = window.__changesPreviewTreeRoot || null;
+    } catch (_) {
+        rootNode = null;
+    }
+    if (!rootNode) {
+        rootNode = getCurrentChangesSearchRenderTreeRootFromData();
+    }
+
+    const treeOrderMap = buildCurrentChangesTreeOrderMapFromRoot(rootNode);
+    if (treeOrderMap.size > 0) return treeOrderMap;
+
+    return buildCurrentChangesDomOrderMap(previewRootEl, { visibleOnly: false });
+}
+
+function getCurrentChangesPreviewRenderableIdSet() {
+    let previewIndex = null;
+    try {
+        if (window.__changesPreviewTreeIndex instanceof Map) {
+            previewIndex = window.__changesPreviewTreeIndex;
+        }
+    } catch (_) {
+        previewIndex = null;
+    }
+
+    if (previewIndex instanceof Map && previewIndex.size > 0) {
+        const idSet = new Set();
+        try {
+            previewIndex.forEach((_, idRaw) => {
+                const id = String(idRaw || '').trim();
+                if (id) idSet.add(id);
+            });
+        } catch (_) { }
+        if (idSet.size > 0) return idSet;
+    }
+
+    // DOM 索引未就绪时，回退到“数据树”索引，避免受懒加载影响。
+    const dataRoot = getCurrentChangesSearchRenderTreeRootFromData();
+    const dataSet = buildCurrentChangesNodeIdSetFromRoot(dataRoot);
+    return dataSet.size > 0 ? dataSet : null;
+}
+
+function buildSearchItemsFromTree(sourceTree, changeMap, changedItemById, options = {}) {
+    const items = [];
+    const itemById = new Map();
+    const changedContextIdSet = options.changedContextIdSet instanceof Set ? options.changedContextIdSet : null;
+
+    try {
+        const tree = sourceTree;
+        if (!tree || !tree[0]) return { items, itemById };
+
+        const pathStack = [];
+        const idStack = [];
+        const dfs = (node) => {
+            if (!node || typeof node.id === 'undefined' || node.id === null) return;
+
+            const title = typeof node.title === 'string' ? node.title : '';
+            if (title) pathStack.push(title);
+
+            const id = String(node.id);
+            idStack.push(id);
+            const url = String(node.url || '').trim();
+            const namedPath = pathStack.join(' > ');
+            const shouldIndex = !!(title || url || namedPath);
+
+            if (shouldIndex) {
+                const fromChanged = (changedItemById instanceof Map) ? (changedItemById.get(id) || null) : null;
+                const changedRaw = (changeMap instanceof Map) ? (changeMap.get(id) || {}) : {};
+                const fallbackChangeType = (changedRaw && typeof changedRaw.type === 'string') ? changedRaw.type : '';
+                const changeType = (fromChanged && typeof fromChanged.changeType === 'string' && fromChanged.changeType)
+                    ? fromChanged.changeType
+                    : fallbackChangeType;
+                const changeTypeParts = changeType ? changeType.split('+') : [];
+
+                const newNamedPath = (fromChanged && fromChanged.newNamedPath)
+                    ? String(fromChanged.newNamedPath)
+                    : namedPath;
+                const oldNamedPath = (fromChanged && fromChanged.oldNamedPath)
+                    ? String(fromChanged.oldNamedPath)
+                    : '';
+
+                const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
+                const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
+                const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
+                const oldPathSlash = oldNamedPath ? toSearchSlashFull(oldNamedPath) : '';
+
+                const domainHost = extractSearchHostFromUrl(url);
+                const domainRoot = getSearchRegistrableDomain(domainHost);
+                const isChanged = (changeMap instanceof Map && changeMap.has(id)) || !!(fromChanged && fromChanged.changeType);
+                const isChangedContext = !isChanged && !!(changedContextIdSet && changedContextIdSet.has(id));
+                const nodeType = url ? 'bookmark' : 'folder';
+
+                const item = {
+                    id,
+                    title,
+                    url,
+                    nodeType,
+                    changeType,
+                    changeTypeParts,
+                    idPathCandidates: [idStack.slice()],
+                    newNamedPath,
+                    oldNamedPath,
+                    newFolderSlash,
+                    oldFolderSlash,
+                    newPathSlash,
+                    oldPathSlash,
+                    domainHost,
+                    domainRoot,
+                    __t: title.toLowerCase(),
+                    __u: url.toLowerCase(),
+                    __pn: (newNamedPath || '').toLowerCase(),
+                    __po: (oldNamedPath || '').toLowerCase(),
+                    __sn: (newPathSlash || newFolderSlash || '').toLowerCase(),
+                    __so: (oldPathSlash || oldFolderSlash || '').toLowerCase(),
+                    __dh: (domainHost || '').toLowerCase(),
+                    __dr: (domainRoot || '').toLowerCase(),
+                    __changed: isChanged ? 1 : 0,
+                    __changed_context: isChangedContext ? 1 : 0
+                };
+
+                items.push(item);
+                itemById.set(id, item);
+            }
+
+            if (Array.isArray(node.children) && node.children.length) {
+                for (const child of node.children) dfs(child);
+            }
+
+            if (title) pathStack.pop();
+            idStack.pop();
+        };
+
+        dfs(tree[0]);
+    } catch (_) { }
+
+    return { items, itemById };
+}
+
+function buildAllCurrentTreeSearchItems(changeMap, changedItemById, options = {}) {
+    return buildSearchItemsFromTree(cachedCurrentTree, changeMap, changedItemById, options);
+}
+
+function getCurrentChangesScopedSearchMeta(db) {
+    const mode = getCurrentChangesSearchScopeMode();
+    const allItems = Array.isArray(db?.items) ? db.items : [];
+    const emptyMeta = { items: [], orderMap: new Map(), mode };
+    if (!allItems.length) return emptyMeta;
+
+    const previewRoot = document.getElementById('changesTreePreviewInline');
+    const visibleOrderMap = buildCurrentChangesDomOrderMap(previewRoot, { visibleOnly: true });
+    const visibleScopedIdSet = visibleOrderMap.size > 0 ? new Set(visibleOrderMap.keys()) : null;
+    const dataOrderMap = getCurrentChangesPreviewTreeOrderMap(previewRoot);
+
+    if (mode === 'collection') {
+        // 集合模式索引源：collectionScopedIdSet（来自 collection 数据树），不依赖懒加载 DOM 可见性。
+        const collectionScopedIdSet = db && db.collectionScopedIdSet instanceof Set ? db.collectionScopedIdSet : null;
+        if (collectionScopedIdSet && collectionScopedIdSet.size > 0) {
+            const scopedItems = allItems.filter(item => item && collectionScopedIdSet.has(String(item.id || '')));
+            if (scopedItems.length > 0) {
+                return { items: scopedItems, orderMap: dataOrderMap, mode };
+            }
+        }
+
+        // 兜底：可见项（防止极端情况下 collection 索引构建失败）
+        if (visibleScopedIdSet && visibleScopedIdSet.size > 0) {
+            const visibleItems = allItems.filter(item => item && visibleScopedIdSet.has(String(item.id || '')));
+            if (visibleItems.length > 0) {
+                return { items: visibleItems, orderMap: visibleOrderMap, mode };
+            }
+        }
+        return emptyMeta;
+    }
+
+    if (mode === 'compact') {
+        // 简略模式索引源：compactScopedIdSet（变化节点 + 上下文 + 祖先），不依赖懒加载 DOM 可见性。
+        const compactScopedIdSet = db && db.compactScopedIdSet instanceof Set ? db.compactScopedIdSet : null;
+        if (compactScopedIdSet && compactScopedIdSet.size > 0) {
+            const scopedItems = allItems.filter(item => item && compactScopedIdSet.has(String(item.id || '')));
+            if (scopedItems.length > 0) {
+                return { items: scopedItems, orderMap: dataOrderMap, mode };
+            }
+        }
+
+        // 兜底：变化项/上下文
+        const compactFallback = allItems.filter(item => item && (item.__changed || item.__changed_context));
+        if (compactFallback.length > 0) {
+            return { items: compactFallback, orderMap: dataOrderMap, mode };
+        }
+        return emptyMeta;
+    }
+
+    if (mode === 'detailed') {
+        // 详细模式索引源：renderableIdSet（优先预览索引，缺失时回退数据树索引）。
+        const renderableIdSet = getCurrentChangesPreviewRenderableIdSet();
+        if (!(renderableIdSet && renderableIdSet.size > 0)) {
+            return emptyMeta;
+        }
+        const scopedItems = allItems.filter(item => item && renderableIdSet.has(String(item.id || '')));
+        return { items: scopedItems, orderMap: dataOrderMap, mode };
+    }
+
+    // 兜底：变化节点 + 变化上下文
+    const fallbackOrderMap = visibleOrderMap.size > 0
+        ? visibleOrderMap
+        : getCurrentChangesPreviewTreeOrderMap(previewRoot);
+    const scoped = allItems.filter(item => item && (item.__changed || item.__changed_context));
+    if (scoped.length > 0) return { items: scoped, orderMap: fallbackOrderMap, mode };
+
+    if (Array.isArray(db?.changedItems) && db.changedItems.length > 0) {
+        return { items: db.changedItems, orderMap: fallbackOrderMap, mode };
+    }
+
+    return {
+        items: allItems.filter(item => item && item.__changed),
+        orderMap: fallbackOrderMap,
+        mode
+    };
+}
+
 /**
  * 构建当前变化搜索数据库
  */
@@ -460,9 +1496,11 @@ function buildCurrentChangesSearchDb() {
 
     const currentInfo = collectNodeInfoForIds(cachedCurrentTree, idSet);
     const oldInfo = collectNodeInfoForIds(cachedOldTree, idSet);
+    const currentParentIndex = buildNodeParentIndexForHistorySearch(cachedCurrentTree);
+    const oldParentIndex = buildNodeParentIndexForHistorySearch(cachedOldTree);
 
-    const items = [];
-    const itemById = new Map();
+    const changedItems = [];
+    const changedItemById = new Map();
 
     for (const id of ids) {
         const change = changeMap ? (changeMap.get(id) || {}) : {};
@@ -474,15 +1512,18 @@ function buildCurrentChangesSearchDb() {
         const title = (cur?.title || old?.title || '').trim();
         const url = (cur?.url || old?.url || '').trim();
         const nodeType = url ? 'bookmark' : 'folder';
+        const currentIdPath = buildNodeIdPathFromParentIndex(id, currentParentIndex);
+        const oldIdPath = buildNodeIdPathFromParentIndex(id, oldParentIndex);
+        const idPathCandidates = mergeHistoryDetailIdPathCandidates(currentIdPath, oldIdPath);
 
         const newNamedPath = (change.moved && change.moved.newPath) ? String(change.moved.newPath) : (cur?.namedPath || '');
         const oldNamedPath = (change.moved && change.moved.oldPath) ? String(change.moved.oldPath) : (old?.namedPath || '');
 
-        const newFolderSlash = newNamedPath ? breadcrumbToSlashFolders(newNamedPath) : '';
-        const oldFolderSlash = oldNamedPath ? breadcrumbToSlashFolders(oldNamedPath) : '';
+        const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
+        const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
 
-        const newPathSlash = newNamedPath ? breadcrumbToSlashFull(newNamedPath) : '';
-        const oldPathSlash = oldNamedPath ? breadcrumbToSlashFull(oldNamedPath) : '';
+        const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
+        const oldPathSlash = oldNamedPath ? toSearchSlashFull(oldNamedPath) : '';
 
         const titleLower = title.toLowerCase();
         const urlLower = url.toLowerCase();
@@ -490,6 +1531,8 @@ function buildCurrentChangesSearchDb() {
         const oldPathLower = (oldNamedPath || '').toLowerCase();
         const newSlashLower = (newPathSlash || newFolderSlash || '').toLowerCase();
         const oldSlashLower = (oldPathSlash || oldFolderSlash || '').toLowerCase();
+        const domainHost = extractSearchHostFromUrl(url);
+        const domainRoot = getSearchRegistrableDomain(domainHost);
 
         const item = {
             id,
@@ -498,22 +1541,148 @@ function buildCurrentChangesSearchDb() {
             nodeType,
             changeType,
             changeTypeParts,
+            idPathCandidates,
             newNamedPath,
             oldNamedPath,
             newFolderSlash,
             oldFolderSlash,
             newPathSlash,
             oldPathSlash,
+            domainHost,
+            domainRoot,
             __t: titleLower,
             __u: urlLower,
             __pn: newPathLower,
             __po: oldPathLower,
             __sn: newSlashLower,
-            __so: oldSlashLower
+            __so: oldSlashLower,
+            __dh: (domainHost || '').toLowerCase(),
+            __dr: (domainRoot || '').toLowerCase(),
+            __changed: 1
         };
 
-        items.push(item);
-        itemById.set(id, item);
+        changedItems.push(item);
+        changedItemById.set(id, item);
+    }
+
+    const changedFolderIdSet = new Set();
+    for (const changedItem of changedItems) {
+        if (changedItem && changedItem.nodeType === 'folder') {
+            const folderId = String(changedItem.id || '').trim();
+            if (folderId) changedFolderIdSet.add(folderId);
+        }
+    }
+    const changedContextOldIdSet = collectDescendantIdsUnderFolders(cachedOldTree, changedFolderIdSet);
+    const changedContextIdSet = collectDescendantIdsUnderFoldersFromTrees([cachedCurrentTree, cachedOldTree], changedFolderIdSet);
+    const changedAncestorIdSet = collectAncestorIdsFromParentIndexes(idSet, [currentParentIndex, oldParentIndex]);
+
+    const { items, itemById } = buildAllCurrentTreeSearchItems(changeMap, changedItemById, { changedContextIdSet });
+
+    const oldOnlyContextIds = [];
+    changedContextOldIdSet.forEach((idRaw) => {
+        const id = String(idRaw || '').trim();
+        if (!id || itemById.has(id)) return;
+        oldOnlyContextIds.push(id);
+    });
+    if (oldOnlyContextIds.length > 0) {
+        const oldOnlyIdSet = new Set(oldOnlyContextIds);
+        const oldContextInfo = collectNodeInfoForIds(cachedOldTree, oldOnlyIdSet);
+        const currentContextInfo = collectNodeInfoForIds(cachedCurrentTree, oldOnlyIdSet);
+
+        for (const id of oldOnlyContextIds) {
+            const cur = currentContextInfo.get(id) || null;
+            const old = oldContextInfo.get(id) || null;
+            if (!cur && !old) continue;
+            if (itemById.has(id)) continue;
+
+            const isChanged = (changeMap instanceof Map && changeMap.has(id)) || changedItemById.has(id);
+            if (isChanged) continue;
+
+            const title = (cur?.title || old?.title || '').trim();
+            const url = (cur?.url || old?.url || '').trim();
+            const newNamedPath = cur?.namedPath || '';
+            const oldNamedPath = old?.namedPath || '';
+            const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
+            const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
+            const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
+            const oldPathSlash = oldNamedPath ? toSearchSlashFull(oldNamedPath) : '';
+            const domainHost = extractSearchHostFromUrl(url);
+            const domainRoot = getSearchRegistrableDomain(domainHost);
+            const currentIdPath = buildNodeIdPathFromParentIndex(id, currentParentIndex);
+            const oldIdPath = buildNodeIdPathFromParentIndex(id, oldParentIndex);
+            const idPathCandidates = mergeHistoryDetailIdPathCandidates(currentIdPath, oldIdPath);
+            const nodeType = url ? 'bookmark' : 'folder';
+            const shouldIndex = !!(title || url || newNamedPath || oldNamedPath);
+            if (!shouldIndex) continue;
+
+            const contextItem = {
+                id,
+                title,
+                url,
+                nodeType,
+                changeType: '',
+                changeTypeParts: [],
+                idPathCandidates,
+                newNamedPath,
+                oldNamedPath,
+                newFolderSlash,
+                oldFolderSlash,
+                newPathSlash,
+                oldPathSlash,
+                domainHost,
+                domainRoot,
+                __t: title.toLowerCase(),
+                __u: url.toLowerCase(),
+                __pn: (newNamedPath || '').toLowerCase(),
+                __po: (oldNamedPath || '').toLowerCase(),
+                __sn: (newPathSlash || newFolderSlash || '').toLowerCase(),
+                __so: (oldPathSlash || oldFolderSlash || '').toLowerCase(),
+                __dh: (domainHost || '').toLowerCase(),
+                __dr: (domainRoot || '').toLowerCase(),
+                __changed: 0,
+                __changed_context: 1
+            };
+
+            items.push(contextItem);
+            itemById.set(id, contextItem);
+        }
+    }
+
+    for (const changedItem of changedItems) {
+        const id = String(changedItem?.id || '').trim();
+        if (!id) continue;
+
+        const existing = itemById.get(id);
+        if (existing) {
+            existing.changeType = changedItem.changeType || existing.changeType;
+            existing.changeTypeParts = Array.isArray(changedItem.changeTypeParts) ? changedItem.changeTypeParts : existing.changeTypeParts;
+            if (changedItem.newNamedPath) existing.newNamedPath = changedItem.newNamedPath;
+            if (changedItem.oldNamedPath) existing.oldNamedPath = changedItem.oldNamedPath;
+            if (changedItem.newFolderSlash) existing.newFolderSlash = changedItem.newFolderSlash;
+            if (changedItem.oldFolderSlash) existing.oldFolderSlash = changedItem.oldFolderSlash;
+            if (changedItem.newPathSlash) existing.newPathSlash = changedItem.newPathSlash;
+            if (changedItem.oldPathSlash) existing.oldPathSlash = changedItem.oldPathSlash;
+            if (Array.isArray(changedItem.idPathCandidates) && changedItem.idPathCandidates.length > 0) {
+                existing.idPathCandidates = changedItem.idPathCandidates;
+            }
+            if (changedItem.__pn) existing.__pn = changedItem.__pn;
+            if (changedItem.__po) existing.__po = changedItem.__po;
+            if (changedItem.__sn) existing.__sn = changedItem.__sn;
+            if (changedItem.__so) existing.__so = changedItem.__so;
+            if (changedItem.__dh && !existing.__dh) existing.__dh = changedItem.__dh;
+            if (changedItem.__dr && !existing.__dr) existing.__dr = changedItem.__dr;
+            existing.__changed = 1;
+            existing.__changed_context = 0;
+            continue;
+        }
+
+        const cloned = {
+            ...changedItem,
+            __changed: 1,
+            __changed_context: 0
+        };
+        items.push(cloned);
+        itemById.set(id, cloned);
     }
 
     currentChangesSearchDb = {
@@ -521,37 +1690,174 @@ function buildCurrentChangesSearchDb() {
         version: lastTreeSnapshotVersion || null,
         size,
         items,
-        itemById
+        itemById,
+        changedItems,
+        changedItemById,
+        compactScopedIdSet: (() => {
+            const set = new Set();
+            idSet.forEach((v) => set.add(String(v)));
+            changedContextIdSet.forEach((v) => set.add(String(v)));
+            changedAncestorIdSet.forEach((v) => set.add(String(v)));
+            return set;
+        })(),
+        collectionScopedIdSet: buildCurrentChangesCollectionScopedIdSet(changeMap)
     };
     return currentChangesSearchDb;
 }
 
 // ==================== 搜索匹配与排序 ====================
 
+function shouldEnablePathFieldMatch(query) {
+    const q = String(query || '').trim();
+    if (!q) return false;
+    // 只有用户显式输入路径特征时，才启用路径字段匹配，避免“父文件夹命中导致子项误命中”。
+    return q.includes('/') || q.includes('\\') || q.includes('>');
+}
+
+function isCjkSearchToken(token) {
+    const t = String(token || '');
+    return /[\u3400-\u9fff]/.test(t);
+}
+
+function isLikelyUrlSearchToken(token) {
+    const t = String(token || '').trim().toLowerCase();
+    if (!t) return false;
+    if (/^[a-z][a-z0-9+.-]*:/.test(t)) return true;
+    if (t.startsWith('www.')) return true;
+    if (t.includes('/') || t.includes('\\') || t.includes(':') || t.includes('?') || t.includes('#') || t.includes('=')) return true;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t)) return true;
+    return false;
+}
+
+function getSearchTokenLength(token) {
+    try {
+        return Array.from(String(token || '')).length;
+    } catch (_) {
+        return String(token || '').length;
+    }
+}
+
 /**
  * 计算搜索项的匹配分数
  * @param {Object} item - 搜索项
  * @param {Array} tokens - 搜索关键词数组
+ * @param {Object} options - 匹配选项
  */
-function scoreCurrentChangesSearchItem(item, tokens) {
+function scoreCurrentChangesSearchItem(item, tokens, options = {}) {
+    const allowPathMatch = !!(options && options.allowPathMatch === true);
+    const domainOnly = !!(options && options.domainOnly === true);
+    const normalizedQuery = String(options && options.query ? options.query : '').trim().toLowerCase();
     let score = 0;
+
+    if (normalizedQuery) {
+        if (item.__dh && item.__dh === normalizedQuery) score += 170;
+        if (item.__dr && item.__dr === normalizedQuery) score += 165;
+        if (!domainOnly && item.__t && item.__t === normalizedQuery) score += 220;
+    }
+
     for (const t of tokens) {
         if (!t) continue;
 
-        if (item.__t && item.__t.startsWith(t)) { score += 120; continue; }
-        if (item.__t && item.__t.includes(t)) { score += 90; continue; }
-        if (item.__u && item.__u.includes(t)) { score += 70; continue; }
+        const tokenLen = getSearchTokenLength(t);
+        const isCjk = isCjkSearchToken(t);
+        const isUrlLike = isLikelyUrlSearchToken(t);
+        const allowTitleContains = isCjk || tokenLen >= 3;
+        const allowDomainFieldMatch = isUrlLike || tokenLen >= 4;
+        const allowPathFieldMatch = allowPathMatch && (isUrlLike || isCjk || tokenLen >= 2);
 
-        if (item.__pn && item.__pn.includes(t)) { score += 50; continue; }
-        if (item.__so && item.__so.includes(t)) { score += 45; continue; }
-        if (item.__po && item.__po.includes(t)) { score += 40; continue; }
+        let matched = false;
+        if (!domainOnly) {
+            if (item.__t && item.__t === t) { score += 160; matched = true; }
+            else if (item.__t && item.__t.startsWith(t)) { score += 120; matched = true; }
+            else if (allowTitleContains && item.__t && item.__t.includes(t)) { score += 90; matched = true; }
+        }
 
-        return -Infinity;
+        if (!matched && allowDomainFieldMatch) {
+            if (item.__dh && item.__dh === t) { score += 110; matched = true; }
+            else if (item.__dh && item.__dh.startsWith(t)) { score += 88; matched = true; }
+            else if (item.__dh && item.__dh.includes(t)) { score += 82; matched = true; }
+            else if (item.__dr && item.__dr.includes(t)) { score += 78; matched = true; }
+        }
+
+        if (!matched && !domainOnly && allowPathFieldMatch) {
+            if (item.__pn && item.__pn.includes(t)) { score += 50; matched = true; }
+            else if (item.__sn && item.__sn.includes(t)) { score += 48; matched = true; }
+            else if (item.__so && item.__so.includes(t)) { score += 45; matched = true; }
+            else if (item.__po && item.__po.includes(t)) { score += 40; matched = true; }
+        }
+
+        if (!matched) return -Infinity;
     }
 
     // 轻量加权：书签优先于文件夹（更常见的定位目标）
     if (item.nodeType === 'bookmark') score += 2;
+    // 变化项优先显示（全量搜索时仍优先把变化条目排在前面）
+    if (item.__changed) score += 22;
+    // 变化上下文次优先（例如：变化文件夹下的子项）
+    if (!item.__changed && item.__changed_context) score += 10;
     return score;
+}
+
+function matchesSearchItemByDomainFields(item, tokens, options = {}) {
+    if (!item || item.nodeType !== 'bookmark') return false;
+
+    const host = String(item.__dh || '').trim().toLowerCase();
+    const root = String(item.__dr || '').trim().toLowerCase();
+    if (!host && !root) return false;
+
+    const normalizedQuery = String(options && options.query ? options.query : '').trim().toLowerCase();
+    if (normalizedQuery && (host === normalizedQuery || root === normalizedQuery)) {
+        return true;
+    }
+
+    const normalizedTokens = Array.isArray(tokens)
+        ? tokens.map((token) => String(token || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+    if (!normalizedTokens.length) return false;
+
+    for (const token of normalizedTokens) {
+        const matched = (host && (host === token || host.startsWith(token) || host.includes(token)))
+            || (root && (root === token || root.startsWith(token) || root.includes(token)));
+        if (!matched) return false;
+    }
+
+    return true;
+}
+
+function getDomainMatchedSearchItems(items, tokens, options = {}) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return [];
+    return list.filter((item) => matchesSearchItemByDomainFields(item, tokens, options));
+}
+
+function compareScopedSearchMatches(a, b, scopedOrderMap) {
+    const aItem = a && a.item ? a.item : null;
+    const bItem = b && b.item ? b.item : null;
+
+    const aChanged = aItem && aItem.__changed ? 1 : 0;
+    const bChanged = bItem && bItem.__changed ? 1 : 0;
+    if (bChanged !== aChanged) return bChanged - aChanged;
+
+    const aContext = !aChanged && aItem && aItem.__changed_context ? 1 : 0;
+    const bContext = !bChanged && bItem && bItem.__changed_context ? 1 : 0;
+    if (bContext !== aContext) return bContext - aContext;
+
+    const aId = String(aItem?.id || '').trim();
+    const bId = String(bItem?.id || '').trim();
+    const aOrder = scopedOrderMap.has(aId) ? scopedOrderMap.get(aId) : Number.POSITIVE_INFINITY;
+    const bOrder = scopedOrderMap.has(bId) ? scopedOrderMap.get(bId) : Number.POSITIVE_INFINITY;
+    const aHasOrder = Number.isFinite(aOrder);
+    const bHasOrder = Number.isFinite(bOrder);
+
+    if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+    if (b.s !== a.s) return b.s - a.s;
+    const ta = aItem?.title || '';
+    const tb = bItem?.title || '';
+    const tc = ta.localeCompare(tb);
+    if (tc !== 0) return tc;
+    return (aItem?.url || '').localeCompare((bItem?.url || ''));
 }
 
 /**
@@ -571,31 +1877,131 @@ function searchCurrentChangesAndRender(query) {
         return;
     }
 
-    const tokens = String(query).split(/\s+/).map(s => s.trim()).filter(Boolean);
+    const tokens = String(query).toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
     if (!tokens.length) {
         hideSearchResultsPanel();
         return;
     }
 
+    if (!(searchUiState.currentChangesExpandedDomainGroups instanceof Set)) {
+        searchUiState.currentChangesExpandedDomainGroups = new Set();
+    }
+    if (!(searchUiState.currentChangesDomainGroupHostFilters instanceof Map)) {
+        searchUiState.currentChangesDomainGroupHostFilters = new Map();
+    }
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    const previousQuery = String(searchUiState.query || '').trim().toLowerCase();
+    if (normalizedQuery !== previousQuery) {
+        searchUiState.currentChangesExpandedDomainGroups.clear();
+        searchUiState.currentChangesDomainGroupHostFilters.clear();
+        // 新查询时重置类型筛选，避免沿用上一次“域名分组”导致看起来“能匹配但不能跳转”。
+        searchUiState.currentChangesTypeFilter = null;
+    }
+
+    const scopedMeta = getCurrentChangesScopedSearchMeta(db);
+    const scopedItems = Array.isArray(scopedMeta?.items) ? scopedMeta.items : [];
+    const scopedOrderMap = scopedMeta && scopedMeta.orderMap instanceof Map
+        ? scopedMeta.orderMap
+        : new Map();
+    if (!scopedItems.length) {
+        renderSearchResultsPanel([], { view: 'current-changes', query, emptyText: i18n.searchNoResults[currentLang] });
+        return;
+    }
+
+    const allowPathMatch = shouldEnablePathFieldMatch(query);
     const scored = [];
-    for (const item of db.items) {
-        const s = scoreCurrentChangesSearchItem(item, tokens);
+    for (const item of scopedItems) {
+        const s = scoreCurrentChangesSearchItem(item, tokens, { allowPathMatch, query });
         if (s > -Infinity) scored.push({ item, s });
     }
 
-    scored.sort((a, b) => {
-        if (b.s !== a.s) return b.s - a.s;
-        // 稳定排序：title 再 url
-        const ta = a.item.title || '';
-        const tb = b.item.title || '';
-        const tc = ta.localeCompare(tb);
-        if (tc !== 0) return tc;
-        return (a.item.url || '').localeCompare((b.item.url || ''));
-    });
+    scored.sort((a, b) => compareScopedSearchMatches(a, b, scopedOrderMap));
 
+    const matchedResults = scored.map(x => x.item);
+    const domainMatchedItems = getDomainMatchedSearchItems(scopedItems, tokens, { query });
+    const { filtered, counts, activeFilter } = filterSearchItemsByType(matchedResults, searchUiState.currentChangesTypeFilter, {
+        domainGrouped: true,
+        domainMatchedItems
+    });
     const MAX_RESULTS = 20;
-    const results = scored.slice(0, MAX_RESULTS).map(x => x.item);
-    renderSearchResultsPanel(results, { view: 'current-changes', query });
+    const results = filtered.slice(0, MAX_RESULTS);
+    searchUiState.currentChangesTypeCounts = counts;
+    searchUiState.currentChangesTypeFilter = activeFilter;
+    if (activeFilter !== 'domain') {
+        searchUiState.currentChangesExpandedDomainGroups.clear();
+        searchUiState.currentChangesDomainGroupHostFilters.clear();
+    }
+
+    renderSearchResultsPanel(results, {
+        view: 'current-changes',
+        query,
+        currentChangesTypeCounts: counts,
+        currentChangesTypeFilter: activeFilter
+    });
+}
+
+function toggleCurrentChangesDomainGroup(groupId, options = {}) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) return false;
+
+    if (!(searchUiState.currentChangesExpandedDomainGroups instanceof Set)) {
+        searchUiState.currentChangesExpandedDomainGroups = new Set();
+    }
+
+    if (searchUiState.currentChangesExpandedDomainGroups.has(normalizedGroupId)) {
+        searchUiState.currentChangesExpandedDomainGroups.delete(normalizedGroupId);
+    } else {
+        searchUiState.currentChangesExpandedDomainGroups.add(normalizedGroupId);
+    }
+
+    const input = document.getElementById('searchInput');
+    const query = String((input && input.value != null ? input.value : searchUiState.query) || '').trim();
+    if (!query) return false;
+
+    const selectedIndex = Number.isFinite(Number(options.selectedIndex))
+        ? Number(options.selectedIndex)
+        : null;
+
+    searchCurrentChangesAndRender(query);
+    if (selectedIndex !== null) {
+        updateSearchResultSelection(selectedIndex, { scrollIntoView: false });
+    }
+    return true;
+}
+
+function setCurrentChangesDomainGroupHostFilter(groupId, host, options = {}) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) return false;
+
+    if (!(searchUiState.currentChangesDomainGroupHostFilters instanceof Map)) {
+        searchUiState.currentChangesDomainGroupHostFilters = new Map();
+    }
+    if (!(searchUiState.currentChangesExpandedDomainGroups instanceof Set)) {
+        searchUiState.currentChangesExpandedDomainGroups = new Set();
+    }
+
+    const normalizedHost = normalizeSearchDomainHostValue(host);
+    const currentHost = normalizeSearchDomainHostValue(searchUiState.currentChangesDomainGroupHostFilters.get(normalizedGroupId));
+    if (normalizedHost && currentHost !== normalizedHost) {
+        searchUiState.currentChangesDomainGroupHostFilters.set(normalizedGroupId, normalizedHost);
+    } else {
+        searchUiState.currentChangesDomainGroupHostFilters.delete(normalizedGroupId);
+    }
+    searchUiState.currentChangesExpandedDomainGroups.add(normalizedGroupId);
+
+    const input = document.getElementById('searchInput');
+    const query = String((input && input.value != null ? input.value : searchUiState.query) || '').trim();
+    if (!query) return false;
+
+    const selectedIndex = Number.isFinite(Number(options.selectedIndex))
+        ? Number(options.selectedIndex)
+        : null;
+
+    searchCurrentChangesAndRender(query);
+    if (selectedIndex !== null) {
+        updateSearchResultSelection(selectedIndex, { scrollIntoView: false });
+    }
+    return true;
 }
 
 // ==================== 定位与高亮 ====================
@@ -619,6 +2025,8 @@ function getHighlightClassFromChangeType(changeType) {
  */
 function expandAncestorsForTreeItem(treeItem, previewContainer) {
     try {
+        const previewRoot = document.getElementById('changesTreePreviewInline');
+        const isCompactMode = !!(previewRoot && previewRoot.classList && previewRoot.classList.contains('compact-mode'));
         let parent = treeItem.parentElement;
         while (parent && parent !== previewContainer) {
             if (parent.classList.contains('tree-children')) {
@@ -640,6 +2048,22 @@ function expandAncestorsForTreeItem(treeItem, previewContainer) {
                 if (parentId) {
                     try { saveChangesPreviewExpandedState(String(parentId), true); } catch (_) { }
                 }
+
+                // 简略模式：如果祖先是“变化文件夹”，程序化定位时也要展示其完整子树。
+                if (isCompactMode) {
+                    const isFolder = (parentItem.getAttribute('data-node-type') || parentItem.dataset?.nodeType) === 'folder';
+                    const isChangedFolder = isFolder && (
+                        parentItem.classList.contains('tree-change-added') ||
+                        parentItem.classList.contains('tree-change-deleted') ||
+                        parentItem.classList.contains('tree-change-modified') ||
+                        parentItem.classList.contains('tree-change-moved') ||
+                        parentItem.classList.contains('tree-change-mixed')
+                    );
+                    if (isChangedFolder) {
+                        const parentNode = parentItem.closest('.tree-node');
+                        if (parentNode) parentNode.classList.add('compact-reveal-all');
+                    }
+                }
             }
 
             parent = parent.parentElement;
@@ -652,37 +2076,730 @@ function expandAncestorsForTreeItem(treeItem, previewContainer) {
  * @param {string} nodeId - 节点 ID
  * @param {Object} options - 定位选项
  */
+function getCurrentChangesSearchTreeContainer(previewContainer) {
+    if (!previewContainer) return null;
+    const previewTree = previewContainer.querySelector('#preview_bookmarkTree');
+    if (previewTree) return previewTree;
+    const historyTree = previewContainer.querySelector('.history-tree-container');
+    if (historyTree) return historyTree;
+    return previewContainer;
+}
+
+function getCurrentChangesTreeItemInContainer(treeContainer, nodeId) {
+    if (!treeContainer) return null;
+    const id = String(nodeId || '').trim();
+    if (!id) return null;
+
+    let escapedId = id;
+    try {
+        escapedId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+            ? CSS.escape(id)
+            : id.replace(/["\\]/g, '\\$&');
+    } catch (_) { }
+
+    return treeContainer.querySelector(`.tree-item[data-node-id="${escapedId}"]`);
+}
+
+function normalizeSearchNodeTitle(text) {
+    return String(text || '')
+        .trim()
+        .replace(/^\[(\+|-|~>>|>>|~)\]\s*/, '');
+}
+
+function normalizeSearchUrlForMatch(urlText) {
+    const raw = String(urlText || '').trim();
+    if (!raw) return '';
+    try {
+        const u = new URL(raw);
+        u.hash = '';
+        return u.toString();
+    } catch (_) {
+        return raw;
+    }
+}
+
+function isSearchUrlEquivalent(a, b) {
+    const na = normalizeSearchUrlForMatch(a);
+    const nb = normalizeSearchUrlForMatch(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    return na.replace(/\/$/, '') === nb.replace(/\/$/, '');
+}
+
+function getSearchTreeItemDisplayTitle(treeItem) {
+    if (!treeItem) return '';
+    try {
+        const label = treeItem.querySelector('.tree-bookmark-link, .tree-label');
+        return normalizeSearchNodeTitle(label && label.textContent ? label.textContent : '');
+    } catch (_) {
+        return '';
+    }
+}
+
+function getSearchTreeItemNamedPath(treeItem, treeContainer) {
+    if (!treeItem) return '';
+
+    const parts = [];
+    let currentItem = treeItem;
+    let guard = 0;
+
+    while (currentItem && guard++ < 1024) {
+        const title = getSearchTreeItemDisplayTitle(currentItem);
+        if (title) {
+            parts.push(title);
+        }
+
+        const parentChildren = currentItem.parentElement;
+        if (!parentChildren || parentChildren === treeContainer) break;
+
+        const parentItem = parentChildren.previousElementSibling;
+        if (!parentItem || !parentItem.classList || !parentItem.classList.contains('tree-item')) break;
+        currentItem = parentItem;
+    }
+
+    return parts.reverse().join(' > ');
+}
+
+function collectCurrentChangesSearchFallbackCandidates(treeContainer, searchItem) {
+    if (!treeContainer || !searchItem) return [];
+
+    const results = [];
+    const seenIds = new Set();
+    const pushCandidate = (itemEl) => {
+        if (!itemEl) return;
+        const nodeId = String(itemEl.getAttribute('data-node-id') || '').trim();
+        if (!nodeId || seenIds.has(nodeId)) return;
+        seenIds.add(nodeId);
+        results.push(itemEl);
+    };
+
+    const itemUrl = String(searchItem.url || '').trim();
+    const itemTitle = normalizeSearchNodeTitle(searchItem.title || '');
+
+    if (itemUrl) {
+        const links = treeContainer.querySelectorAll('a.tree-bookmark-link[href], a.tree-label[href]');
+        for (const link of links) {
+            const href = String(link.getAttribute('href') || link.href || '').trim();
+            if (!href || !isSearchUrlEquivalent(href, itemUrl)) continue;
+            pushCandidate(link.closest('.tree-item[data-node-id]'));
+        }
+    }
+
+    if (itemTitle) {
+        const labels = treeContainer.querySelectorAll('.tree-item[data-node-id] .tree-label, .tree-item[data-node-id] .tree-bookmark-link');
+        for (const label of labels) {
+            const labelTitle = normalizeSearchNodeTitle(label && label.textContent ? label.textContent : '');
+            if (!labelTitle || labelTitle !== itemTitle) continue;
+            pushCandidate(label.closest('.tree-item[data-node-id]'));
+        }
+    }
+
+    return results;
+}
+
+function findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem) {
+    if (!treeContainer || !searchItem) return null;
+    const candidates = collectCurrentChangesSearchFallbackCandidates(treeContainer, searchItem);
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    const expectedPaths = new Set();
+    const addPath = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized) expectedPaths.add(normalized);
+    };
+    addPath(searchItem.newNamedPath);
+    addPath(searchItem.oldNamedPath);
+
+    if (expectedPaths.size > 0) {
+        const pathMatches = candidates.filter((candidate) => {
+            const namedPath = getSearchTreeItemNamedPath(candidate, treeContainer);
+            return expectedPaths.has(String(namedPath || '').trim().toLowerCase());
+        });
+        if (pathMatches.length === 1) return pathMatches[0];
+        if (pathMatches.length > 1) return null;
+    }
+
+    const itemUrl = String(searchItem.url || '').trim();
+    const itemTitle = normalizeSearchNodeTitle(searchItem.title || '');
+    const exactCandidates = candidates.filter((candidate) => {
+        const candidateTitle = getSearchTreeItemDisplayTitle(candidate);
+        if (itemTitle && candidateTitle !== itemTitle) return false;
+        if (!itemUrl) return true;
+        try {
+            const link = candidate.querySelector('a.tree-bookmark-link[href], a.tree-label[href]');
+            const href = String(link && (link.getAttribute('href') || link.href) || '').trim();
+            return !!href && isSearchUrlEquivalent(href, itemUrl);
+        } catch (_) {
+            return false;
+        }
+    });
+    if (exactCandidates.length === 1) return exactCandidates[0];
+
+    // 候选不唯一时宁可放弃兜底，也不要把用户带到错误条目。
+    return null;
+}
+
+function buildCurrentChangesIdPathFromPreviewIndex(nodeId) {
+    const id = String(nodeId || '').trim();
+    if (!id) return [];
+
+    let index = null;
+    try {
+        if (window.__changesPreviewTreeIndex instanceof Map) {
+            index = window.__changesPreviewTreeIndex;
+        }
+    } catch (_) { }
+    if (!(index instanceof Map) || !index.has(id)) return [];
+
+    const path = [];
+    let currentId = id;
+    let guard = 0;
+    while (guard++ < 1024 && currentId) {
+        path.push(currentId);
+        const node = index.get(currentId);
+        if (!node) break;
+        const parentRaw = node.parentId != null ? String(node.parentId) : '';
+        if (!parentRaw || parentRaw === currentId) break;
+        currentId = parentRaw;
+    }
+
+    return path.reverse();
+}
+
+async function expandCurrentChangesFolderItemForSearch(folderItem) {
+    if (!folderItem) return null;
+    const nodeType = folderItem.getAttribute('data-node-type') || folderItem.dataset?.nodeType;
+    if (nodeType !== 'folder') return null;
+
+    const treeNode = folderItem.closest('.tree-node');
+    const children = treeNode?.querySelector(':scope > .tree-children');
+    if (!children) return null;
+
+    const toggle = folderItem.querySelector(':scope > .tree-toggle') || folderItem.querySelector('.tree-toggle');
+    if (toggle) toggle.classList.add('expanded');
+    children.classList.add('expanded');
+
+    const folderIcon = folderItem.querySelector('.tree-icon.fas.fa-folder, .tree-icon.fas.fa-folder-open');
+    if (folderIcon) {
+        folderIcon.classList.remove('fa-folder');
+        folderIcon.classList.add('fa-folder-open');
+    }
+
+    const childrenLoaded = String(folderItem.dataset?.childrenLoaded || '').toLowerCase();
+    const hasChildren = String(folderItem.dataset?.hasChildren || '').toLowerCase();
+    const shouldLoadChildren = childrenLoaded === 'false' && hasChildren !== 'false';
+    if (shouldLoadChildren && typeof loadPermanentFolderChildrenLazy === 'function') {
+        const folderId = String(folderItem.getAttribute('data-node-id') || folderItem.dataset?.nodeId || '').trim();
+        if (folderId) {
+            try {
+                await loadPermanentFolderChildrenLazy(folderId, children, 0, null, true);
+            } catch (_) { }
+        }
+    }
+
+    return children;
+}
+
+async function appendCurrentChangesLoadMoreBatch(loadMoreBtn) {
+    if (!loadMoreBtn || typeof loadPermanentFolderChildrenLazy !== 'function') return false;
+    const children = loadMoreBtn.closest('.tree-children');
+    if (!children) return false;
+
+    const parentId = String(
+        loadMoreBtn.dataset.parentId ||
+        (children.dataset ? children.dataset.parentId : '') ||
+        ''
+    ).trim();
+    if (!parentId) return false;
+
+    const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+    const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+
+    try {
+        await loadPermanentFolderChildrenLazy(parentId, children, startIndex, loadMoreBtn, true);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function ensureCurrentChangesTargetByScan(nodeId, previewContainer) {
+    const id = String(nodeId || '').trim();
+    const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
+    if (!id || !treeContainer) return null;
+
+    const findTarget = () => getCurrentChangesTreeItemInContainer(treeContainer, id);
+    let target = findTarget();
+    if (target) return target;
+
+    const scannedFolders = new WeakSet();
+    let passGuard = 0;
+    while (!target && passGuard++ < 48) {
+        let progressed = false;
+
+        // 先补齐所有“加载更多”批次，再做下一层展开
+        const loadMoreButtons = treeContainer.querySelectorAll('.tree-load-more');
+        for (const loadMoreBtn of loadMoreButtons) {
+            const loaded = await appendCurrentChangesLoadMoreBatch(loadMoreBtn);
+            if (loaded) progressed = true;
+            target = findTarget();
+            if (target) return target;
+        }
+
+        const folders = treeContainer.querySelectorAll('.tree-item[data-node-type="folder"][data-node-id]');
+        for (const folderItem of folders) {
+            if (scannedFolders.has(folderItem)) continue;
+            scannedFolders.add(folderItem);
+
+            const children = await expandCurrentChangesFolderItemForSearch(folderItem);
+            if (children) progressed = true;
+
+            target = findTarget();
+            if (target) return target;
+        }
+
+        if (!progressed) break;
+    }
+
+    return findTarget();
+}
+
+async function ensureCurrentChangesHistoryTreeTargetByScan(nodeId, treeContainer, options = {}) {
+    const id = String(nodeId || '').trim();
+    if (!id || !treeContainer) return null;
+
+    const findTarget = () => getTreeItemByNodeIdInContainer(treeContainer, id);
+    let target = findTarget();
+    if (target) return target;
+
+    const lazyContext = getHistoryDetailSearchLazyContext(treeContainer, options);
+    const scannedFolders = new WeakSet();
+    let passGuard = 0;
+
+    while (!target && passGuard++ < 64) {
+        let progressed = false;
+
+        const folders = treeContainer.querySelectorAll('.tree-item[data-node-type="folder"][data-node-id]');
+        for (const folderItem of folders) {
+            if (scannedFolders.has(folderItem)) continue;
+            scannedFolders.add(folderItem);
+
+            const children = await expandHistoryDetailFolderItemForSearch(folderItem, treeContainer, {
+                ...options,
+                lazyContext
+            });
+            if (children) progressed = true;
+
+            target = findTarget();
+            if (target) return target;
+
+            if (children) {
+                let batchGuard = 0;
+                while (!target && batchGuard++ < 256) {
+                    const loadMoreBtn = children.querySelector(':scope > .tree-load-more');
+                    if (!loadMoreBtn) break;
+                    const loaded = appendHistoryDetailLoadMoreBatch(loadMoreBtn, treeContainer, {
+                        ...options,
+                        lazyContext
+                    });
+                    if (!loaded) break;
+                    progressed = true;
+                    target = findTarget();
+                }
+            }
+
+            if (target) return target;
+        }
+
+        if (!progressed) break;
+    }
+
+    return findTarget();
+}
+
+async function ensureCurrentChangesPathRendered(idPath, previewContainer) {
+    const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
+    if (!treeContainer) return null;
+
+    const normalizedPath = normalizeHistoryDetailIdPath(idPath);
+    if (!normalizedPath.length) return null;
+    const targetId = normalizedPath[normalizedPath.length - 1];
+
+    const findItem = (id) => getCurrentChangesTreeItemInContainer(treeContainer, id);
+    let startIndex = 0;
+    while (startIndex < normalizedPath.length && !findItem(normalizedPath[startIndex])) {
+        startIndex += 1;
+    }
+    if (startIndex >= normalizedPath.length) return null;
+
+    for (let i = startIndex; i < normalizedPath.length - 1; i += 1) {
+        const currentId = normalizedPath[i];
+        const nextId = normalizedPath[i + 1];
+        const currentItem = findItem(currentId);
+        if (!currentItem) return null;
+
+        const children = await expandCurrentChangesFolderItemForSearch(currentItem);
+
+        let nextItem = findItem(nextId);
+        if (!nextItem && children) {
+            let guard = 0;
+            while (!nextItem && guard++ < 256) {
+                const loadMoreBtn = children.querySelector(':scope > .tree-load-more');
+                if (!loadMoreBtn) break;
+                const progressed = await appendCurrentChangesLoadMoreBatch(loadMoreBtn);
+                if (!progressed) break;
+                nextItem = findItem(nextId);
+            }
+        }
+
+        if (!nextItem) return null;
+    }
+
+    return findItem(targetId);
+}
+
+async function ensureCurrentChangesTargetRendered(nodeId, previewContainer, options = {}) {
+    const id = String(nodeId || '').trim();
+    const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
+    if (!id || !treeContainer) return null;
+    const searchItem = options && options.searchItem ? options.searchItem : null;
+
+    let target = getCurrentChangesTreeItemInContainer(treeContainer, id);
+    if (target) return target;
+
+    const isHistoryLazyTree = !!(
+        treeContainer.classList &&
+        treeContainer.classList.contains('history-tree-container')
+    );
+    if (isHistoryLazyTree) {
+        try {
+            if (typeof ensureHistoryDetailTargetRendered === 'function') {
+                target = await ensureHistoryDetailTargetRendered(id, treeContainer, options);
+                if (target) return target;
+            }
+        } catch (_) { }
+
+        try {
+            target = await ensureCurrentChangesHistoryTreeTargetByScan(id, treeContainer, options);
+            if (target) return target;
+        } catch (_) { }
+
+        if (searchItem) {
+            try {
+                target = findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+                if (target) return target;
+                await ensureCurrentChangesHistoryTreeTargetByScan(id, treeContainer, options);
+                target = findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+                if (target) return target;
+            } catch (_) { }
+        }
+
+        return getCurrentChangesTreeItemInContainer(treeContainer, id);
+    }
+
+    const pathCandidates = Array.isArray(options.idPathCandidates) ? options.idPathCandidates.slice() : [];
+    const previewIndexPath = buildCurrentChangesIdPathFromPreviewIndex(id);
+    if (previewIndexPath.length > 0) {
+        pathCandidates.push(previewIndexPath);
+    }
+    for (const path of pathCandidates) {
+        target = await ensureCurrentChangesPathRendered(normalizeHistoryDetailIdPath(path, id), previewContainer);
+        if (target) return target;
+    }
+
+    try {
+        target = await ensureCurrentChangesTargetByScan(id, previewContainer);
+        if (target) return target;
+    } catch (_) { }
+
+    if (searchItem) {
+        try {
+            target = findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+            if (target) return target;
+        } catch (_) { }
+    }
+
+    // 集合模式/历史树容器：继续复用 history 栈的 lazy context 作为兜底。
+    try {
+        if (typeof ensureHistoryDetailTargetRendered === 'function') {
+            target = await ensureHistoryDetailTargetRendered(id, treeContainer, options);
+            if (target) return target;
+        }
+    } catch (_) { }
+
+    return getCurrentChangesTreeItemInContainer(treeContainer, id);
+}
+
+function nextAnimationFrame() {
+    return new Promise((resolve) => {
+        try {
+            requestAnimationFrame(() => resolve());
+        } catch (_) {
+            setTimeout(resolve, 16);
+        }
+    });
+}
+
+async function waitCurrentChangesDomSettle(container, options = {}) {
+    const target = container || document.getElementById('changesTreePreviewInline');
+    if (!target) return;
+
+    const idleMsRaw = Number(options.idleMs);
+    const timeoutMsRaw = Number(options.timeoutMs);
+    const idleMs = Number.isFinite(idleMsRaw) ? Math.max(30, idleMsRaw) : 70;
+    const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(idleMs + 20, timeoutMsRaw) : 380;
+
+    await new Promise((resolve) => {
+        if (typeof MutationObserver !== 'function') {
+            setTimeout(resolve, idleMs);
+            return;
+        }
+
+        let done = false;
+        let idleTimer = null;
+        let timeoutTimer = null;
+        let observer = null;
+
+        const finish = () => {
+            if (done) return;
+            done = true;
+            try { if (observer) observer.disconnect(); } catch (_) { }
+            try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { }
+            try { if (timeoutTimer) clearTimeout(timeoutTimer); } catch (_) { }
+            resolve();
+        };
+
+        const bumpIdle = () => {
+            try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { }
+            idleTimer = setTimeout(finish, idleMs);
+        };
+
+        try {
+            observer = new MutationObserver(() => {
+                bumpIdle();
+            });
+            observer.observe(target, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['class', 'data-children-loaded', 'data-start-index']
+            });
+        } catch (_) {
+            finish();
+            return;
+        }
+
+        bumpIdle();
+        timeoutTimer = setTimeout(finish, timeoutMs);
+    });
+}
+
+function clearCurrentChangesSearchHighlights(previewContainer) {
+    const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer) || previewContainer;
+    if (!treeContainer) return;
+
+    const selectors = [
+        '.tree-item.highlight-added',
+        '.tree-item.highlight-deleted',
+        '.tree-item.highlight-moved',
+        '.tree-item.highlight-modified',
+        '.tree-item.highlight-search-neutral'
+    ];
+    try {
+        treeContainer.querySelectorAll(selectors.join(',')).forEach((el) => {
+            try {
+                el.classList.remove('highlight-added', 'highlight-deleted', 'highlight-moved', 'highlight-modified', 'highlight-search-neutral');
+            } catch (_) { }
+        });
+    } catch (_) { }
+}
+
+function triggerCurrentChangesSearchHighlight(target, highlightClass, durationMs = 1200) {
+    if (!target || !highlightClass) return;
+
+    try { target.classList.remove(highlightClass); } catch (_) { }
+    // 触发一次重排，确保同一元素连续点击时动画/灰框可重复生效。
+    try { void target.offsetWidth; } catch (_) { }
+    try { target.classList.add(highlightClass); } catch (_) { return; }
+
+    setTimeout(() => {
+        try { target.classList.remove(highlightClass); } catch (_) { }
+    }, durationMs);
+}
+
+function applyCurrentChangesSearchHighlightImmediate(target, highlightClass) {
+    if (!target || !highlightClass) return;
+    try { target.classList.add(highlightClass); } catch (_) { }
+}
+
+function getCurrentChangesPreviewScrollBody(previewContainer) {
+    if (!previewContainer) return null;
+    try {
+        const body = previewContainer.querySelector('.changes-preview-readonly .permanent-section-body')
+            || previewContainer.querySelector('.permanent-section-body');
+        if (body) return body;
+    } catch (_) { }
+    return null;
+}
+
+function markCurrentChangesPreviewJumpScrollAsUser(previewBody) {
+    if (!previewBody) return;
+    try {
+        if (typeof __getChangesPreviewScrollStorageKey === 'function' &&
+            typeof __changesPreviewScrollGuards !== 'undefined' &&
+            __changesPreviewScrollGuards instanceof Map) {
+            const key = __getChangesPreviewScrollStorageKey();
+            const guard = __changesPreviewScrollGuards.get(key);
+            if (guard) {
+                guard.userInteracted = true;
+                guard.restoredTop = previewBody.scrollTop || 0;
+                guard.suppressUntil = Date.now() + 240;
+                __changesPreviewScrollGuards.set(key, guard);
+            }
+        }
+    } catch (_) { }
+
+    // 兜底：触发预览容器现有的交互监听（history.js 中会将 guard.userInteracted 置为 true）。
+    try {
+        previewBody.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    } catch (_) {
+        try { previewBody.dispatchEvent(new Event('wheel', { bubbles: true })); } catch (_) { }
+    }
+
+    try {
+        if (typeof saveChangesPreviewScrollTop === 'function') {
+            saveChangesPreviewScrollTop(previewBody.scrollTop || 0);
+        }
+    } catch (_) { }
+}
+
+function getCurrentChangesContentAreaForJump() {
+    try {
+        return document.querySelector('.content-area');
+    } catch (_) {
+        return null;
+    }
+}
+
+function markCurrentChangesContentJumpScroll(contentAreaEl) {
+    if (!contentAreaEl) return;
+    try {
+        if (typeof saveCurrentChangesContentScrollTop === 'function') {
+            saveCurrentChangesContentScrollTop(contentAreaEl.scrollTop || 0);
+        }
+    } catch (_) { }
+}
+
+async function stabilizeCurrentChangesTargetForJump(nodeId, previewContainer) {
+    const id = String(nodeId || '').trim();
+    if (!id || !previewContainer) return null;
+
+    const findTarget = () => {
+        const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
+        return getCurrentChangesTreeItemInContainer(treeContainer, id);
+    };
+
+    let target = findTarget();
+    if (!target) return null;
+
+    expandAncestorsForTreeItem(target, previewContainer);
+    await nextAnimationFrame();
+    await nextAnimationFrame();
+    await waitCurrentChangesDomSettle(previewContainer, { idleMs: 70, timeoutMs: 380 });
+
+    target = findTarget() || target;
+    expandAncestorsForTreeItem(target, previewContainer);
+    await nextAnimationFrame();
+
+    return findTarget() || target;
+}
+
 async function locateNodeInCurrentChangesPreview(nodeId, options = {}) {
     const previewContainer = document.getElementById('changesTreePreviewInline');
     if (!previewContainer) return false;
 
-    const id = String(nodeId);
-    const findTarget = () => previewContainer.querySelector(`.tree-item[data-node-id="${CSS.escape(id)}"]`);
+    const id = String(nodeId || '').trim();
+    if (!id) return false;
+    const findTarget = () => {
+        const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
+        return getCurrentChangesTreeItemInContainer(treeContainer, id);
+    };
 
     let target = findTarget();
     if (!target) {
-        // 可能是预览尚未完成渲染：尝试触发一次渲染并重试
         try {
-            await renderCurrentChangesViewWithRetry(1, false);
+            target = await ensureCurrentChangesTargetRendered(id, previewContainer, {
+                idPathCandidates: Array.isArray(options.idPathCandidates) ? options.idPathCandidates : [],
+                searchItem: options.searchItem || null
+            });
         } catch (_) { }
-        target = findTarget();
+    }
+    if (!target) {
+        // 再给一次“懒加载+DOM稳定”窗口，优先避免整树刷新带来的滚动重置。
+        try {
+            await waitCurrentChangesDomSettle(previewContainer, { idleMs: 80, timeoutMs: 420 });
+            target = await ensureCurrentChangesTargetRendered(id, previewContainer, {
+                idPathCandidates: Array.isArray(options.idPathCandidates) ? options.idPathCandidates : [],
+                searchItem: options.searchItem || null
+            });
+        } catch (_) { }
+    }
+    if (!target) {
+        // 仅在前面都失败时才强制刷新视图兜底。
+        try {
+            await renderCurrentChangesViewWithRetry(2, true);
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            target = await ensureCurrentChangesTargetRendered(id, previewContainer, {
+                idPathCandidates: Array.isArray(options.idPathCandidates) ? options.idPathCandidates : [],
+                searchItem: options.searchItem || null
+            });
+        } catch (_) { }
     }
     if (!target) return false;
 
+    const previewBody = getCurrentChangesPreviewScrollBody(previewContainer);
+    const contentArea = getCurrentChangesContentAreaForJump();
+    const highlightClass = options.highlightClass || getHighlightClassFromChangeType(options.changeType || '');
+
+    if (highlightClass) {
+        clearCurrentChangesSearchHighlights(previewContainer);
+        applyCurrentChangesSearchHighlightImmediate(target, highlightClass);
+    }
+
     expandAncestorsForTreeItem(target, previewContainer);
+    await nextAnimationFrame();
+    target = findTarget() || target;
 
     try {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
     } catch (_) {
         try { target.scrollIntoView(); } catch (_) { }
     }
+    markCurrentChangesPreviewJumpScrollAsUser(previewBody);
+    markCurrentChangesContentJumpScroll(contentArea);
 
-    const highlightClass = options.highlightClass || getHighlightClassFromChangeType(options.changeType || '');
+    target = await stabilizeCurrentChangesTargetForJump(id, previewContainer) || target;
+    if (!target) return false;
+
+    await nextAnimationFrame();
+    markCurrentChangesPreviewJumpScrollAsUser(previewBody);
+    markCurrentChangesContentJumpScroll(contentArea);
+
+    // 在懒加载继续插入节点时再兜底一次，防止被旧的滚动守卫拉回顶部。
+    await waitCurrentChangesDomSettle(previewContainer, { idleMs: 50, timeoutMs: 220 });
+    target = (findTarget() || target);
+    try {
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    } catch (_) {
+        try { target.scrollIntoView(); } catch (_) { }
+    }
+    markCurrentChangesPreviewJumpScrollAsUser(previewBody);
+    markCurrentChangesContentJumpScroll(contentArea);
+
     if (highlightClass) {
-        target.classList.add(highlightClass);
-        setTimeout(() => {
-            try { target.classList.remove(highlightClass); } catch (_) { }
-        }, 1200);
+        clearCurrentChangesSearchHighlights(previewContainer);
+        triggerCurrentChangesSearchHighlight(target, highlightClass, 1400);
     }
     return true;
 }
@@ -700,6 +2817,21 @@ async function activateSearchResultAtIndex(index) {
     const item = searchUiState.results[idx];
     if (!item) return;
 
+    if (item.nodeType === 'domain_group') {
+        toggleCurrentChangesDomainGroup(item.id, { selectedIndex: idx });
+        return;
+    }
+
+    await activateCurrentChangesSearchItem(item);
+}
+
+async function activateCurrentChangesSearchItem(item) {
+    if (!item) return;
+    if (item.nodeType === 'domain_group') {
+        toggleCurrentChangesDomainGroup(item.id, { selectedIndex: searchUiState.selectedIndex });
+        return;
+    }
+
     hideSearchResultsPanel();
     // 选择候选后清空输入框（便于继续下一次搜索）
     try {
@@ -707,7 +2839,16 @@ async function activateSearchResultAtIndex(index) {
         if (inputEl) inputEl.value = '';
     } catch (_) { }
 
-    await locateNodeInCurrentChangesPreview(item.id, { changeType: item.changeType });
+    const itemHighlightClass = (!item.changeType || !getHighlightClassFromChangeType(item.changeType))
+        ? 'highlight-search-neutral'
+        : '';
+
+    await locateNodeInCurrentChangesPreview(item.id, {
+        changeType: item.changeType,
+        idPathCandidates: item.idPathCandidates,
+        searchItem: item,
+        highlightClass: itemHighlightClass || undefined
+    });
 }
 
 // ==================== 事件处理 ====================
@@ -805,6 +2946,93 @@ function handleSearchInputFocus(e) {
  * 点击搜索结果
  */
 function handleSearchResultsPanelClick(e) {
+    const urlLink = e && e.target ? e.target.closest('a.search-result-url-link[href]') : null;
+    if (urlLink) {
+        try { e.stopPropagation(); } catch (_) { }
+        return;
+    }
+
+    const typeBtn = e && e.target ? e.target.closest('.changes-search-type-btn') : null;
+    if (typeBtn) {
+        try {
+            e.preventDefault();
+            e.stopPropagation();
+        } catch (_) { }
+
+        const type = String(typeBtn.dataset.type || '').trim().toLowerCase();
+        if (type !== 'bookmark' && type !== 'folder' && type !== 'domain') return;
+
+        searchUiState.currentChangesTypeFilter = type;
+        if (type !== 'domain' && searchUiState.currentChangesExpandedDomainGroups instanceof Set) {
+            searchUiState.currentChangesExpandedDomainGroups.clear();
+        }
+        if (type !== 'domain' && searchUiState.currentChangesDomainGroupHostFilters instanceof Map) {
+            searchUiState.currentChangesDomainGroupHostFilters.clear();
+        }
+        const input = document.getElementById('searchInput');
+        const query = String((input && input.value != null ? input.value : searchUiState.query) || '').trim();
+        if (!query) return;
+
+        searchCurrentChangesAndRender(query);
+        return;
+    }
+
+    const mainDomainSelectorChip = e && e.target ? e.target.closest('.changes-domain-selector-chip') : null;
+    if (mainDomainSelectorChip) {
+        try {
+            e.preventDefault();
+            e.stopPropagation();
+        } catch (_) { }
+
+        const selectorRow = mainDomainSelectorChip.closest('.changes-domain-selector-row');
+        const groupId = String(mainDomainSelectorChip.getAttribute('data-domain-group-id') || selectorRow?.getAttribute('data-domain-group-id') || '').trim();
+        const host = String(mainDomainSelectorChip.getAttribute('data-domain-host') || '').trim();
+        const selectedIndex = parseInt(selectorRow?.getAttribute('data-parent-index') || '-1', 10);
+        if (!groupId) return;
+        setCurrentChangesDomainGroupHostFilter(groupId, host, {
+            selectedIndex: Number.isNaN(selectedIndex) ? searchUiState.selectedIndex : selectedIndex
+        });
+        return;
+    }
+
+    const mainDomainGroupEl = e && e.target ? e.target.closest('.changes-domain-group-item') : null;
+    if (mainDomainGroupEl) {
+        try {
+            e.preventDefault();
+            e.stopPropagation();
+        } catch (_) { }
+
+        const groupId = String(mainDomainGroupEl.getAttribute('data-domain-group-id') || '').trim();
+        const selectedIndex = parseInt(mainDomainGroupEl.getAttribute('data-index') || '-1', 10);
+        if (!groupId) return;
+        toggleCurrentChangesDomainGroup(groupId, {
+            selectedIndex: Number.isNaN(selectedIndex) ? searchUiState.selectedIndex : selectedIndex
+        });
+        return;
+    }
+
+    const mainDomainChildEl = e && e.target ? e.target.closest('.changes-domain-child-row') : null;
+    if (mainDomainChildEl) {
+        const groupId = String(mainDomainChildEl.getAttribute('data-domain-group-id') || '').trim();
+        const childId = String(mainDomainChildEl.getAttribute('data-domain-child-id') || '').trim();
+        if (!childId) return;
+
+        let targetItem = null;
+        if (groupId) {
+            const groupItem = searchUiState.results.find(item => item && item.nodeType === 'domain_group' && String(item.id) === groupId);
+            if (groupItem && Array.isArray(groupItem.domainChildren)) {
+                targetItem = groupItem.domainChildren.find(child => child && String(child.id) === childId) || null;
+            }
+        }
+        if (!targetItem) {
+            targetItem = currentChangesSearchDb?.itemById?.get(childId) || null;
+        }
+        if (targetItem) {
+            activateCurrentChangesSearchItem(targetItem);
+        }
+        return;
+    }
+
     const item = e && e.target ? e.target.closest('.search-result-item') : null;
     if (!item) return;
     const idx = parseInt(item.getAttribute('data-index') || '-1', 10);
@@ -820,7 +3048,7 @@ function handleSearchResultsPanelMouseOver(e) {
     if (!item) return;
     const idx = parseInt(item.getAttribute('data-index') || '-1', 10);
     if (Number.isNaN(idx)) return;
-    updateSearchResultSelection(idx);
+    updateSearchResultSelection(idx, { scrollIntoView: false });
 }
 
 /**
@@ -1151,8 +3379,8 @@ const SEARCH_MODES = [
         label: '当前变化',
         labelEn: 'Current Changes',
         icon: 'fa-exchange-alt',
-        desc: '标题 / URL / 路径（空格=并且）',
-        descEn: 'Title / URL / path (space = AND)'
+        desc: '标题 / URL / 域名 / 路径（空格=并且）',
+        descEn: 'Title / URL / domain / path (space = AND)'
     },
     {
         key: 'history',
@@ -1167,21 +3395,25 @@ const SEARCH_MODES = [
 const SEARCH_MODE_GUIDES = {
     'current-changes': {
         title: {
-            zh_CN: '标题 / URL / 路径搜索',
-            en: 'Title / URL / Path Search'
+            zh_CN: '标题 / URL / 域名 / 路径搜索',
+            en: 'Title / URL / Domain / Path Search'
         },
         summary: {
-            zh_CN: '可搜索标题、URL、路径（新路径/旧路径）。',
-            en: 'Search title, URL, and path (new/old path).'
+            zh_CN: '可搜索标题、URL、域名、路径（新路径/旧路径）；并支持书签/文件夹/域名分类切换。',
+            en: 'Search title, URL, domain, and path (new/old path); supports bookmark/folder/domain type filters.'
         },
         rules: {
             zh_CN: [
                 '多个关键词用空格分隔，按“并且（AND）”匹配',
+                '搜索范围按当前视图模式决定：简略/集合按当前可见变化范围，详细按当前书签全量范围',
+                '结果顶部可切换：书签 / 文件夹 / 域名',
                 '按匹配度排序，最多显示 20 条',
                 '不支持序号/哈希/日期筛选'
             ],
             en: [
                 'Use spaces between keywords (AND match)',
+                'Scope follows current view: Compact/Collection use current visible changes; Detailed uses full current bookmark tree',
+                'Use top toggles: Bookmark / Folder / Domain',
                 'Sorted by relevance, up to 20 results',
                 'No seq/hash/date filters in this mode'
             ]
@@ -1904,7 +4136,24 @@ function matchTime(query, item) {
 function getBackupHistorySearchSignature() {
     if (!Array.isArray(syncHistory) || syncHistory.length === 0) return '';
     const latestTime = syncHistory[syncHistory.length - 1]?.time || 0;
-    return `${syncHistory.length}:${latestTime}`;
+    const firstTime = syncHistory[0]?.time || 0;
+    const hasher = createSearchSignatureHasher();
+
+    hasher.push(syncHistory.length);
+    hasher.push(firstTime);
+    hasher.push(latestTime);
+
+    for (const record of syncHistory) {
+        hasher.push(record?.time || '');
+        hasher.push(record?.fingerprint || '');
+        hasher.push(record?.note || '');
+        hasher.push(record?.seqNumber || '');
+        hasher.push(record?.type || '');
+        hasher.push(record?.direction || '');
+        hasher.push(record?.status || '');
+    }
+
+    return `${syncHistory.length}:${latestTime}:${hasher.digest()}`;
 }
 
 /**
@@ -2239,6 +4488,42 @@ function getRecordPageNumber(recordTime) {
     return Math.ceil((index + 1) / pageSize);
 }
 
+async function renderHistorySearchTargetPage(page) {
+    const targetPage = Math.max(1, Number(page) || 1);
+    const pageSize = typeof HISTORY_PAGE_SIZE !== 'undefined' ? HISTORY_PAGE_SIZE : 10;
+
+    if (typeof refreshHistoryIndexPage === 'function') {
+        await refreshHistoryIndexPage({ page: targetPage, pageSize });
+    } else {
+        if (typeof window !== 'undefined') {
+            window.currentHistoryPage = targetPage;
+        }
+        try {
+            currentHistoryPage = targetPage;
+        } catch (_) { }
+    }
+
+    if (typeof renderHistoryView === 'function') {
+        renderHistoryView();
+    }
+
+    await nextAnimationFrame();
+    await nextAnimationFrame();
+}
+
+async function findHistoryRecordTarget(recordTime) {
+    const targetSelector = `.commit-item[data-record-time="${recordTime}"]`;
+    let target = document.querySelector(targetSelector);
+    if (target) return target;
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    target = document.querySelector(targetSelector);
+    if (target) return target;
+
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return document.querySelector(targetSelector);
+}
+
 /**
  * 定位到指定的备份历史记录
  * @param {number} recordTime - 记录时间戳
@@ -2256,51 +4541,36 @@ async function locateRecordInHistory(recordTime, options = {}) {
         return false;
     }
 
-    // 切换分页（如果需要）
     const currentPage = typeof currentHistoryPage !== 'undefined' ? currentHistoryPage : 1;
     if (currentPage !== targetPage) {
-        // 更新页码
-        if (typeof window !== 'undefined') {
-            window.currentHistoryPage = targetPage;
-        }
-        // 使用全局变量
-        if (typeof currentHistoryPage !== 'undefined') {
-            // 直接修改全局变量（history.js 中定义）
-            try {
-                // 通过 eval 或直接赋值（取决于变量定义方式）
+        try {
+            await renderHistorySearchTargetPage(targetPage);
+        } catch (error) {
+            console.warn('[Search] Failed to refresh history page for search jump:', error);
+            if (typeof window !== 'undefined') {
                 window.currentHistoryPage = targetPage;
+            }
+            try {
+                currentHistoryPage = targetPage;
             } catch (_) { }
-        }
-
-        // 重新渲染历史视图
-        if (typeof renderHistoryView === 'function') {
-            renderHistoryView();
+            if (typeof renderHistoryView === 'function') {
+                renderHistoryView();
+            }
         }
     }
 
-    // 等待 DOM 更新
-    await new Promise(resolve => {
-        requestAnimationFrame(() => {
-            requestAnimationFrame(resolve);
-        });
-    });
-
-    // 查找目标元素
-    const targetSelector = `.commit-item[data-record-time="${recordTime}"]`;
-    let target = document.querySelector(targetSelector);
-
-    // 重试机制
+    let target = await findHistoryRecordTarget(recordTime);
     if (!target) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        target = document.querySelector(targetSelector);
-    }
-    if (!target) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        target = document.querySelector(targetSelector);
+        try {
+            await renderHistorySearchTargetPage(targetPage);
+            target = await findHistoryRecordTarget(recordTime);
+        } catch (error) {
+            console.warn('[Search] Retry refresh for history search jump failed:', error);
+        }
     }
 
     if (!target) {
-        console.warn('[Search] Target element not found after retries:', targetSelector);
+        console.warn('[Search] Target element not found after retries:', recordTime);
         return false;
     }
 
@@ -2376,6 +4646,10 @@ const historyDetailSearchState = {
     query: '',                  // 当前搜索关键词
     selectedIndex: -1,          // 选中的结果索引
     results: [],                // 搜索结果
+    typeFilter: null,           // 当前筛选类型（bookmark/folder/domain）
+    typeCounts: null,           // 当前筛选计数
+    expandedDomainGroups: new Set(), // 域名分组展开状态
+    domainGroupHostFilters: new Map(), // 域名组内子域名筛选
     isActive: false             // 是否激活搜索
 };
 
@@ -2404,6 +4678,90 @@ function clearAllHistoryDetailSearchDb() {
     }
 }
 
+function buildNodeParentIndexForHistorySearch(tree) {
+    const index = new Map();
+    try {
+        if (!tree || !tree[0]) return index;
+
+        const stack = [{ node: tree[0], parentId: '' }];
+        while (stack.length > 0) {
+            const current = stack.pop();
+            const node = current && current.node;
+            if (!node || node.id == null) continue;
+
+            const nodeId = String(node.id);
+            if (!nodeId) continue;
+            index.set(nodeId, current.parentId ? String(current.parentId) : '');
+
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                for (let i = node.children.length - 1; i >= 0; i -= 1) {
+                    stack.push({ node: node.children[i], parentId: nodeId });
+                }
+            }
+        }
+    } catch (_) { }
+    return index;
+}
+
+function buildNodeIdPathFromParentIndex(targetId, parentIndex) {
+    const id = String(targetId || '');
+    if (!id || !(parentIndex instanceof Map) || !parentIndex.has(id)) return [];
+
+    const path = [];
+    let currentId = id;
+    let guard = 0;
+
+    while (currentId && guard++ < 1024) {
+        path.push(currentId);
+        const parentRaw = parentIndex.get(currentId);
+        const parentId = parentRaw != null ? String(parentRaw) : '';
+        if (!parentId || parentId === currentId) break;
+        currentId = parentId;
+        if (!parentIndex.has(currentId)) {
+            path.push(currentId);
+            break;
+        }
+    }
+
+    return path.reverse();
+}
+
+function normalizeHistoryDetailIdPath(path, targetId = '') {
+    const normalized = [];
+
+    if (Array.isArray(path)) {
+        for (const idRaw of path) {
+            const id = String(idRaw || '').trim();
+            if (!id) continue;
+            if (normalized.length && normalized[normalized.length - 1] === id) continue;
+            normalized.push(id);
+        }
+    }
+
+    const target = String(targetId || '').trim();
+    if (target && normalized[normalized.length - 1] !== target) {
+        normalized.push(target);
+    }
+
+    return normalized;
+}
+
+function mergeHistoryDetailIdPathCandidates(...paths) {
+    const seen = new Set();
+    const candidates = [];
+
+    paths.forEach((path) => {
+        const normalized = normalizeHistoryDetailIdPath(path);
+        if (!normalized.length) return;
+        const signature = normalized.join('>');
+        if (seen.has(signature)) return;
+        seen.add(signature);
+        candidates.push(normalized);
+    });
+
+    return candidates;
+}
+
 // ==================== Phase 2.5: 搜索索引构建 ====================
 
 /**
@@ -2417,10 +4775,11 @@ function clearAllHistoryDetailSearchDb() {
 function buildHistoryDetailSearchDb(options) {
     const { changeMap, currentTree, oldTree, recordTime } = options;
     const cacheKey = String(recordTime);
+    const signature = getHistoryDetailSearchSignature(options);
 
     // 检查缓存
     const cached = historyDetailSearchDbMap.get(cacheKey);
-    if (cached && cached.signature === cacheKey) {
+    if (cached && cached.signature === signature) {
         return cached;
     }
 
@@ -2430,9 +4789,11 @@ function buildHistoryDetailSearchDb(options) {
     // 收集节点信息（复用 Phase 1 的函数）
     const currentInfo = collectNodeInfoForIds(currentTree, idSet);
     const oldInfo = oldTree ? collectNodeInfoForIds(oldTree, idSet) : new Map();
+    const currentParentIndex = buildNodeParentIndexForHistorySearch(currentTree);
+    const oldParentIndex = oldTree ? buildNodeParentIndexForHistorySearch(oldTree) : new Map();
 
-    const items = [];
-    const itemById = new Map();
+    const changedItems = [];
+    const changedItemById = new Map();
 
     for (const id of ids) {
         const change = changeMap ? (changeMap.get(id) || {}) : {};
@@ -2444,14 +4805,23 @@ function buildHistoryDetailSearchDb(options) {
         const title = (cur?.title || old?.title || '').trim();
         const url = (cur?.url || old?.url || '').trim();
         const nodeType = url ? 'bookmark' : 'folder';
+        const currentIdPath = buildNodeIdPathFromParentIndex(id, currentParentIndex);
+        const oldIdPath = buildNodeIdPathFromParentIndex(id, oldParentIndex);
+        const idPathCandidates = mergeHistoryDetailIdPathCandidates(currentIdPath, oldIdPath);
 
         const newNamedPath = (change.moved && change.moved.newPath) ? String(change.moved.newPath) : (cur?.namedPath || '');
         const oldNamedPath = (change.moved && change.moved.oldPath) ? String(change.moved.oldPath) : (old?.namedPath || '');
+        const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
+        const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
+        const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
+        const oldPathSlash = oldNamedPath ? toSearchSlashFull(oldNamedPath) : '';
 
         const titleLower = title.toLowerCase();
         const urlLower = url.toLowerCase();
         const newPathLower = (newNamedPath || '').toLowerCase();
         const oldPathLower = (oldNamedPath || '').toLowerCase();
+        const domainHost = extractSearchHostFromUrl(url);
+        const domainRoot = getSearchRegistrableDomain(domainHost);
 
         const item = {
             id,
@@ -2460,29 +4830,274 @@ function buildHistoryDetailSearchDb(options) {
             nodeType,
             changeType,
             changeTypeParts,
+            currentIdPath,
+            oldIdPath,
+            idPathCandidates,
             newNamedPath,
             oldNamedPath,
+            newFolderSlash,
+            oldFolderSlash,
+            newPathSlash,
+            oldPathSlash,
+            domainHost,
+            domainRoot,
             __t: titleLower,
             __u: urlLower,
             __pn: newPathLower,
-            __po: oldPathLower
+            __po: oldPathLower,
+            __sn: (newPathSlash || newFolderSlash || '').toLowerCase(),
+            __so: (oldPathSlash || oldFolderSlash || '').toLowerCase(),
+            __dh: (domainHost || '').toLowerCase(),
+            __dr: (domainRoot || '').toLowerCase(),
+            __changed: 1
         };
 
-        items.push(item);
-        itemById.set(id, item);
+        changedItems.push(item);
+        changedItemById.set(id, item);
     }
 
+    const changedFolderIdSet = new Set();
+    for (const changedItem of changedItems) {
+        if (changedItem && changedItem.nodeType === 'folder') {
+            const folderId = String(changedItem.id || '').trim();
+            if (folderId) changedFolderIdSet.add(folderId);
+        }
+    }
+    const changedContextOldIdSet = oldTree ? collectDescendantIdsUnderFolders(oldTree, changedFolderIdSet) : new Set();
+    const changedContextIdSet = collectDescendantIdsUnderFoldersFromTrees([currentTree, oldTree], changedFolderIdSet);
+    const changedAncestorIdSet = collectAncestorIdsFromParentIndexes(idSet, [currentParentIndex, oldParentIndex]);
+
+    const { items, itemById } = buildSearchItemsFromTree(currentTree, changeMap, changedItemById, { changedContextIdSet });
+
+    const oldOnlyContextIds = [];
+    changedContextOldIdSet.forEach((idRaw) => {
+        const id = String(idRaw || '').trim();
+        if (!id || itemById.has(id)) return;
+        oldOnlyContextIds.push(id);
+    });
+    if (oldOnlyContextIds.length > 0) {
+        const oldOnlyIdSet = new Set(oldOnlyContextIds);
+        const oldContextInfo = oldTree ? collectNodeInfoForIds(oldTree, oldOnlyIdSet) : new Map();
+        const currentContextInfo = collectNodeInfoForIds(currentTree, oldOnlyIdSet);
+
+        for (const id of oldOnlyContextIds) {
+            const cur = currentContextInfo.get(id) || null;
+            const old = oldContextInfo.get(id) || null;
+            if (!cur && !old) continue;
+            if (itemById.has(id)) continue;
+
+            const isChanged = (changeMap instanceof Map && changeMap.has(id)) || changedItemById.has(id);
+            if (isChanged) continue;
+
+            const title = (cur?.title || old?.title || '').trim();
+            const url = (cur?.url || old?.url || '').trim();
+            const newNamedPath = cur?.namedPath || '';
+            const oldNamedPath = old?.namedPath || '';
+            const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
+            const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
+            const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
+            const oldPathSlash = oldNamedPath ? toSearchSlashFull(oldNamedPath) : '';
+            const domainHost = extractSearchHostFromUrl(url);
+            const domainRoot = getSearchRegistrableDomain(domainHost);
+            const currentIdPath = buildNodeIdPathFromParentIndex(id, currentParentIndex);
+            const oldIdPath = buildNodeIdPathFromParentIndex(id, oldParentIndex);
+            const idPathCandidates = mergeHistoryDetailIdPathCandidates(currentIdPath, oldIdPath);
+            const nodeType = url ? 'bookmark' : 'folder';
+            const shouldIndex = !!(title || url || newNamedPath || oldNamedPath);
+            if (!shouldIndex) continue;
+
+            const contextItem = {
+                id,
+                title,
+                url,
+                nodeType,
+                changeType: '',
+                changeTypeParts: [],
+                currentIdPath,
+                oldIdPath,
+                idPathCandidates,
+                newNamedPath,
+                oldNamedPath,
+                newFolderSlash,
+                oldFolderSlash,
+                newPathSlash,
+                oldPathSlash,
+                domainHost,
+                domainRoot,
+                __t: title.toLowerCase(),
+                __u: url.toLowerCase(),
+                __pn: (newNamedPath || '').toLowerCase(),
+                __po: (oldNamedPath || '').toLowerCase(),
+                __sn: (newPathSlash || newFolderSlash || '').toLowerCase(),
+                __so: (oldPathSlash || oldFolderSlash || '').toLowerCase(),
+                __dh: (domainHost || '').toLowerCase(),
+                __dr: (domainRoot || '').toLowerCase(),
+                __changed: 0,
+                __changed_context: 1
+            };
+
+            items.push(contextItem);
+            itemById.set(id, contextItem);
+        }
+    }
+
+    for (const changedItem of changedItems) {
+        const id = String(changedItem?.id || '').trim();
+        if (!id) continue;
+
+        const existing = itemById.get(id);
+        if (existing) {
+            existing.changeType = changedItem.changeType || existing.changeType;
+            existing.changeTypeParts = Array.isArray(changedItem.changeTypeParts) ? changedItem.changeTypeParts : existing.changeTypeParts;
+            if (Array.isArray(changedItem.currentIdPath) && changedItem.currentIdPath.length > 0) {
+                existing.currentIdPath = changedItem.currentIdPath;
+            }
+            if (Array.isArray(changedItem.oldIdPath) && changedItem.oldIdPath.length > 0) {
+                existing.oldIdPath = changedItem.oldIdPath;
+            }
+            if (changedItem.newNamedPath) existing.newNamedPath = changedItem.newNamedPath;
+            if (changedItem.oldNamedPath) existing.oldNamedPath = changedItem.oldNamedPath;
+            if (changedItem.newFolderSlash) existing.newFolderSlash = changedItem.newFolderSlash;
+            if (changedItem.oldFolderSlash) existing.oldFolderSlash = changedItem.oldFolderSlash;
+            if (changedItem.newPathSlash) existing.newPathSlash = changedItem.newPathSlash;
+            if (changedItem.oldPathSlash) existing.oldPathSlash = changedItem.oldPathSlash;
+            if (Array.isArray(changedItem.idPathCandidates) && changedItem.idPathCandidates.length > 0) {
+                existing.idPathCandidates = changedItem.idPathCandidates;
+            }
+            if (changedItem.__pn) existing.__pn = changedItem.__pn;
+            if (changedItem.__po) existing.__po = changedItem.__po;
+            if (changedItem.__sn) existing.__sn = changedItem.__sn;
+            if (changedItem.__so) existing.__so = changedItem.__so;
+            if (changedItem.__dh && !existing.__dh) existing.__dh = changedItem.__dh;
+            if (changedItem.__dr && !existing.__dr) existing.__dr = changedItem.__dr;
+            existing.__changed = 1;
+            existing.__changed_context = 0;
+            continue;
+        }
+
+        const cloned = {
+            ...changedItem,
+            __changed: 1,
+            __changed_context: 0
+        };
+        items.push(cloned);
+        itemById.set(id, cloned);
+    }
+
+    const renderTreeRoot = Array.isArray(currentTree) ? currentTree[0] : null;
+    const dataOrderMap = buildCurrentChangesTreeOrderMapFromRoot(renderTreeRoot);
+
     const db = {
-        signature: cacheKey,
+        signature,
         size: ids.length,
         items,
-        itemById
+        itemById,
+        changedItems,
+        changedItemById,
+        simpleScopedIdSet: (() => {
+            const set = new Set();
+            idSet.forEach((v) => set.add(String(v)));
+            changedContextIdSet.forEach((v) => set.add(String(v)));
+            changedAncestorIdSet.forEach((v) => set.add(String(v)));
+            return set;
+        })(),
+        collectionScopedIdSet: buildCollectionScopedIdSetFromTree(currentTree, changeMap),
+        renderableIdSet: buildCurrentChangesNodeIdSetFromRoot(renderTreeRoot),
+        dataOrderMap
     };
 
     historyDetailSearchDbMap.set(cacheKey, db);
     console.log('[Search] Phase 2.5 index built for:', cacheKey, 'items:', items.length);
 
     return db;
+}
+
+function getHistoryDetailSearchScopeMode(modalContainer) {
+    try {
+        const activeBtn = modalContainer?.querySelector('#historyDetailModeToggleModal .toggle-btn.active[data-mode]');
+        const mode = String(activeBtn?.dataset?.mode || '').toLowerCase();
+        if (mode === 'simple' || mode === 'detailed' || mode === 'collection') return mode;
+    } catch (_) { }
+
+    try {
+        if (typeof getRecordDetailMode === 'function') {
+            const recordMode = String(getRecordDetailMode(historyDetailSearchState.recordTime) || '').toLowerCase();
+            if (recordMode === 'simple' || recordMode === 'detailed' || recordMode === 'collection') return recordMode;
+        }
+    } catch (_) { }
+
+    return 'detailed';
+}
+
+function getHistoryDetailScopedSearchMeta(db, modalContainer) {
+    const mode = getHistoryDetailSearchScopeMode(modalContainer);
+    const allItems = Array.isArray(db?.items) ? db.items : [];
+    const emptyMeta = { items: [], orderMap: new Map(), mode };
+    if (!allItems.length) return emptyMeta;
+
+    const treeContainer = modalContainer?.querySelector('.history-tree-container');
+    const visibleOrderMap = buildCurrentChangesDomOrderMap(treeContainer, { visibleOnly: true });
+    const visibleScopedIdSet = visibleOrderMap.size > 0 ? new Set(visibleOrderMap.keys()) : null;
+    const dataOrderMap = db && db.dataOrderMap instanceof Map
+        ? db.dataOrderMap
+        : buildCurrentChangesDomOrderMap(treeContainer, { visibleOnly: false });
+
+    if (mode === 'collection') {
+        const collectionScopedIdSet = db && db.collectionScopedIdSet instanceof Set ? db.collectionScopedIdSet : null;
+        if (collectionScopedIdSet && collectionScopedIdSet.size > 0) {
+            const scopedItems = allItems.filter(item => item && collectionScopedIdSet.has(String(item.id || '')));
+            if (scopedItems.length > 0) {
+                return { items: scopedItems, orderMap: dataOrderMap, mode };
+            }
+        }
+
+        if (visibleScopedIdSet && visibleScopedIdSet.size > 0) {
+            const visibleItems = allItems.filter(item => item && visibleScopedIdSet.has(String(item.id || '')));
+            if (visibleItems.length > 0) {
+                return { items: visibleItems, orderMap: visibleOrderMap, mode };
+            }
+        }
+        return emptyMeta;
+    }
+
+    if (mode === 'simple') {
+        const simpleScopedIdSet = db && db.simpleScopedIdSet instanceof Set ? db.simpleScopedIdSet : null;
+        if (simpleScopedIdSet && simpleScopedIdSet.size > 0) {
+            const scopedItems = allItems.filter(item => item && simpleScopedIdSet.has(String(item.id || '')));
+            if (scopedItems.length > 0) {
+                return { items: scopedItems, orderMap: dataOrderMap, mode };
+            }
+        }
+
+        const simpleFallback = allItems.filter(item => item && (item.__changed || item.__changed_context));
+        if (simpleFallback.length > 0) {
+            return { items: simpleFallback, orderMap: dataOrderMap, mode };
+        }
+        return emptyMeta;
+    }
+
+    if (mode === 'detailed') {
+        const renderableIdSet = db && db.renderableIdSet instanceof Set ? db.renderableIdSet : null;
+        if (renderableIdSet && renderableIdSet.size > 0) {
+            const scopedItems = allItems.filter(item => item && renderableIdSet.has(String(item.id || '')));
+            return { items: scopedItems, orderMap: dataOrderMap, mode };
+        }
+        return emptyMeta;
+    }
+
+    const fallbackOrderMap = visibleOrderMap.size > 0 ? visibleOrderMap : dataOrderMap;
+    const scoped = allItems.filter(item => item && (item.__changed || item.__changed_context));
+    if (scoped.length > 0) {
+        return { items: scoped, orderMap: fallbackOrderMap, mode };
+    }
+    if (Array.isArray(db?.changedItems) && db.changedItems.length > 0) {
+        return { items: db.changedItems, orderMap: fallbackOrderMap, mode };
+    }
+    return {
+        items: allItems.filter(item => item && item.__changed),
+        orderMap: fallbackOrderMap,
+        mode
+    };
 }
 
 // ==================== Phase 2.5: 搜索执行 ====================
@@ -2493,7 +5108,7 @@ function buildHistoryDetailSearchDb(options) {
  * @param {Object} db - 搜索数据库
  * @returns {Array} 搜索结果
  */
-function searchHistoryDetailChanges(query, db) {
+function searchHistoryDetailChanges(query, db, options = {}) {
     if (!db || !db.items || db.items.length === 0) {
         return [];
     }
@@ -2503,24 +5118,97 @@ function searchHistoryDetailChanges(query, db) {
         return [];
     }
 
+    const scopedMeta = getHistoryDetailScopedSearchMeta(db, options.modalContainer);
+    const scopedItems = Array.isArray(scopedMeta?.items) ? scopedMeta.items : [];
+    const scopedOrderMap = scopedMeta && scopedMeta.orderMap instanceof Map
+        ? scopedMeta.orderMap
+        : new Map();
+    if (!scopedItems.length) {
+        return [];
+    }
+
+    const allowPathMatch = shouldEnablePathFieldMatch(query);
     const scored = [];
-    for (const item of db.items) {
-        // 复用 Phase 1 的评分逻辑
-        const s = scoreCurrentChangesSearchItem(item, tokens);
+    for (const item of scopedItems) {
+        const s = scoreCurrentChangesSearchItem(item, tokens, { allowPathMatch, query });
         if (s > -Infinity) scored.push({ item, s });
     }
 
-    scored.sort((a, b) => {
-        if (b.s !== a.s) return b.s - a.s;
-        const ta = a.item.title || '';
-        const tb = b.item.title || '';
-        const tc = ta.localeCompare(tb);
-        if (tc !== 0) return tc;
-        return (a.item.url || '').localeCompare((b.item.url || ''));
+    scored.sort((a, b) => compareScopedSearchMatches(a, b, scopedOrderMap));
+
+    return scored.map(x => x.item);
+}
+
+function rerenderHistoryDetailSearchForQuery(modalContainer, options = {}) {
+    if (!modalContainer) return false;
+
+    const buildDbIfNeeded = typeof modalContainer._historyDetailSearchBuildDb === 'function'
+        ? modalContainer._historyDetailSearchBuildDb
+        : null;
+    if (!buildDbIfNeeded) return false;
+
+    const searchInput = modalContainer.querySelector('.detail-search-input');
+    const query = String(
+        options.query != null
+            ? options.query
+            : ((searchInput && searchInput.value != null ? searchInput.value : historyDetailSearchState.query) || '')
+    ).trim();
+    if (!query) return false;
+
+    const searchDb = buildDbIfNeeded();
+    const results = searchHistoryDetailChanges(query, searchDb, { modalContainer });
+    renderHistoryDetailSearchResults(results, modalContainer, {
+        query,
+        recordTime: historyDetailSearchState.recordTime
     });
 
-    const MAX_RESULTS = 20;
-    return scored.slice(0, MAX_RESULTS).map(x => x.item);
+    const selectedIndex = Number.isFinite(Number(options.selectedIndex))
+        ? Number(options.selectedIndex)
+        : null;
+    if (selectedIndex !== null) {
+        updateHistoryDetailSearchSelection(modalContainer, selectedIndex, { scrollIntoView: false });
+    }
+    return true;
+}
+
+function toggleHistoryDetailDomainGroup(modalContainer, groupId, options = {}) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) return false;
+
+    if (!(historyDetailSearchState.expandedDomainGroups instanceof Set)) {
+        historyDetailSearchState.expandedDomainGroups = new Set();
+    }
+
+    if (historyDetailSearchState.expandedDomainGroups.has(normalizedGroupId)) {
+        historyDetailSearchState.expandedDomainGroups.delete(normalizedGroupId);
+    } else {
+        historyDetailSearchState.expandedDomainGroups.add(normalizedGroupId);
+    }
+
+    return rerenderHistoryDetailSearchForQuery(modalContainer, options);
+}
+
+function setHistoryDetailDomainGroupHostFilter(modalContainer, groupId, host, options = {}) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) return false;
+
+    if (!(historyDetailSearchState.domainGroupHostFilters instanceof Map)) {
+        historyDetailSearchState.domainGroupHostFilters = new Map();
+    }
+    if (!(historyDetailSearchState.expandedDomainGroups instanceof Set)) {
+        historyDetailSearchState.expandedDomainGroups = new Set();
+    }
+
+    const normalizedHost = normalizeSearchDomainHostValue(host);
+    const currentHost = normalizeSearchDomainHostValue(historyDetailSearchState.domainGroupHostFilters.get(normalizedGroupId));
+    if (normalizedHost && currentHost !== normalizedHost) {
+        historyDetailSearchState.domainGroupHostFilters.set(normalizedGroupId, normalizedHost);
+    } else {
+        historyDetailSearchState.domainGroupHostFilters.delete(normalizedGroupId);
+    }
+    historyDetailSearchState.expandedDomainGroups.add(normalizedGroupId);
+
+    return rerenderHistoryDetailSearchForQuery(modalContainer, options);
 }
 
 // ==================== Phase 2.5: 结果渲染 ====================
@@ -2561,17 +5249,64 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     const panel = getHistoryDetailSearchPanel(modalContainer);
     if (!panel) return;
 
-    const { query = '' } = options;
+    const { query = '', recordTime = null } = options;
+    try {
+        const searchInput = modalContainer?.querySelector('.detail-search-input');
+        const currentQ = (searchInput && typeof searchInput.value === 'string')
+            ? searchInput.value.trim().toLowerCase()
+            : '';
+        const expectedQ = String(query || '').trim().toLowerCase();
+        const activeRecordTime = String(modalContainer?.dataset?.searchRecordTime || historyDetailSearchState.recordTime || '');
+        const expectedRecordTime = String(recordTime != null ? recordTime : historyDetailSearchState.recordTime || '');
+        if (currentQ !== expectedQ) return;
+        if (historyDetailSearchState.isActive === false) return;
+        if (expectedRecordTime && activeRecordTime && expectedRecordTime !== activeRecordTime) return;
+    } catch (_) { }
+
+    const sourceResults = Array.isArray(results) ? results : [];
+    const tokens = String(query).toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
+    let domainMatchedItems = [];
+    try {
+        const buildDbIfNeeded = typeof modalContainer?._historyDetailSearchBuildDb === 'function'
+            ? modalContainer._historyDetailSearchBuildDb
+            : null;
+        const searchDb = buildDbIfNeeded ? buildDbIfNeeded() : null;
+        const scopedMeta = searchDb ? getHistoryDetailScopedSearchMeta(searchDb, modalContainer) : null;
+        const scopedItems = Array.isArray(scopedMeta?.items) ? scopedMeta.items : [];
+        domainMatchedItems = getDomainMatchedSearchItems(scopedItems, tokens, { query });
+    } catch (_) {
+        domainMatchedItems = getDomainMatchedSearchItems(sourceResults, tokens, { query });
+    }
+    const { filtered, counts, activeFilter } = filterSearchItemsByType(sourceResults, historyDetailSearchState.typeFilter, {
+        domainGrouped: true,
+        domainMatchedItems
+    });
+
+    const MAX_RESULTS = Number.isFinite(Number(options.maxResults)) ? Math.max(1, Number(options.maxResults)) : 20;
+    const limitedResults = filtered.slice(0, MAX_RESULTS);
 
     historyDetailSearchState.query = query;
-    historyDetailSearchState.results = Array.isArray(results) ? results : [];
+    historyDetailSearchState.results = limitedResults;
+    historyDetailSearchState.typeCounts = counts;
+    historyDetailSearchState.typeFilter = activeFilter;
     historyDetailSearchState.selectedIndex = -1;
+    if (!(historyDetailSearchState.expandedDomainGroups instanceof Set)) {
+        historyDetailSearchState.expandedDomainGroups = new Set();
+    }
+    if (!(historyDetailSearchState.domainGroupHostFilters instanceof Map)) {
+        historyDetailSearchState.domainGroupHostFilters = new Map();
+    }
+    if (activeFilter !== 'domain') {
+        historyDetailSearchState.expandedDomainGroups.clear();
+        historyDetailSearchState.domainGroupHostFilters.clear();
+    }
 
-    if (!historyDetailSearchState.results.length) {
+    if (!sourceResults.length && !limitedResults.length) {
         const emptyText = options.emptyText || (typeof i18n !== 'undefined' && typeof currentLang !== 'undefined'
             ? i18n.searchNoResults[currentLang]
             : '无匹配结果');
-        panel.innerHTML = `<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
+        const typeToggleHtml = buildSearchTypeToggleHtml(counts, activeFilter, { variant: 'detail' });
+        panel.innerHTML = `${typeToggleHtml}<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
         showHistoryDetailSearchPanel(modalContainer);
         return;
     }
@@ -2579,10 +5314,6 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     const isZh = typeof currentLang !== 'undefined' && currentLang === 'zh_CN';
 
     const rowsHtml = historyDetailSearchState.results.map((item, idx) => {
-        const safeTitle = escapeHtml(item.title || (isZh ? '（无标题）' : '(Untitled)'));
-        const metaText = item.nodeType === 'bookmark' && item.url ? escapeHtml(item.url) : '';
-
-        // 变化类型徽章
         const parts = Array.isArray(item.changeTypeParts) ? item.changeTypeParts : [];
         const badges = [];
         if (parts.includes('added') || item.changeType === 'added') badges.push(`<span class="search-change-prefix added" title="${isZh ? '新增' : 'Added'}">+</span>`);
@@ -2592,6 +5323,49 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
         const badgesHtml = badges.length ? badges.join('') : '';
         const changeIconsHtml = badgesHtml ? `<span class="search-change-icons">${badgesHtml}</span>` : '';
 
+        if (item.nodeType === 'domain_group') {
+            const groupIdRaw = String(item.id || `domain-group-${idx}`);
+            const groupId = escapeHtml(groupIdRaw);
+            const isExpanded = historyDetailSearchState.expandedDomainGroups.has(groupIdRaw);
+            const safeTitle = escapeHtml(item.title || (isZh ? '域名分组' : 'Domain group'));
+            const metaText = item.meta ? escapeHtml(item.meta) : '';
+            const chevronClass = isExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
+            const selectedHost = historyDetailSearchState.domainGroupHostFilters instanceof Map
+                ? (historyDetailSearchState.domainGroupHostFilters.get(groupIdRaw) || '')
+                : '';
+            const childRowsHtml = isExpanded
+                ? `${renderSearchDomainGroupSelectorRow(item, groupIdRaw, { variant: 'detail', groupIndex: idx, selectedHost })}${renderSearchDomainGroupChildren(item, groupIdRaw, { variant: 'detail', isZh, selectedHost })}`
+                : '';
+
+            return `
+                <div class="search-result-item detail-domain-group-item ${isExpanded ? 'expanded' : ''}" role="option" data-index="${idx}" data-node-id="${escapeHtml(item.id)}" data-domain-group-id="${groupId}">
+                    <div class="search-result-row">
+                        <div class="search-result-main">
+                            <div class="search-result-title">
+                                <span class="search-result-index">${idx + 1}</span>
+                                <span class="detail-domain-group-chevron"><i class="fas ${chevronClass}"></i></span>
+                                <i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>
+                                <span>${safeTitle}</span>
+                            </div>
+                            ${metaText ? `<div class="search-result-meta">${metaText}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+                ${childRowsHtml}
+            `;
+        }
+
+        const safeTitle = escapeHtml(item.title || (isZh ? '（无标题）' : '(Untitled)'));
+        const metaText = item.meta
+            ? String(item.meta)
+            : (item.nodeType === 'bookmark' && item.url ? String(item.url) : '');
+        const metaHtml = renderSearchMetaContent(item, metaText);
+        const typeIconHtml = item.nodeType === 'folder'
+            ? '<i class="fas fa-folder" style="color:#2563eb; font-size:12px;"></i>'
+            : (item.nodeType === 'domain_group'
+                ? '<i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>'
+                : '<i class="fas fa-bookmark" style="color:#f59e0b; font-size:12px;"></i>');
+
         return `
             <div class="search-result-item" role="option" data-index="${idx}" data-node-id="${escapeHtml(item.id)}" data-change-type="${escapeHtml(item.changeType || '')}">
                 <div class="search-result-row">
@@ -2599,16 +5373,18 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
                         <div class="search-result-title">
                             <span class="search-result-index">${idx + 1}</span>
                             ${changeIconsHtml}
+                            ${typeIconHtml}
                             <span>${safeTitle}</span>
                         </div>
-                        ${metaText ? `<div class="search-result-meta">${metaText}</div>` : ''}
+                        ${metaHtml ? `<div class="search-result-meta">${metaHtml}</div>` : ''}
                     </div>
                 </div>
             </div>
         `;
     }).join('');
 
-    panel.innerHTML = rowsHtml;
+    const typeToggleHtml = buildSearchTypeToggleHtml(counts, activeFilter, { variant: 'detail' });
+    panel.innerHTML = `${typeToggleHtml}${rowsHtml}`;
     showHistoryDetailSearchPanel(modalContainer);
     updateHistoryDetailSearchSelection(modalContainer, 0);
 }
@@ -2618,7 +5394,8 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
  * @param {Element} modalContainer - 模态框容器
  * @param {number} nextIndex - 下一个选中索引
  */
-function updateHistoryDetailSearchSelection(modalContainer, nextIndex) {
+function updateHistoryDetailSearchSelection(modalContainer, nextIndex, options = {}) {
+    const { scrollIntoView = true } = options;
     const panel = getHistoryDetailSearchPanel(modalContainer);
     if (!panel) return;
 
@@ -2635,14 +5412,185 @@ function updateHistoryDetailSearchSelection(modalContainer, nextIndex) {
     const selectedEl = items[clamped];
     if (selectedEl) {
         selectedEl.classList.add('selected');
-        try {
-            selectedEl.scrollIntoView({ block: 'nearest' });
-        } catch (_) { }
+        if (scrollIntoView) {
+            try {
+                selectedEl.scrollIntoView({ block: 'nearest' });
+            } catch (_) { }
+        }
     }
     historyDetailSearchState.selectedIndex = clamped;
 }
 
 // ==================== Phase 2.5: 定位与高亮 ====================
+
+function getTreeItemByNodeIdInContainer(treeContainer, nodeId) {
+    if (!treeContainer) return null;
+    const id = String(nodeId || '');
+    if (!id) return null;
+
+    let escapedId = id;
+    try {
+        escapedId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+            ? CSS.escape(id)
+            : id.replace(/["\\]/g, '\\$&');
+    } catch (_) { }
+
+    return treeContainer.querySelector(`.tree-item[data-node-id="${escapedId}"]`);
+}
+
+function getHistoryDetailSearchLazyContext(treeContainer, options = {}) {
+    try {
+        if (!(window.__historyTreeLazyContexts instanceof Map)) return null;
+
+        const treeLazyKey = treeContainer?.dataset?.lazyKey ? String(treeContainer.dataset.lazyKey) : '';
+        const fallbackKey = options.recordTime != null
+            ? String(options.recordTime)
+            : String(historyDetailSearchState.recordTime || '');
+        const contextKey = treeLazyKey || fallbackKey;
+        if (!contextKey) return null;
+
+        return window.__historyTreeLazyContexts.get(contextKey) || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function expandHistoryDetailFolderItemForSearch(folderItem, treeContainer, options = {}) {
+    if (!folderItem) return null;
+    const nodeType = folderItem.getAttribute('data-node-type') || folderItem.dataset?.nodeType;
+    if (nodeType !== 'folder') return null;
+
+    const treeNode = folderItem.closest('.tree-node');
+    const children = treeNode?.querySelector(':scope > .tree-children');
+    if (!children) return null;
+
+    const toggle = folderItem.querySelector('.tree-toggle:not([style*="opacity: 0"])') || folderItem.querySelector('.tree-toggle');
+    if (toggle) toggle.classList.add('expanded');
+    children.classList.add('expanded');
+
+    const folderIcon = folderItem.querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+    if (folderIcon) {
+        folderIcon.classList.remove('fa-folder');
+        folderIcon.classList.add('fa-folder-open');
+    }
+
+    if (children.dataset && children.dataset.childrenLoaded === 'false') {
+        const lazyContext = options.lazyContext || getHistoryDetailSearchLazyContext(treeContainer, options);
+        if (lazyContext && typeof lazyContext.renderChildren === 'function') {
+            const html = lazyContext.renderChildren(
+                folderItem.dataset ? folderItem.dataset.nodeId : '',
+                children.dataset ? children.dataset.childLevel : '',
+                children.dataset ? children.dataset.nextForceInclude : '',
+                0
+            );
+            children.innerHTML = typeof html === 'string' ? html : '';
+            children.dataset.childrenLoaded = 'true';
+        }
+    }
+
+    return children;
+}
+
+function appendHistoryDetailLoadMoreBatch(loadMoreBtn, treeContainer, options = {}) {
+    if (!loadMoreBtn) return false;
+    const children = loadMoreBtn.closest('.tree-children');
+    if (!children) return false;
+
+    const lazyContext = options.lazyContext || getHistoryDetailSearchLazyContext(treeContainer, options);
+    if (!lazyContext || typeof lazyContext.renderChildren !== 'function') return false;
+
+    const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+    const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+    const parentId = loadMoreBtn.dataset.parentId
+        || (children.dataset ? children.dataset.parentId : '')
+        || '';
+
+    const html = lazyContext.renderChildren(
+        parentId,
+        children.dataset ? children.dataset.childLevel : '',
+        children.dataset ? children.dataset.nextForceInclude : '',
+        startIndex
+    );
+
+    if (typeof html !== 'string' || !html) {
+        try { loadMoreBtn.remove(); } catch (_) { }
+        if (children.dataset) children.dataset.childrenLoaded = 'true';
+        return false;
+    }
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const fragment = document.createDocumentFragment();
+    while (tempDiv.firstChild) fragment.appendChild(tempDiv.firstChild);
+    try { loadMoreBtn.remove(); } catch (_) { }
+    children.appendChild(fragment);
+    if (children.dataset) children.dataset.childrenLoaded = 'true';
+    return true;
+}
+
+async function ensureHistoryDetailPathRendered(idPath, treeContainer, options = {}) {
+    if (!treeContainer) return null;
+    const normalizedPath = normalizeHistoryDetailIdPath(idPath);
+    if (!normalizedPath.length) return null;
+
+    const findItem = (id) => getTreeItemByNodeIdInContainer(treeContainer, id);
+    const targetId = normalizedPath[normalizedPath.length - 1];
+
+    let startIndex = 0;
+    while (startIndex < normalizedPath.length && !findItem(normalizedPath[startIndex])) {
+        startIndex += 1;
+    }
+    if (startIndex >= normalizedPath.length) return null;
+
+    const lazyContext = options.lazyContext || getHistoryDetailSearchLazyContext(treeContainer, options);
+
+    for (let i = startIndex; i < normalizedPath.length - 1; i += 1) {
+        const currentId = normalizedPath[i];
+        const nextId = normalizedPath[i + 1];
+        const currentItem = findItem(currentId);
+        if (!currentItem) return null;
+
+        const children = await expandHistoryDetailFolderItemForSearch(currentItem, treeContainer, {
+            ...options,
+            lazyContext
+        });
+
+        let nextItem = findItem(nextId);
+        if (!nextItem && children) {
+            let guard = 0;
+            while (!nextItem && guard++ < 256) {
+                const loadMoreBtn = children.querySelector(':scope > .tree-load-more');
+                if (!loadMoreBtn) break;
+                const progressed = appendHistoryDetailLoadMoreBatch(loadMoreBtn, treeContainer, {
+                    ...options,
+                    lazyContext
+                });
+                if (!progressed) break;
+                nextItem = findItem(nextId);
+            }
+        }
+
+        if (!nextItem) return null;
+    }
+
+    return findItem(targetId);
+}
+
+async function ensureHistoryDetailTargetRendered(nodeId, treeContainer, options = {}) {
+    const id = String(nodeId || '');
+    if (!id || !treeContainer) return null;
+
+    let target = getTreeItemByNodeIdInContainer(treeContainer, id);
+    if (target) return target;
+
+    const pathCandidates = Array.isArray(options.idPathCandidates) ? options.idPathCandidates : [];
+    for (const path of pathCandidates) {
+        target = await ensureHistoryDetailPathRendered(path, treeContainer, options);
+        if (target) return target;
+    }
+
+    return getTreeItemByNodeIdInContainer(treeContainer, id);
+}
 
 /**
  * 在历史详情的树预览中定位到指定节点
@@ -2650,34 +5598,194 @@ function updateHistoryDetailSearchSelection(modalContainer, nextIndex) {
  * @param {Element} treeContainer - 树预览容器
  * @param {Object} options - 定位选项
  */
-function locateNodeInHistoryDetailPreview(nodeId, treeContainer, options = {}) {
+async function waitHistoryDetailDomSettle(treeContainer, options = {}) {
+    const target = treeContainer || document.querySelector('#modalBody .history-tree-container');
+    if (!target) return;
+
+    const idleMsRaw = Number(options.idleMs);
+    const timeoutMsRaw = Number(options.timeoutMs);
+    const idleMs = Number.isFinite(idleMsRaw) ? Math.max(30, idleMsRaw) : 70;
+    const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(idleMs + 20, timeoutMsRaw) : 380;
+
+    await new Promise((resolve) => {
+        if (typeof MutationObserver !== 'function') {
+            setTimeout(resolve, idleMs);
+            return;
+        }
+
+        let done = false;
+        let idleTimer = null;
+        let timeoutTimer = null;
+        let observer = null;
+
+        const finish = () => {
+            if (done) return;
+            done = true;
+            try { if (observer) observer.disconnect(); } catch (_) { }
+            try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { }
+            try { if (timeoutTimer) clearTimeout(timeoutTimer); } catch (_) { }
+            resolve();
+        };
+
+        const bumpIdle = () => {
+            try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { }
+            idleTimer = setTimeout(finish, idleMs);
+        };
+
+        try {
+            observer = new MutationObserver(() => {
+                bumpIdle();
+            });
+            observer.observe(target, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['class', 'data-children-loaded', 'data-start-index']
+            });
+        } catch (_) {
+            finish();
+            return;
+        }
+
+        bumpIdle();
+        timeoutTimer = setTimeout(finish, timeoutMs);
+    });
+}
+
+async function stabilizeHistoryDetailTargetForJump(nodeId, treeContainer) {
+    const id = String(nodeId || '').trim();
+    if (!id || !treeContainer) return null;
+
+    const findTarget = () => getTreeItemByNodeIdInContainer(treeContainer, id);
+    let target = findTarget();
+    if (!target) return null;
+
+    expandAncestorsForTreeItem(target, treeContainer);
+    await nextAnimationFrame();
+    await nextAnimationFrame();
+    await waitHistoryDetailDomSettle(treeContainer, { idleMs: 70, timeoutMs: 380 });
+
+    target = findTarget() || target;
+    expandAncestorsForTreeItem(target, treeContainer);
+    await nextAnimationFrame();
+
+    return findTarget() || target;
+}
+
+function clearHistoryDetailSearchHighlights(treeContainer) {
+    if (!treeContainer) return;
+
+    const selectors = [
+        '.tree-item.highlight-added',
+        '.tree-item.highlight-deleted',
+        '.tree-item.highlight-moved',
+        '.tree-item.highlight-modified',
+        '.tree-item.highlight-search-neutral'
+    ];
+    try {
+        treeContainer.querySelectorAll(selectors.join(',')).forEach((el) => {
+            try {
+                el.classList.remove('highlight-added', 'highlight-deleted', 'highlight-moved', 'highlight-modified', 'highlight-search-neutral');
+            } catch (_) { }
+        });
+    } catch (_) { }
+}
+
+function triggerHistoryDetailSearchHighlight(target, highlightClass, durationMs = 1200) {
+    if (!target || !highlightClass) return;
+
+    try { target.classList.remove(highlightClass); } catch (_) { }
+    try { void target.offsetWidth; } catch (_) { }
+    try { target.classList.add(highlightClass); } catch (_) { return; }
+
+    setTimeout(() => {
+        try { target.classList.remove(highlightClass); } catch (_) { }
+    }, durationMs);
+}
+
+function applyHistoryDetailSearchHighlightImmediate(target, highlightClass) {
+    if (!target || !highlightClass) return;
+    try { target.classList.add(highlightClass); } catch (_) { }
+}
+
+async function locateNodeInHistoryDetailPreview(nodeId, treeContainer, options = {}) {
     if (!treeContainer) return false;
 
-    const id = String(nodeId);
-    const target = treeContainer.querySelector(`.tree-item[data-node-id="${CSS.escape(id)}"]`);
+    const id = String(nodeId || '').trim();
+    if (!id) return false;
+    const findTarget = () => getTreeItemByNodeIdInContainer(treeContainer, id);
+    const searchItem = options && options.searchItem ? options.searchItem : null;
+    const highlightClass = options.highlightClass || getHighlightClassFromChangeType(options.changeType || '');
+
+    let target = findTarget();
+    if (!target) {
+        target = await ensureHistoryDetailTargetRendered(id, treeContainer, options);
+    }
+    if (!target && searchItem) {
+        try {
+            target = findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+        } catch (_) { }
+    }
+    if (!target) {
+        try {
+            target = await ensureCurrentChangesHistoryTreeTargetByScan(id, treeContainer, options);
+        } catch (_) { }
+    }
+    if (!target && searchItem) {
+        try {
+            await waitHistoryDetailDomSettle(treeContainer, { idleMs: 80, timeoutMs: 420 });
+            target = findTarget() || findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+            if (!target) {
+                target = await ensureCurrentChangesHistoryTreeTargetByScan(id, treeContainer, options);
+            }
+        } catch (_) { }
+    }
 
     if (!target) {
         console.warn('[Search] Phase 2.5 target not found:', id);
         return false;
     }
 
-    // 展开祖先节点（复用 Phase 1 的逻辑）
-    expandAncestorsForTreeItem(target, treeContainer);
+    if (highlightClass) {
+        clearHistoryDetailSearchHighlights(treeContainer);
+        applyHistoryDetailSearchHighlightImmediate(target, highlightClass);
+    }
 
-    // 滚动到目标位置
+    expandAncestorsForTreeItem(target, treeContainer);
+    await nextAnimationFrame();
+    target = findTarget() || target;
+
     try {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
     } catch (_) {
         try { target.scrollIntoView(); } catch (_) { }
     }
 
-    // 高亮效果
-    const highlightClass = options.highlightClass || getHighlightClassFromChangeType(options.changeType || '');
+    target = await stabilizeHistoryDetailTargetForJump(id, treeContainer) || target;
+    if (!target) return false;
+
     if (highlightClass) {
-        target.classList.add(highlightClass);
-        setTimeout(() => {
-            try { target.classList.remove(highlightClass); } catch (_) { }
-        }, 1500);
+        clearHistoryDetailSearchHighlights(treeContainer);
+        applyHistoryDetailSearchHighlightImmediate(target, highlightClass);
+    }
+
+    try {
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    } catch (_) {
+        try { target.scrollIntoView(); } catch (_) { }
+    }
+
+    await waitHistoryDetailDomSettle(treeContainer, { idleMs: 50, timeoutMs: 220 });
+    target = findTarget() || target;
+    try {
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    } catch (_) {
+        try { target.scrollIntoView(); } catch (_) { }
+    }
+
+    if (highlightClass) {
+        clearHistoryDetailSearchHighlights(treeContainer);
+        triggerHistoryDetailSearchHighlight(target, highlightClass, 1400);
     }
 
     return true;
@@ -2704,14 +5812,10 @@ function closeHistoryDetailSearchBox(modalContainer, options = {}) {
 
 /**
  * 激活历史详情搜索结果
- * @param {number} index - 结果索引
+ * @param {Object} item - 搜索项
  * @param {Element} modalContainer - 模态框容器
  */
-function activateHistoryDetailSearchResult(index, modalContainer) {
-    const idx = typeof index === 'number' ? index : parseInt(index, 10);
-    if (Number.isNaN(idx) || idx < 0 || idx >= historyDetailSearchState.results.length) return;
-
-    const item = historyDetailSearchState.results[idx];
+async function activateHistoryDetailSearchItem(item, modalContainer) {
     if (!item) return;
 
     // 选中后关闭搜索弹窗，避免遮挡详情树
@@ -2719,8 +5823,39 @@ function activateHistoryDetailSearchResult(index, modalContainer) {
 
     // 定位到目标节点
     const treeContainer = modalContainer?.querySelector('.history-tree-container');
+    const itemHighlightClass = (!item.changeType || !getHighlightClassFromChangeType(item.changeType))
+        ? 'highlight-search-neutral'
+        : '';
     if (treeContainer) {
-        locateNodeInHistoryDetailPreview(item.id, treeContainer, { changeType: item.changeType });
+        await locateNodeInHistoryDetailPreview(item.id, treeContainer, {
+            changeType: item.changeType,
+            idPathCandidates: item.idPathCandidates,
+            searchItem: item,
+            highlightClass: itemHighlightClass || undefined,
+            recordTime: historyDetailSearchState.recordTime
+        });
+    }
+}
+
+/**
+ * 激活历史详情搜索结果（按索引）
+ * @param {number} index - 结果索引
+ * @param {Element} modalContainer - 模态框容器
+ */
+async function activateHistoryDetailSearchResult(index, modalContainer) {
+    try {
+        const idx = typeof index === 'number' ? index : parseInt(index, 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= historyDetailSearchState.results.length) return;
+
+        const item = historyDetailSearchState.results[idx];
+        if (!item) return;
+        if (item.nodeType === 'domain_group') {
+            toggleHistoryDetailDomainGroup(modalContainer, item.id, { selectedIndex: idx });
+            return;
+        }
+        await activateHistoryDetailSearchItem(item, modalContainer);
+    } catch (error) {
+        console.warn('[Search] Phase 2.5 activate result failed:', error);
     }
 }
 
@@ -2738,7 +5873,14 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
     if (!record || !modalContainer) return;
 
     const recordTime = String(record.time);
+    try {
+        modalContainer.dataset.searchRecordTime = recordTime;
+    } catch (_) { }
     historyDetailSearchState.recordTime = recordTime;
+    historyDetailSearchState.typeFilter = null;
+    historyDetailSearchState.typeCounts = null;
+    historyDetailSearchState.expandedDomainGroups = new Set();
+    historyDetailSearchState.domainGroupHostFilters = new Map();
     historyDetailSearchState.isActive = true;
 
     // 检查是否有变化可搜索
@@ -2774,6 +5916,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         dbBuilt = true;
         return db;
     };
+    modalContainer._historyDetailSearchBuildDb = buildDbIfNeeded;
 
     // 防抖处理
     let debounceTimer = null;
@@ -2787,9 +5930,17 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
                 return;
             }
 
+            const normalizedQuery = String(query || '').trim().toLowerCase();
+            const previousQuery = String(historyDetailSearchState.query || '').trim().toLowerCase();
+            if (normalizedQuery !== previousQuery) {
+                historyDetailSearchState.expandedDomainGroups = new Set();
+                historyDetailSearchState.domainGroupHostFilters = new Map();
+                historyDetailSearchState.typeFilter = null;
+            }
+
             const searchDb = buildDbIfNeeded();
-            const results = searchHistoryDetailChanges(query, searchDb);
-            renderHistoryDetailSearchResults(results, modalContainer, { query });
+            const results = searchHistoryDetailChanges(query, searchDb, { modalContainer });
+            renderHistoryDetailSearchResults(results, modalContainer, { query, recordTime });
         }, 200);
     };
 
@@ -2818,7 +5969,13 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         }
         if (e.key === 'Enter') {
             e.preventDefault();
-            activateHistoryDetailSearchResult(historyDetailSearchState.selectedIndex, modalContainer);
+            const idx = historyDetailSearchState.selectedIndex;
+            const item = idx >= 0 ? historyDetailSearchState.results[idx] : null;
+            if (item && item.nodeType === 'domain_group') {
+                toggleHistoryDetailDomainGroup(modalContainer, item.id, { selectedIndex: idx });
+                return;
+            }
+            activateHistoryDetailSearchResult(idx, modalContainer);
             return;
         }
         if (e.key === 'Escape') {
@@ -2829,6 +5986,90 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
 
     // 点击结果
     const handleResultClick = (e) => {
+        const urlLink = e.target.closest('a.search-result-url-link[href]');
+        if (urlLink) {
+            try { e.stopPropagation(); } catch (_) { }
+            return;
+        }
+
+        const typeBtn = e.target.closest('.detail-search-type-btn');
+        if (typeBtn) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+
+        const type = String(typeBtn.dataset.type || '').trim().toLowerCase();
+        if (type !== 'bookmark' && type !== 'folder' && type !== 'domain') return;
+        historyDetailSearchState.typeFilter = type;
+        if (type !== 'domain' && historyDetailSearchState.expandedDomainGroups instanceof Set) {
+            historyDetailSearchState.expandedDomainGroups.clear();
+        }
+        if (type !== 'domain' && historyDetailSearchState.domainGroupHostFilters instanceof Map) {
+            historyDetailSearchState.domainGroupHostFilters.clear();
+        }
+        rerenderHistoryDetailSearchForQuery(modalContainer, { selectedIndex: historyDetailSearchState.selectedIndex });
+        return;
+    }
+
+        const domainSelectorChip = e.target.closest('.detail-domain-selector-chip');
+        if (domainSelectorChip) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+
+            const selectorRow = domainSelectorChip.closest('.detail-domain-selector-row');
+            const groupId = String(domainSelectorChip.getAttribute('data-domain-group-id') || selectorRow?.getAttribute('data-domain-group-id') || '').trim();
+            const host = String(domainSelectorChip.getAttribute('data-domain-host') || '').trim();
+            const selectedIndex = parseInt(selectorRow?.getAttribute('data-parent-index') || '-1', 10);
+            if (!groupId) return;
+            setHistoryDetailDomainGroupHostFilter(modalContainer, groupId, host, {
+                selectedIndex: Number.isNaN(selectedIndex) ? historyDetailSearchState.selectedIndex : selectedIndex
+            });
+            return;
+        }
+
+        const domainGroupEl = e.target.closest('.detail-domain-group-item');
+        if (domainGroupEl) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+
+            const groupId = String(domainGroupEl.getAttribute('data-domain-group-id') || '').trim();
+            const selectedIndex = parseInt(domainGroupEl.getAttribute('data-index') || '-1', 10);
+            if (!groupId) return;
+            toggleHistoryDetailDomainGroup(modalContainer, groupId, {
+                selectedIndex: Number.isNaN(selectedIndex) ? historyDetailSearchState.selectedIndex : selectedIndex
+            });
+            return;
+        }
+
+        const domainChildEl = e.target.closest('.detail-domain-child-row');
+        if (domainChildEl) {
+            const groupId = String(domainChildEl.getAttribute('data-domain-group-id') || '').trim();
+            const childId = String(domainChildEl.getAttribute('data-domain-child-id') || '').trim();
+            if (!childId) return;
+
+            let targetItem = null;
+            if (groupId) {
+                const groupItem = historyDetailSearchState.results.find(item => item && item.nodeType === 'domain_group' && String(item.id) === groupId);
+                if (groupItem && Array.isArray(groupItem.domainChildren)) {
+                    targetItem = groupItem.domainChildren.find(child => child && String(child.id) === childId) || null;
+                }
+            }
+            if (!targetItem) {
+                const searchDb = buildDbIfNeeded();
+                targetItem = searchDb?.itemById?.get(childId) || null;
+            }
+
+            if (targetItem) {
+                activateHistoryDetailSearchItem(targetItem, modalContainer);
+            }
+            return;
+        }
+
         const itemEl = e.target.closest('.search-result-item');
         if (!itemEl) return;
         const index = parseInt(itemEl.getAttribute('data-index') || '-1', 10);
@@ -2841,7 +6082,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         if (!itemEl) return;
         const index = parseInt(itemEl.getAttribute('data-index') || '-1', 10);
         if (!Number.isNaN(index)) {
-            updateHistoryDetailSearchSelection(modalContainer, index);
+            updateHistoryDetailSearchSelection(modalContainer, index, { scrollIntoView: false });
         }
     };
 
@@ -2867,6 +6108,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         resultsPanel.removeEventListener('click', handleResultClick);
         resultsPanel.removeEventListener('mouseover', handleResultMouseOver);
         modalContainer.removeEventListener('click', handleOutsideClick);
+        delete modalContainer._historyDetailSearchBuildDb;
     };
 
     console.log('[Search] Phase 2.5 initialized for record:', recordTime, 'changes:', changeMap.size);
@@ -2882,6 +6124,12 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
     if (modalContainer && modalContainer._searchCleanup) {
         modalContainer._searchCleanup();
         delete modalContainer._searchCleanup;
+    }
+    if (modalContainer) {
+        try {
+            delete modalContainer.dataset.searchRecordTime;
+        } catch (_) { }
+        delete modalContainer._historyDetailSearchBuildDb;
     }
 
     // 隐藏搜索面板
@@ -2899,6 +6147,10 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
     historyDetailSearchState.query = '';
     historyDetailSearchState.selectedIndex = -1;
     historyDetailSearchState.results = [];
+    historyDetailSearchState.typeFilter = null;
+    historyDetailSearchState.typeCounts = null;
+    historyDetailSearchState.expandedDomainGroups = new Set();
+    historyDetailSearchState.domainGroupHostFilters = new Map();
     historyDetailSearchState.isActive = false;
 
     console.log('[Search] Phase 2.5 cleanup completed for:', recordTime);

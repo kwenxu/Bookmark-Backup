@@ -5101,6 +5101,15 @@ function renderCurrentView() {
             }
             break;
         case 'history':
+            if (!syncHistoryPageRecords.length && Array.isArray(syncHistory) && syncHistory.length > 0) {
+                refreshHistoryIndexPage({ page: currentHistoryPage }).then(() => {
+                    if (currentView === 'history') {
+                        renderHistoryView();
+                    }
+                }).catch((error) => {
+                    console.warn('[renderCurrentView] history page refresh failed, local fallback remains active:', error);
+                });
+            }
             renderHistoryView();
             break;
     }
@@ -6334,7 +6343,7 @@ async function renderChangesTreePreview(changeData) {
                 if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
                     let hasDeleted = false;
                     for (const [, ch] of treeChangeMap) {
-                        if (ch && ch.type === 'deleted') { hasDeleted = true; break; }
+                        if (ch && ch.type && String(ch.type).includes('deleted')) { hasDeleted = true; break; }
                     }
                     if (hasDeleted && typeof rebuildTreeWithDeleted === 'function') {
                         treeToRender = rebuildTreeWithDeleted(oldTree, cachedCurrentTree, treeChangeMap);
@@ -8310,6 +8319,30 @@ async function refreshHistoryIndexPage(options = {}) {
     return data;
 }
 
+function hydrateHistoryPageFromLocalRecords(page = currentHistoryPage) {
+    const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
+    const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+    const totalRecords = sortedLocal.length;
+    const totalPages = Math.max(1, Math.ceil(Math.max(1, totalRecords) / HISTORY_PAGE_SIZE));
+
+    currentHistoryPage = clampHistoryPage(page, totalPages);
+    const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
+    syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+    historyIndexMeta = {
+        totalRecords,
+        totalPages
+    };
+
+    applyHistoryDeleteButtonWarningState(totalRecords);
+
+    return {
+        records: syncHistoryPageRecords,
+        totalRecords,
+        totalPages,
+        currentPage: currentHistoryPage
+    };
+}
+
 function getUnifiedHistoryRecordNote(record, lang) {
     const rawNote = (record && typeof record.note === 'string') ? record.note.trim() : '';
     const isEn = lang === 'en';
@@ -8381,6 +8414,11 @@ function renderHistoryView() {
     const totalPagesEl = document.getElementById('historyTotalPages');
     const prevBtn = document.getElementById('historyPrevPage');
     const nextBtn = document.getElementById('historyNextPage');
+
+    if (!syncHistoryPageRecords.length && Array.isArray(syncHistory) && syncHistory.length > 0) {
+        console.log('[renderHistoryView] syncHistoryPageRecords empty, hydrating from local syncHistory fallback');
+        hydrateHistoryPageFromLocalRecords(currentHistoryPage);
+    }
 
     const totalRecordsFromMeta = Number.isFinite(Number(historyIndexMeta.totalRecords))
         ? Number(historyIndexMeta.totalRecords)
@@ -13994,7 +14032,7 @@ async function renderTreeViewSync() {
         if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
             let hasDeletedNodes = false;
             for (const [, change] of treeChangeMap) {
-                if (change.type === 'deleted') {
+                if (change.type && String(change.type).includes('deleted')) {
                     hasDeletedNodes = true;
                     break;
                 }
@@ -17444,7 +17482,7 @@ function renderDetailModalContent(record, mode) {
                                 record,
                                 changeMap,
                                 treeToSearch,
-                                null,
+                                prepared?.comparisonBaseTree || null,
                                 modalContent
                             );
                         }
@@ -22070,10 +22108,12 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
             const title = safeTitle(node?.title);
             const url = node?.url || '';
             const isFolder = !url && Array.isArray(node?.children);
+            const sourceId = (node && node.id != null) ? String(node.id) : '';
 
             const entry = {
                 title,
                 type: isFolder ? 'folder' : 'bookmark',
+                ...(sourceId ? { id: sourceId } : {}),
                 ...(url ? { url } : {}),
                 ...(changeType ? { changeType } : {})
             };
@@ -22097,9 +22137,11 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
             const title = safeTitle(node?.title);
             const url = node?.url || '';
             const isFolder = !url && Array.isArray(node?.children);
+            const sourceId = (node && node.id != null) ? String(node.id) : '';
             buckets[bucketKey].push({
                 title,
                 type: isFolder ? 'folder' : 'bookmark',
+                ...(sourceId ? { id: sourceId } : {}),
                 ...(url ? { url } : {}),
                 ...(changeType ? { changeType } : {})
             });
@@ -24480,12 +24522,46 @@ async function prepareDataForExport(record) {
     let changeMap = new Map();
     await ensureRecordBookmarkTree(record);
     if (!record.bookmarkTree) {
-        return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false };
+        return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false, comparisonBaseTree: null };
     }
+
+    const resolvePreviousRecordForComparison = async () => {
+        let previousRecord = null;
+        try {
+            previousRecord = await getPreviousHistoryRecordMeta(record.time);
+        } catch (_) {
+            previousRecord = null;
+        }
+
+        if (!previousRecord) {
+            const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
+            if (recordIndex > 0) {
+                for (let i = recordIndex - 1; i >= 0; i--) {
+                    if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
+                        previousRecord = syncHistory[i];
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
+            try {
+                const prevTree = await getBackupDataLazy(previousRecord.time);
+                if (prevTree) previousRecord.bookmarkTree = prevTree;
+            } catch (_) { }
+        }
+
+        return previousRecord && previousRecord.bookmarkTree ? previousRecord : null;
+    };
 
     const persistedChangeData = await getRecordChangeDataLazy(record.time);
     if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
         changeMap = deserializeRecordChangeMap(persistedChangeData);
+        const previousRecord = await resolvePreviousRecordForComparison();
+        const comparisonBaseTree = previousRecord && previousRecord.bookmarkTree
+            ? previousRecord.bookmarkTree
+            : null;
 
         let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
             ? cloneSerializableData(persistedChangeData.treeWithDeleted)
@@ -24493,32 +24569,6 @@ async function prepareDataForExport(record) {
 
         const shouldTryRebuildDeleted = hasDeletedChangeInMap(changeMap) && !(Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length);
         if (shouldTryRebuildDeleted) {
-            let previousRecord = null;
-            try {
-                previousRecord = await getPreviousHistoryRecordMeta(record.time);
-            } catch (_) {
-                previousRecord = null;
-            }
-
-            if (!previousRecord) {
-                const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
-                if (recordIndex > 0) {
-                    for (let i = recordIndex - 1; i >= 0; i--) {
-                        if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
-                            previousRecord = syncHistory[i];
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
-                try {
-                    const prevTree = await getBackupDataLazy(previousRecord.time);
-                    if (prevTree) previousRecord.bookmarkTree = prevTree;
-                } catch (_) { }
-            }
-
             if (previousRecord && previousRecord.bookmarkTree) {
                 try {
                     treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
@@ -24528,7 +24578,13 @@ async function prepareDataForExport(record) {
             }
         }
 
-        return { treeToExport, changeMap, changeData: persistedChangeData, missingComparisonBase: false };
+        return {
+            treeToExport,
+            changeMap,
+            changeData: persistedChangeData,
+            missingComparisonBase: false,
+            comparisonBaseTree
+        };
     }
 
     const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
@@ -24582,11 +24638,18 @@ async function prepareDataForExport(record) {
             treeToExport: record.bookmarkTree,
             changeMap,
             changeData: null,
-            missingComparisonBase: true
+            missingComparisonBase: true,
+            comparisonBaseTree: null
         };
     }
 
-    return { treeToExport, changeMap, changeData: null, missingComparisonBase: false };
+    return {
+        treeToExport,
+        changeMap,
+        changeData: null,
+        missingComparisonBase: false,
+        comparisonBaseTree: previousRecord && previousRecord.bookmarkTree ? previousRecord.bookmarkTree : null
+    };
 }
 
 // 重构：原有的 HTML 生成函数调用

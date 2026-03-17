@@ -8966,14 +8966,50 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-primary);
 }
 
-/* 红色删除按钮特殊样式 */
+/* 删除按钮基础/预警样式 */
 #clearBackupHistoryBtn:hover {
-    background: var(--error-light);
-    border-color: var(--error);
+    background: var(--bg-tertiary);
+    border-color: var(--border-hover);
 }
 
 #clearBackupHistoryBtn:hover i {
-    color: var(--error);
+    color: var(--text-primary);
+}
+
+#clearBackupHistoryBtn.history-delete-warning {
+    background: rgba(255, 193, 7, 0.16);
+    border-color: rgba(255, 193, 7, 0.44);
+}
+
+#clearBackupHistoryBtn.history-delete-warning i {
+    color: #9a6b00;
+}
+
+#clearBackupHistoryBtn.history-delete-warning:hover {
+    background: rgba(255, 193, 7, 0.24);
+    border-color: rgba(255, 193, 7, 0.56);
+}
+
+#clearBackupHistoryBtn.history-delete-warning:hover i {
+    color: #875d00;
+}
+
+#clearBackupHistoryBtn.history-delete-danger {
+    background: rgba(244, 67, 54, 0.14);
+    border-color: rgba(244, 67, 54, 0.4);
+}
+
+#clearBackupHistoryBtn.history-delete-danger i {
+    color: #b53c30;
+}
+
+#clearBackupHistoryBtn.history-delete-danger:hover {
+    background: rgba(244, 67, 54, 0.22);
+    border-color: rgba(244, 67, 54, 0.54);
+}
+
+#clearBackupHistoryBtn.history-delete-danger:hover i {
+    color: #a62e23;
 }
 
 /* 切换按钮组容器 */
@@ -9532,11 +9568,17 @@ a.tree-label.tree-bookmark-link:hover {
     height: 20px;
     border-radius: 50%;
     background: transparent;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: 0;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    padding: 0;
+    text-align: center;
     pointer-events: none;
     z-index: 6;
     text-shadow: none;
@@ -9552,6 +9594,78 @@ a.tree-label.tree-bookmark-link:hover {
 
 #clearHistoryRangeContainer .range-slider-bubble {
     color: var(--error);
+}
+
+.clear-history-threshold-panel {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.clear-history-threshold-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.clear-history-threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+}
+
+.clear-history-threshold-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+
+.clear-history-threshold-item span {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.clear-history-threshold-input {
+    width: 70px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.clear-history-threshold-input::-webkit-outer-spin-button,
+.clear-history-threshold-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.clear-history-threshold-input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.clear-history-threshold-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 6px;
+}
+
+#clearHistoryDeleteCountDisplay {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Clear History: keep end labels inside the slider line (match Global Export) */

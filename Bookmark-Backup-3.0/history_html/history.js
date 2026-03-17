@@ -230,6 +230,85 @@ const RESTORE_SETTING_STRATEGY_KEY = 'restoreStrategyPreference';
 const RESTORE_SETTING_THRESHOLD_KEY = 'restorePatchThresholdPercent';
 let restoreStrategyPreference = 'auto';
 let restorePatchThresholdPercent = RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+
+const HISTORY_DELETE_WARN_SETTING_KEYS = {
+    yellow: 'backupHistoryDeleteWarnYellowThreshold',
+    red: 'backupHistoryDeleteWarnRedThreshold'
+};
+const HISTORY_DELETE_WARN_DEFAULTS = {
+    yellow: 50,
+    red: 100
+};
+const HISTORY_DELETE_WARN_MIN = 1;
+const HISTORY_DELETE_WARN_MAX = 999999;
+
+let historyDeleteWarnThresholds = { ...HISTORY_DELETE_WARN_DEFAULTS };
+let historyDeleteWarnRecordCount = 0;
+
+function normalizeHistoryDeleteWarnValue(rawValue, fallbackValue) {
+    const parsed = parseInt(rawValue, 10);
+    if (!Number.isFinite(parsed)) return fallbackValue;
+    return Math.min(HISTORY_DELETE_WARN_MAX, Math.max(HISTORY_DELETE_WARN_MIN, parsed));
+}
+
+function normalizeHistoryDeleteWarnThresholds(rawYellow, rawRed) {
+    let yellow = normalizeHistoryDeleteWarnValue(rawYellow, HISTORY_DELETE_WARN_DEFAULTS.yellow);
+    let red = normalizeHistoryDeleteWarnValue(rawRed, HISTORY_DELETE_WARN_DEFAULTS.red);
+
+    if (red <= yellow) {
+        red = Math.min(HISTORY_DELETE_WARN_MAX, yellow + 1);
+        if (red <= yellow) {
+            yellow = Math.max(HISTORY_DELETE_WARN_MIN, red - 1);
+        }
+    }
+
+    return { yellow, red };
+}
+
+function getHistoryDeleteWarnLevel(recordCount, thresholds = historyDeleteWarnThresholds) {
+    const count = Math.max(0, Number(recordCount) || 0);
+    if (count >= thresholds.red) return 'danger';
+    if (count >= thresholds.yellow) return 'warning';
+    return 'normal';
+}
+
+async function saveHistoryDeleteWarnThresholdsToStorage() {
+    const payload = {
+        [HISTORY_DELETE_WARN_SETTING_KEYS.yellow]: historyDeleteWarnThresholds.yellow,
+        [HISTORY_DELETE_WARN_SETTING_KEYS.red]: historyDeleteWarnThresholds.red
+    };
+
+    return await new Promise((resolve) => {
+        try {
+            browserAPI.storage.local.set(payload, () => {
+                resolve(true);
+            });
+        } catch (_) {
+            resolve(false);
+        }
+    });
+}
+
+function applyHistoryDeleteButtonWarningState(recordCount = historyDeleteWarnRecordCount) {
+    historyDeleteWarnRecordCount = Math.max(0, Number(recordCount) || 0);
+
+    const btn = document.getElementById('clearBackupHistoryBtn');
+    if (!btn) return;
+
+    btn.classList.remove('history-delete-warning', 'history-delete-danger');
+
+    const warnLevel = getHistoryDeleteWarnLevel(historyDeleteWarnRecordCount, historyDeleteWarnThresholds);
+    if (warnLevel === 'warning') {
+        btn.classList.add('history-delete-warning');
+    } else if (warnLevel === 'danger') {
+        btn.classList.add('history-delete-danger');
+    }
+
+    const baseTitle = (i18n && i18n.clearBackupHistoryTooltip && i18n.clearBackupHistoryTooltip[currentLang])
+        || (currentLang === 'en' ? 'Clear history' : '清除记录');
+    btn.setAttribute('data-title', `${baseTitle} (${historyDeleteWarnRecordCount})`);
+}
+
 // 实时更新状态控制
 let viewerInitialized = false;
 let deferredAnalysisMessage = null;
@@ -1314,6 +1393,22 @@ const i18n = {
         'zh_CN': '条记录',
         'en': 'records'
     },
+    clearHistoryWarningThresholdTitle: {
+        'zh_CN': '删除按钮颜色提醒阈值',
+        'en': 'Delete button warning thresholds'
+    },
+    clearHistoryWarnYellowLabel: {
+        'zh_CN': '淡黄色起始条数',
+        'en': 'Yellow starts at'
+    },
+    clearHistoryWarnRedLabel: {
+        'zh_CN': '淡红色起始条数',
+        'en': 'Red starts at'
+    },
+    clearHistoryWarnThresholdHint: {
+        'zh_CN': '默认 50 / 100，可手动修改。',
+        'en': 'Defaults: 50 / 100. You can edit these values.'
+    },
     clearBackupHistoryCancelBtn: {
         'zh_CN': '取消',
         'en': 'Cancel'
@@ -1923,6 +2018,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const recordTime = urlParams.get('record');
     const recordAction = (urlParams.get('action') || '').toLowerCase();
     const shouldAutoOpenRevertAll = !recordTime && recordAction === 'revert-all';
+    const shouldAutoOpenClearHistory = !recordTime && recordAction === 'open-clear-history';
+    const shouldAutoOpenGlobalExport = !recordTime && recordAction === 'open-global-export';
+
+    const clearActionParamFromUrl = (tag = '') => {
+        try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('action');
+            window.history.replaceState({}, '', cleanUrl.toString());
+            if (tag) {
+                console.log(`[初始化] 已清除 URL 中的 action 参数(${tag})`);
+            }
+        } catch (e) {
+            console.warn(`[初始化] 清除 action 参数${tag ? `(${tag})` : ''}失败:`, e);
+        }
+    };
+
     console.log('[URL参数] 完整URL:', window.location.href);
     console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
 
@@ -2058,14 +2169,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.warn('[初始化] 自动打开全部撤销面板失败:', e);
         }
 
+        clearActionParamFromUrl('revert-all');
+    }
+
+    if (shouldAutoOpenClearHistory) {
         try {
-            const cleanUrl = new URL(window.location.href);
-            cleanUrl.searchParams.delete('action');
-            window.history.replaceState({}, '', cleanUrl.toString());
-            console.log('[初始化] 已清除 URL 中的 action 参数(revert-all)');
+            if (currentView !== 'history') {
+                switchView('history');
+            }
+            const clearBtn = document.getElementById('clearBackupHistoryBtn');
+            if (clearBtn) {
+                clearBtn.click();
+            }
         } catch (e) {
-            console.warn('[初始化] 清除 action 参数(revert-all)失败:', e);
+            console.warn('[初始化] 自动打开删除二级UI失败:', e);
         }
+
+        clearActionParamFromUrl('open-clear-history');
+    }
+
+    if (shouldAutoOpenGlobalExport) {
+        try {
+            if (currentView !== 'history') {
+                switchView('history');
+            }
+            showGlobalExportModal();
+        } catch (e) {
+            console.warn('[初始化] 自动打开导出二级UI失败:', e);
+        }
+
+        clearActionParamFromUrl('open-global-export');
     }
 
     // 并行预加载其他视图和图标（不阻塞）
@@ -2134,7 +2267,12 @@ function getLangOverride() {
 
 async function loadUserSettings() {
     return new Promise((resolve) => {
-        browserAPI.storage.local.get(['preferredLang', 'currentTheme'], (result) => {
+        browserAPI.storage.local.get([
+            'preferredLang',
+            'currentTheme',
+            HISTORY_DELETE_WARN_SETTING_KEYS.yellow,
+            HISTORY_DELETE_WARN_SETTING_KEYS.red
+        ], (result) => {
             const mainUILang = result.preferredLang || 'zh_CN';
             const prefersDark = typeof window !== 'undefined'
                 && window.matchMedia
@@ -2159,6 +2297,11 @@ async function loadUserSettings() {
                 window.currentLang = currentLang; // 同步到 window
                 console.log('[加载用户设置] 跟随主UI语言:', currentLang);
             }
+
+            historyDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+                result[HISTORY_DELETE_WARN_SETTING_KEYS.yellow],
+                result[HISTORY_DELETE_WARN_SETTING_KEYS.red]
+            );
 
             // 应用主题
             document.documentElement.setAttribute('data-theme', currentTheme);
@@ -2244,9 +2387,9 @@ function applyLanguage() {
     // 备份历史：清除记录按钮与确认弹窗
     const clearBackupHistoryBtn = document.getElementById('clearBackupHistoryBtn');
     if (clearBackupHistoryBtn) {
-        clearBackupHistoryBtn.setAttribute('data-title', i18n.clearBackupHistoryTooltip[currentLang]);
         clearBackupHistoryBtn.removeAttribute('title');
     }
+    applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
     const clearBackupHistoryModalTitle = document.getElementById('clearBackupHistoryModalTitle');
     if (clearBackupHistoryModalTitle) clearBackupHistoryModalTitle.textContent = i18n.clearBackupHistoryModalTitle[currentLang];
     const clearBackupHistoryModalDesc = document.getElementById('clearBackupHistoryModalDesc');
@@ -2263,6 +2406,15 @@ function applyLanguage() {
     if (clearHistoryCountLabelBefore) clearHistoryCountLabelBefore.textContent = i18n.clearHistoryCountLabelBefore[currentLang];
     const clearHistoryCountLabelAfter = document.getElementById('clearHistoryCountLabelAfter');
     if (clearHistoryCountLabelAfter) clearHistoryCountLabelAfter.textContent = i18n.clearHistoryCountLabelAfter[currentLang];
+
+    const clearHistoryWarningThresholdTitle = document.getElementById('clearHistoryWarningThresholdTitle');
+    if (clearHistoryWarningThresholdTitle) clearHistoryWarningThresholdTitle.textContent = i18n.clearHistoryWarningThresholdTitle[currentLang];
+    const clearHistoryWarnYellowLabel = document.getElementById('clearHistoryWarnYellowLabel');
+    if (clearHistoryWarnYellowLabel) clearHistoryWarnYellowLabel.textContent = i18n.clearHistoryWarnYellowLabel[currentLang];
+    const clearHistoryWarnRedLabel = document.getElementById('clearHistoryWarnRedLabel');
+    if (clearHistoryWarnRedLabel) clearHistoryWarnRedLabel.textContent = i18n.clearHistoryWarnRedLabel[currentLang];
+    const clearHistoryWarnThresholdHint = document.getElementById('clearHistoryWarnThresholdHint');
+    if (clearHistoryWarnThresholdHint) clearHistoryWarnThresholdHint.textContent = i18n.clearHistoryWarnThresholdHint[currentLang];
 
     const clearBackupHistoryCancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
     if (clearBackupHistoryCancelBtn) clearBackupHistoryCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
@@ -2537,6 +2689,8 @@ function initClearBackupHistoryModal() {
     const selectionCount = document.getElementById('clearHistorySelectionCount');
     const selectionLabel = document.getElementById('clearHistorySelectionLabel');
     const previewTextEl = document.getElementById('clearHistoryPreviewText');
+    const warnYellowInput = document.getElementById('clearHistoryWarnYellowInput');
+    const warnRedInput = document.getElementById('clearHistoryWarnRedInput');
 
     if (!btn || !modal || !confirmBtn) return;
 
@@ -2545,6 +2699,33 @@ function initClearBackupHistoryModal() {
     let pendingDeleteMaxSeq = 1;
     let pendingDeleteCount = 0;
     let clearHistoryActiveThumb = 'max'; // 'min' | 'max'
+
+    const syncDeleteWarningThresholdInputs = () => {
+        if (warnYellowInput) warnYellowInput.value = String(historyDeleteWarnThresholds.yellow);
+        if (warnRedInput) {
+            const minRed = Math.min(HISTORY_DELETE_WARN_MAX, historyDeleteWarnThresholds.yellow + 1);
+            warnRedInput.min = String(minRed);
+            warnRedInput.value = String(Math.max(minRed, historyDeleteWarnThresholds.red));
+        }
+    };
+
+    const commitDeleteWarningThresholdInputs = async () => {
+        const nextThresholds = normalizeHistoryDeleteWarnThresholds(
+            warnYellowInput ? warnYellowInput.value : historyDeleteWarnThresholds.yellow,
+            warnRedInput ? warnRedInput.value : historyDeleteWarnThresholds.red
+        );
+
+        const changed = nextThresholds.yellow !== historyDeleteWarnThresholds.yellow
+            || nextThresholds.red !== historyDeleteWarnThresholds.red;
+
+        historyDeleteWarnThresholds = nextThresholds;
+        syncDeleteWarningThresholdInputs();
+        applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
+
+        if (changed) {
+            await saveHistoryDeleteWarnThresholdsToStorage();
+        }
+    };
 
     // 获取记录的序号列表（按时间排序，最旧的在前）
     const getRecordSeqNumbers = () => {
@@ -2752,6 +2933,8 @@ function initClearBackupHistoryModal() {
         if (minSeqLabel) minSeqLabel.textContent = String(seqRange.max); // Left Label = Max
         if (maxSeqLabel) maxSeqLabel.textContent = String(seqRange.min); // Right Label = Min
 
+        syncDeleteWarningThresholdInputs();
+
         modal.classList.add('show');
         // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
         requestAnimationFrame(() => {
@@ -2767,6 +2950,13 @@ function initClearBackupHistoryModal() {
                     // ignore
                 }
             });
+            setTimeout(() => {
+                try {
+                    updateDisplay();
+                } catch (e) {
+                    // ignore
+                }
+            }, 120);
         });
     };
 
@@ -2960,6 +3150,48 @@ function initClearBackupHistoryModal() {
         rangeMaxSlider.setAttribute('data-listener-attached', 'true');
     }
 
+    if (warnYellowInput && !warnYellowInput.hasAttribute('data-listener-attached')) {
+        warnYellowInput.addEventListener('input', () => {
+            if (!warnRedInput) return;
+            const draftYellow = normalizeHistoryDeleteWarnValue(warnYellowInput.value, historyDeleteWarnThresholds.yellow);
+            warnRedInput.min = String(Math.min(HISTORY_DELETE_WARN_MAX, draftYellow + 1));
+        });
+
+        const commitYellow = () => {
+            commitDeleteWarningThresholdInputs().catch(() => { });
+        };
+
+        warnYellowInput.addEventListener('change', commitYellow);
+        warnYellowInput.addEventListener('blur', commitYellow);
+        warnYellowInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitYellow();
+                warnYellowInput.blur();
+            }
+        });
+
+        warnYellowInput.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (warnRedInput && !warnRedInput.hasAttribute('data-listener-attached')) {
+        const commitRed = () => {
+            commitDeleteWarningThresholdInputs().catch(() => { });
+        };
+
+        warnRedInput.addEventListener('change', commitRed);
+        warnRedInput.addEventListener('blur', commitRed);
+        warnRedInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitRed();
+                warnRedInput.blur();
+            }
+        });
+
+        warnRedInput.setAttribute('data-listener-attached', 'true');
+    }
+
     // 确认删除按钮 - 打开二次确认弹窗
     if (!confirmBtn.hasAttribute('data-listener-attached')) {
         confirmBtn.addEventListener('click', () => {
@@ -3011,6 +3243,9 @@ function initClearBackupHistoryModal() {
         directDeleteBtn.addEventListener('click', executeDelete);
         directDeleteBtn.setAttribute('data-listener-attached', 'true');
     }
+
+    syncDeleteWarningThresholdInputs();
+    applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
 }
 
 // 部分删除备份历史记录
@@ -4191,6 +4426,7 @@ async function loadAllData(options = {}) {
 
         syncHistory = storageData.syncHistory || [];
         syncHistory = await ensureSyncHistorySeqNumbersPersisted(syncHistory);
+        applyHistoryDeleteButtonWarningState(syncHistory.length);
 
         // 注意：不再清理 bookmarkTree，保留所有记录的详细数据
         // 用户存储空间无限制
@@ -8069,6 +8305,8 @@ async function refreshHistoryIndexPage(options = {}) {
         totalPages: data.totalPages
     };
 
+    applyHistoryDeleteButtonWarningState(data.totalRecords);
+
     return data;
 }
 
@@ -8143,6 +8381,11 @@ function renderHistoryView() {
     const totalPagesEl = document.getElementById('historyTotalPages');
     const prevBtn = document.getElementById('historyPrevPage');
     const nextBtn = document.getElementById('historyNextPage');
+
+    const totalRecordsFromMeta = Number.isFinite(Number(historyIndexMeta.totalRecords))
+        ? Number(historyIndexMeta.totalRecords)
+        : syncHistory.length;
+    applyHistoryDeleteButtonWarningState(totalRecordsFromMeta);
 
     if (syncHistoryPageRecords.length === 0) {
         if (container) {
@@ -19096,10 +19339,20 @@ function handleStorageChange(changes, namespace) {
 
     console.log('[存储监听] 检测到变化:', Object.keys(changes));
 
+    if (Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.yellow)
+        || Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.red)) {
+        historyDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+            changes[HISTORY_DELETE_WARN_SETTING_KEYS.yellow]?.newValue ?? historyDeleteWarnThresholds.yellow,
+            changes[HISTORY_DELETE_WARN_SETTING_KEYS.red]?.newValue ?? historyDeleteWarnThresholds.red
+        );
+        applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
+    }
+
     // 备份历史被清空：关闭详情弹窗并清理本地状态，避免残留旧记录内容/展开状态
     if (changes.syncHistory) {
         try {
             const newHistory = changes.syncHistory.newValue || [];
+            applyHistoryDeleteButtonWarningState(Array.isArray(newHistory) ? newHistory.length : 0);
             if (Array.isArray(newHistory) && newHistory.length === 0) {
                 const modal = document.getElementById('detailModal');
                 if (modal && modal.classList.contains('show')) {

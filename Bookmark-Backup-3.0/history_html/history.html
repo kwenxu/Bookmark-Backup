@@ -941,6 +941,27 @@
                             <span id="clearHistoryPreviewText">当前共 0 条记录，将删除 0 条</span>
                         </span>
                     </div>
+
+                    <div id="clearHistoryWarningThresholdPanel" class="clear-history-threshold-panel">
+                        <div id="clearHistoryWarningThresholdTitle" class="clear-history-threshold-title">
+                            删除按钮颜色提醒阈值
+                        </div>
+                        <div class="clear-history-threshold-row">
+                            <label class="clear-history-threshold-item" for="clearHistoryWarnYellowInput">
+                                <span id="clearHistoryWarnYellowLabel">淡黄色起始条数</span>
+                                <input id="clearHistoryWarnYellowInput" class="clear-history-threshold-input" type="number" min="1"
+                                    max="999999" step="1" inputmode="numeric">
+                            </label>
+                            <label class="clear-history-threshold-item" for="clearHistoryWarnRedInput">
+                                <span id="clearHistoryWarnRedLabel">淡红色起始条数</span>
+                                <input id="clearHistoryWarnRedInput" class="clear-history-threshold-input" type="number" min="2"
+                                    max="999999" step="1" inputmode="numeric">
+                            </label>
+                        </div>
+                        <div id="clearHistoryWarnThresholdHint" class="clear-history-threshold-hint">
+                            默认 50 / 100，可手动修改。
+                        </div>
+                    </div>
                 </div>
 
                 <div class="modal-footer"

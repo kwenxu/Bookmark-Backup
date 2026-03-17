@@ -80,10 +80,99 @@ let popupHistoryRefreshTimer = null;
 let initLayoutResizeObserver = null;
 let initLayoutResizeRafId = 0;
 
+const HISTORY_DELETE_WARN_SETTING_KEYS = {
+    yellow: 'backupHistoryDeleteWarnYellowThreshold',
+    red: 'backupHistoryDeleteWarnRedThreshold'
+};
+const HISTORY_DELETE_WARN_DEFAULTS = {
+    yellow: 50,
+    red: 100
+};
+const HISTORY_DELETE_WARN_MIN = 1;
+const HISTORY_DELETE_WARN_MAX = 999999;
+
+let popupHistoryDeleteWarnThresholds = { ...HISTORY_DELETE_WARN_DEFAULTS };
+window.__popupHistoryTotalRecords = window.__popupHistoryTotalRecords || 0;
 
 // =============================================================================
 // 辅助函数 (Helper Functions)
 // =============================================================================
+
+function normalizeHistoryDeleteWarnValue(rawValue, fallbackValue) {
+    const parsed = parseInt(rawValue, 10);
+    if (!Number.isFinite(parsed)) return fallbackValue;
+    return Math.min(HISTORY_DELETE_WARN_MAX, Math.max(HISTORY_DELETE_WARN_MIN, parsed));
+}
+
+function normalizeHistoryDeleteWarnThresholds(rawYellow, rawRed) {
+    let yellow = normalizeHistoryDeleteWarnValue(rawYellow, HISTORY_DELETE_WARN_DEFAULTS.yellow);
+    let red = normalizeHistoryDeleteWarnValue(rawRed, HISTORY_DELETE_WARN_DEFAULTS.red);
+    if (red <= yellow) {
+        red = Math.min(HISTORY_DELETE_WARN_MAX, yellow + 1);
+        if (red <= yellow) {
+            yellow = Math.max(HISTORY_DELETE_WARN_MIN, red - 1);
+        }
+    }
+    return { yellow, red };
+}
+
+function getHistoryDeleteWarnLevel(recordCount, thresholds = popupHistoryDeleteWarnThresholds) {
+    const count = Math.max(0, Number(recordCount) || 0);
+    if (count >= thresholds.red) return 'danger';
+    if (count >= thresholds.yellow) return 'warning';
+    return 'normal';
+}
+
+function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    const clearTooltip = document.querySelector('#clearHistoryBtn .tooltip');
+    if (clearTooltip) clearTooltip.textContent = isEn ? 'Delete records' : '删除记录';
+
+    const exportTooltip = document.querySelector('#exportHistoryBtn .tooltip');
+    if (exportTooltip) exportTooltip.textContent = isEn ? 'Export records' : '导出记录';
+
+    const historyTooltip = document.getElementById('historyViewerTooltip');
+    if (historyTooltip) historyTooltip.textContent = isEn ? 'Open HTML page' : '跳转至HTML页面';
+}
+
+function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') {
+    const clearBtn = document.getElementById('clearHistoryBtn');
+    if (!clearBtn) return;
+
+    clearBtn.classList.remove('history-delete-warning', 'history-delete-danger');
+
+    const warnLevel = getHistoryDeleteWarnLevel(recordCount);
+    if (warnLevel === 'warning') {
+        clearBtn.classList.add('history-delete-warning');
+    } else if (warnLevel === 'danger') {
+        clearBtn.classList.add('history-delete-danger');
+    }
+
+    const isEn = lang === 'en';
+    const baseLabel = isEn ? 'Delete records' : '删除记录';
+    const title = `${baseLabel} (${recordCount})`;
+    clearBtn.setAttribute('title', title);
+    clearBtn.setAttribute('aria-label', title);
+}
+
+function bindHistoryActionButtonTooltip(button) {
+    if (!button || button.hasAttribute('data-tooltip-bound')) return;
+    button.addEventListener('mouseenter', function () {
+        const tooltip = this.querySelector('.tooltip');
+        if (tooltip) {
+            tooltip.style.visibility = 'visible';
+            tooltip.style.opacity = '1';
+        }
+    });
+    button.addEventListener('mouseleave', function () {
+        const tooltip = this.querySelector('.tooltip');
+        if (tooltip) {
+            tooltip.style.visibility = 'hidden';
+            tooltip.style.opacity = '0';
+        }
+    });
+    button.setAttribute('data-tooltip-bound', 'true');
+}
 
 /**
  * 格式化时间显示的辅助函数。
@@ -2755,8 +2844,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             chrome.storage.local.get('cachedRecordAfterClear', result => {
                 resolve(result.cachedRecordAfterClear);
             });
+        }),
+        new Promise(resolve => {
+            chrome.storage.local.get(
+                [HISTORY_DELETE_WARN_SETTING_KEYS.yellow, HISTORY_DELETE_WARN_SETTING_KEYS.red],
+                result => resolve(result || {})
+            );
         })
-    ]).then(([currentLang, historyPageData, cachedRecord]) => { // currentLang is now from getLangPromise
+    ]).then(([currentLang, historyPageData, cachedRecord, deleteWarnSettings]) => { // currentLang is now from getLangPromise
         const rawSyncHistory = Array.isArray(historyPageData?.syncHistory) ? historyPageData.syncHistory : [];
         const syncHistory = sortHistoryRecordsByTimeDesc(rawSyncHistory);
         const totalRecords = Number.isFinite(Number(historyPageData?.totalRecords))
@@ -2772,6 +2867,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const responsePageSize = Number.isFinite(Number(historyPageData?.pageSize))
             ? Number(historyPageData.pageSize)
             : PAGE_SIZE;
+
+        popupHistoryDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+            deleteWarnSettings?.[HISTORY_DELETE_WARN_SETTING_KEYS.yellow],
+            deleteWarnSettings?.[HISTORY_DELETE_WARN_SETTING_KEYS.red]
+        );
+        window.__popupHistoryTotalRecords = totalRecords;
+        applyPopupDeleteHistoryButtonWarningState(totalRecords, currentLang);
 
         const historyList = document.getElementById('syncHistoryList');
         if (!historyList) return;
@@ -17143,105 +17245,48 @@ document.addEventListener('DOMContentLoaded', function () {
         // ... 其他处理 initialized 状态的逻辑 ...
     });
 
-    // 在document.addEventListener('DOMContentLoaded')事件的结尾添加清空和导出按钮的事件监听
-    // 添加导出和清空历史记录的事件监听
+    // 备份历史头部动作按钮：删除 / 导出 / 打开HTML页面（跳转到二级UI）
     const exportHistoryBtn = document.getElementById('exportHistoryBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
-
-    // 导出/清空按钮已隐藏，功能已迁移至历史页面的全局导出
-    /*
-    if (exportHistoryBtn) {
-        // 添加导出功能
-        exportHistoryBtn.addEventListener('click', exportSyncHistory);
-
-        // 添加悬停提示
-        exportHistoryBtn.addEventListener('mouseenter', function () {
-            const tooltip = this.querySelector('.tooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'visible';
-                tooltip.style.opacity = '1';
-            }
-        });
-
-        exportHistoryBtn.addEventListener('mouseleave', function () {
-            const tooltip = this.querySelector('.tooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'hidden';
-                tooltip.style.opacity = '0';
-            }
-        });
-    }
-
-    if (clearHistoryBtn) {
-        // 修改清空功能，先显示确认对话框
-        clearHistoryBtn.addEventListener('click', function () {
-            // 显示确认对话框
-            const clearHistoryConfirmDialog = document.getElementById('clearHistoryConfirmDialog');
-            if (clearHistoryConfirmDialog) {
-                clearHistoryConfirmDialog.style.display = 'block';
-            }
-        });
-
-        // 添加悬停提示
-        clearHistoryBtn.addEventListener('mouseenter', function () {
-            const tooltip = this.querySelector('.tooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'visible';
-                tooltip.style.opacity = '1';
-            }
-        });
-
-        clearHistoryBtn.addEventListener('mouseleave', function () {
-            const tooltip = this.querySelector('.tooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'hidden';
-                tooltip.style.opacity = '0';
-            }
-        });
-    }
-    */
-
-    // 添加「历史查看器」按钮事件监听
     const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
-    if (openHistoryViewerBtn) {
-        // 设置 tooltip 文本（根据语言）
-        chrome.storage.local.get(['preferredLang'], function (result) {
-            const currentLang = result.preferredLang || 'zh_CN';
-            const tooltip = document.getElementById('historyViewerTooltip');
-            if (tooltip) {
-                tooltip.textContent = currentLang === 'zh_CN' ? '跳转至HTML页面' : 'Open HTML page';
-            }
-        });
 
+    const openHistoryViewerByAction = async (action = '') => {
+        const suffix = action ? `&action=${encodeURIComponent(action)}` : '';
+        const url = chrome.runtime.getURL(`history_html/history.html?view=history${suffix}`);
+        await safeCreateTab({ url });
+    };
+
+    chrome.storage.local.get(['preferredLang'], function (result) {
+        const currentLang = result.preferredLang || 'zh_CN';
+        updatePopupHistoryActionTooltips(currentLang);
+        applyPopupDeleteHistoryButtonWarningState(
+            Number(window.__popupHistoryTotalRecords) || 0,
+            currentLang
+        );
+    });
+
+    if (clearHistoryBtn && !clearHistoryBtn.hasAttribute('data-listener-attached')) {
+        clearHistoryBtn.addEventListener('click', async function () {
+            await openHistoryViewerByAction('open-clear-history');
+        });
+        bindHistoryActionButtonTooltip(clearHistoryBtn);
+        clearHistoryBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (exportHistoryBtn && !exportHistoryBtn.hasAttribute('data-listener-attached')) {
+        exportHistoryBtn.addEventListener('click', async function () {
+            await openHistoryViewerByAction('open-global-export');
+        });
+        bindHistoryActionButtonTooltip(exportHistoryBtn);
+        exportHistoryBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (openHistoryViewerBtn && !openHistoryViewerBtn.hasAttribute('data-listener-attached')) {
         openHistoryViewerBtn.addEventListener('click', async function () {
-            // 打开历史查看器页面，明确指定视图为 backup history
-            await safeCreateTab({ url: chrome.runtime.getURL('history_html/history.html?view=history') });
+            await openHistoryViewerByAction('');
         });
-
-        // 添加悬停提示
-        openHistoryViewerBtn.addEventListener('mouseenter', function () {
-            const tooltip = document.getElementById('historyViewerTooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'visible';
-                tooltip.style.opacity = '1';
-            }
-            // hover 效果
-            this.style.backgroundColor = '#0050B3';
-            this.style.boxShadow = '0 2px 6px rgba(0, 122, 255, 0.3)';
-            this.style.transform = 'translateY(-1px)';
-        });
-
-        openHistoryViewerBtn.addEventListener('mouseleave', function () {
-            const tooltip = document.getElementById('historyViewerTooltip');
-            if (tooltip) {
-                tooltip.style.visibility = 'hidden';
-                tooltip.style.opacity = '0';
-            }
-            // 恢复样式
-            this.style.backgroundColor = '#007AFF';
-            this.style.boxShadow = 'none';
-            this.style.transform = 'translateY(0)';
-        });
+        bindHistoryActionButtonTooltip(openHistoryViewerBtn);
+        openHistoryViewerBtn.setAttribute('data-listener-attached', 'true');
     }
 
     // 添加状态卡片点击事件 - 直接跳转到当前变化视图
@@ -17866,6 +17911,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 // 同时更新动态创建的定时器UI
                 applyAutoBackupTimerLanguage();
             }
+
+            const newLang = changes.preferredLang.newValue || 'zh_CN';
+            updatePopupHistoryActionTooltips(newLang);
+            applyPopupDeleteHistoryButtonWarningState(
+                Number(window.__popupHistoryTotalRecords) || 0,
+                newLang
+            );
         }
 
         if (area === 'local') {
@@ -17888,6 +17940,21 @@ document.addEventListener('DOMContentLoaded', function () {
             );
             if (shouldRefreshRestoreStatus) {
                 updateUploadButtonIcons();
+            }
+
+            if (Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.yellow)
+                || Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.red)) {
+                popupHistoryDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+                    changes[HISTORY_DELETE_WARN_SETTING_KEYS.yellow]?.newValue ?? popupHistoryDeleteWarnThresholds.yellow,
+                    changes[HISTORY_DELETE_WARN_SETTING_KEYS.red]?.newValue ?? popupHistoryDeleteWarnThresholds.red
+                );
+                chrome.storage.local.get(['preferredLang'], (result) => {
+                    const lang = result.preferredLang || 'zh_CN';
+                    applyPopupDeleteHistoryButtonWarningState(
+                        Number(window.__popupHistoryTotalRecords) || 0,
+                        lang
+                    );
+                });
             }
         }
 

@@ -363,6 +363,52 @@
       font-weight: 700;
     }
 
+    .desktop-tip {
+      margin-top: 12px;
+      border: 1px solid color-mix(in srgb, var(--warn) 36%, var(--border));
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: color-mix(in srgb, var(--card) 86%, transparent);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .desktop-tip-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--warn) 48%, var(--border));
+      color: var(--warn);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .desktop-tip-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .desktop-tip-desc {
+      margin: 4px 0 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .desktop-tip-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .lang-block[hidden] {
       display: none !important;
     }
@@ -461,6 +507,19 @@
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="desktop-tip">
+        <div class="desktop-tip-badge">i</div>
+        <div>
+          <p class="desktop-tip-title">建议同时安装 GitHub Desktop</p>
+          <p class="desktop-tip-desc">
+            官方客户端可以更直观看分支、提交历史、仓库文件与当前同步状态。后续如果你要检查分支是否创建成功、查看备份文件是否已经写入，或者排查仓库侧问题，它会省很多时间。
+          </p>
+          <div class="desktop-tip-actions">
+            <a class="btn-link" href="https://desktop.github.com/download/" target="_blank" rel="noreferrer">下载 GitHub Desktop</a>
           </div>
         </div>
       </div>
@@ -621,6 +680,19 @@
                   scoped to this repo.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="desktop-tip">
+        <div class="desktop-tip-badge">i</div>
+        <div>
+          <p class="desktop-tip-title">Recommended: install GitHub Desktop as well</p>
+          <p class="desktop-tip-desc">
+            The official client makes it much easier to inspect branches, commit history, repository files, and current sync state. It saves time later when you need to verify branch creation, confirm backup files were written, or troubleshoot repo-side issues.
+          </p>
+          <div class="desktop-tip-actions">
+            <a class="btn-link" href="https://desktop.github.com/download/" target="_blank" rel="noreferrer">Download GitHub Desktop</a>
           </div>
         </div>
       </div>

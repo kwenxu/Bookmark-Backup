@@ -5,8 +5,15 @@
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 const getHistoryExportRootFolder = () => currentLang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
 const getManualExportParentFolder = () => currentLang === 'zh_CN' ? '手动导出' : 'Manual Export';
-const getHistoryExportFolder = () => `${getManualExportParentFolder()}/${currentLang === 'zh_CN' ? '备份历史' : 'Backup_History'}`;
+const getHistoryExportFolder = () => getManualExportParentFolder();
 const getCurrentChangesExportFolder = () => `${getManualExportParentFolder()}/${currentLang === 'zh_CN' ? '当前变化' : 'Current Changes'}`;
+const getManualExportInfoLogFileName = (format = 'md') => {
+    const ext = String(format || '').toLowerCase() === 'md' ? 'md' : 'json';
+    return currentLang === 'zh_CN'
+        ? `备份历史log.${ext}`
+        : `backup-history-log.${ext}`;
+};
+const MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY = 'manualExportCurrentChangesLedgerV1';
 const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
 
@@ -1555,28 +1562,32 @@ const i18n = {
         'en': 'Global Backup Export'
     },
     globalExportFormatTitle: {
-        'zh_CN': '导出格式',
-        'en': 'Export Format'
+        'zh_CN': '变化记录格式',
+        'en': 'Change Records Format'
     },
     globalExportFormatHint: {
-        'zh_CN': '勾选即可导出对应格式文件',
-        'en': 'Select to export the corresponding file formats'
+        'zh_CN': 'HTML / JSON 二选一，仅作用于变化记录；快照固定导出为 HTML；导出结果统一为 ZIP 归档',
+        'en': 'Choose either HTML or JSON for change records; snapshots are always exported as HTML; export always generates a ZIP archive'
     },
-    globalExportPackTitle: {
-        'zh_CN': '打包结构',
-        'en': 'Packaging'
+    globalExportContentTitle: {
+        'zh_CN': '导出内容',
+        'en': 'Export Content'
     },
-    globalExportPackZip: {
-        'zh_CN': 'ZIP 归档',
-        'en': 'ZIP'
+    globalExportContentSnapshot: {
+        'zh_CN': '快照',
+        'en': 'Snapshot'
     },
-    globalExportPackMerge: {
-        'zh_CN': '单一文件合并',
-        'en': 'Merge'
+    globalExportContentChanges: {
+        'zh_CN': '变化记录',
+        'en': 'Change Records'
     },
-    globalExportPackHint: {
-        'zh_CN': 'ZIP归档将包含多个独立文件<br>单一文件合并将生成一个汇总文件',
-        'en': 'ZIP contains separate files<br>Merge generates a summary file'
+    globalExportContentIndex: {
+        'zh_CN': '索引文件',
+        'en': 'Index Files'
+    },
+    globalExportContentHint: {
+        'zh_CN': '选择快照或变化记录时会自动附带备份历史log.md。',
+        'en': 'Selecting snapshot or change records automatically includes backup-history-log.md.'
     },
     globalExportSelectTitle: {
         'zh_CN': '选择备份记录',
@@ -1599,8 +1610,8 @@ const i18n = {
         'en': 'Hash'
     },
     globalExportThViewMode: {
-        'zh_CN': '视图模式',
-        'en': 'View Mode'
+        'zh_CN': '变化记录视图',
+        'en': 'Change Records View'
     },
     globalExportThTime: {
         'zh_CN': '时间',
@@ -2487,14 +2498,16 @@ function applyLanguage() {
     if (globalExportFormatTitle) globalExportFormatTitle.textContent = i18n.globalExportFormatTitle[currentLang];
     const globalExportFormatHint = document.getElementById('globalExportFormatHint');
     if (globalExportFormatHint) globalExportFormatHint.textContent = i18n.globalExportFormatHint[currentLang];
-    const globalExportPackTitle = document.getElementById('globalExportPackTitle');
-    if (globalExportPackTitle) globalExportPackTitle.textContent = i18n.globalExportPackTitle[currentLang];
-    const globalExportPackZipText = document.getElementById('globalExportPackZipText');
-    if (globalExportPackZipText) globalExportPackZipText.textContent = i18n.globalExportPackZip[currentLang];
-    const globalExportPackMergeText = document.getElementById('globalExportPackMergeText');
-    if (globalExportPackMergeText) globalExportPackMergeText.textContent = i18n.globalExportPackMerge[currentLang];
-    const globalExportPackHint = document.getElementById('globalExportPackHint');
-    if (globalExportPackHint) globalExportPackHint.innerHTML = i18n.globalExportPackHint[currentLang];
+    const globalExportContentTitle = document.getElementById('globalExportContentTitle');
+    if (globalExportContentTitle) globalExportContentTitle.textContent = i18n.globalExportContentTitle[currentLang];
+    const globalExportContentSnapshotText = document.getElementById('globalExportContentSnapshotText');
+    if (globalExportContentSnapshotText) globalExportContentSnapshotText.textContent = i18n.globalExportContentSnapshot[currentLang];
+    const globalExportContentChangesText = document.getElementById('globalExportContentChangesText');
+    if (globalExportContentChangesText) globalExportContentChangesText.textContent = i18n.globalExportContentChanges[currentLang];
+    const globalExportContentIndexText = document.getElementById('globalExportContentIndexText');
+    if (globalExportContentIndexText) globalExportContentIndexText.textContent = i18n.globalExportContentIndex[currentLang];
+    const globalExportContentHint = document.getElementById('globalExportContentHint');
+    if (globalExportContentHint) globalExportContentHint.textContent = i18n.globalExportContentHint[currentLang];
     const globalExportSelectTitle = document.getElementById('globalExportSelectTitle');
     if (globalExportSelectTitle) globalExportSelectTitle.textContent = i18n.globalExportSelectTitle[currentLang];
     const globalExportRangeEnabledText = document.getElementById('globalExportRangeEnabledText');
@@ -4356,57 +4369,52 @@ function hideRevertOverlay() {
     }
 }
 
-// 显示Revert的提示（单一提示，成功绿色，失败红色）
-function showRevertToast(isSuccess, message) {
-    // 移除之前的提示（只保留一个）
-    const existingToast = document.querySelector('.revert-toast');
-    if (existingToast) {
-        existingToast.remove();
-    }
+function removeHistoryPageToast() {
+    document.querySelectorAll('.history-page-toast').forEach((toast) => {
+        if (toast && toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    });
+}
 
-    // 创建新的提示
+function showHistoryPageToast(message, { type = 'info', duration = 2000 } = {}) {
+    removeHistoryPageToast();
+
     const toast = document.createElement('div');
-    toast.className = 'revert-toast';
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 12px 16px;
-        border-radius: 8px;
-        font-size: 14px;
-        z-index: 10000;
-        animation: slideUp 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        max-width: 300px;
-        word-break: break-word;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    `;
+    const normalizedType = type === 'success' || type === 'error' ? type : 'info';
+    const safeMessage = String(message == null ? '' : message).trim();
+    const iconClass = normalizedType === 'success'
+        ? 'fa-check-circle'
+        : (normalizedType === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle');
 
-    if (isSuccess) {
-        toast.style.backgroundColor = '#d4edda';
-        toast.style.color = '#155724';
-        toast.style.border = '1px solid #c3e6cb';
-        toast.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i><span>${escapeHtml(message)}</span>`;
-    } else {
-        toast.style.backgroundColor = '#f8d7da';
-        toast.style.color = '#721c24';
-        toast.style.border = '1px solid #f5c6cb';
-        toast.innerHTML = `<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i><span>${escapeHtml(message)}</span>`;
-    }
-
+    toast.className = `history-page-toast history-page-toast--${normalizedType}`;
+    toast.innerHTML = `<i class="fas ${iconClass} history-page-toast__icon"></i><span class="history-page-toast__text">${escapeHtml(safeMessage)}</span>`;
     document.body.appendChild(toast);
 
-    // 3秒后自动移除
-    setTimeout(() => {
-        toast.style.animation = 'slideDown 0.3s ease';
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    const close = () => {
+        if (!toast.parentNode) return;
+        toast.classList.remove('show');
+        toast.classList.add('hide');
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.remove();
             }
-        }, 300);
-    }, 3000);
+        }, 220);
+    };
+
+    setTimeout(close, Math.max(1200, Number(duration) || 2000));
+}
+
+// 显示Revert的提示（统一使用右上角 toast）
+function showRevertToast(isSuccess, message) {
+    showHistoryPageToast(message, {
+        type: isSuccess ? 'success' : 'error',
+        duration: 3000
+    });
 }
 
 // =============================================================================
@@ -5950,6 +5958,8 @@ async function maybeAutoExpandCurrentChangesCompactPreview() {
             if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     } catch (_) { /* ignore */ }
+
+    try { saveTreeExpandState(treeEl); } catch (_) { /* ignore */ }
 }
 
 function getChangesPreviewExpandedState() {
@@ -6405,7 +6415,9 @@ async function renderChangesTreePreview(changeData) {
 
             tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0, 50, new Set(), hintSet, {
                 forceExpandOverrideLazyStop: false,
-                preferPreviewAncestorBadges: true
+                preferPreviewAncestorBadges: true,
+                maxNodes: 50000,
+                suppressLimitWarning: true
             });
 
             while (tempDiv.firstChild) {
@@ -6419,6 +6431,7 @@ async function renderChangesTreePreview(changeData) {
 
             try {
                 restoreTreeExpandState(previewTreeContainer);
+                saveTreeExpandState(previewTreeContainer);
             } catch (_) { }
 
             // 注意：预览树保持“严格懒加载”，不在详细模式下自动加载子树。
@@ -6700,13 +6713,13 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += '</button>';
             html += '</div>';
             // 导出按钮
-            html += `<button class="diff-edit-btn icon-only" id="exportChangesBtn">`;
-            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+            html += `<button type="button" class="action-btn compact current-changes-header-action-btn" id="exportChangesBtn" aria-label="${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}">`;
+            html += '<i class="fas fa-file-export"></i>';
             html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}</span>`;
             html += '</button>';
             // 全部撤销按钮
-            html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn">`;
-            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>';
+            html += `<button type="button" class="action-btn compact current-changes-header-action-btn" id="revertAllCurrentBtn" aria-label="${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}">`;
+            html += '<i class="fas fa-undo"></i>';
             html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}</span>`;
             html += '</button>';
             html += '</div>';
@@ -6961,6 +6974,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                                 });
                                 __ensureTreeRootExpanded(previewTree);
                                 restoreTreeExpandState(previewTree);
+                                saveTreeExpandState(previewTree);
                             }
                         } catch (_) { }
 
@@ -8567,6 +8581,17 @@ function renderHistoryView() {
                </span>`;
         }
 
+        const overwriteMode = String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite'
+            ? 'overwrite'
+            : 'versioned';
+        const strategyBadge = overwriteMode === 'overwrite'
+            ? `<span class="commit-badge strategy overwrite" title="${currentLang === 'zh_CN' ? '覆盖策略' : 'Overwrite strategy'}">
+                <i class="fas fa-pen"></i> ${currentLang === 'zh_CN' ? '覆盖' : 'Overwrite'}
+            </span>`
+            : `<span class="commit-badge strategy versioned" title="${currentLang === 'zh_CN' ? '版本化策略' : 'Versioning strategy'}">
+                <i class="fas fa-layer-group"></i> ${currentLang === 'zh_CN' ? '版本化' : 'Versioning'}
+            </span>`;
+
         const titleClass = isRestore ? 'commit-title restore-title' : 'commit-title';
         const seqClass = isRestore ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
 
@@ -8608,6 +8633,7 @@ function renderHistoryView() {
                         ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
                     </span>` : ''}
                         ${typeBadge}
+                        ${strategyBadge}
                         <span class="commit-badge direction" title="${escapeHtml(directionText)}" aria-label="${escapeHtml(directionText)}">
                             ${directionIcon}
                         </span>
@@ -9073,7 +9099,7 @@ function updateRestoreWarning(strategy, preflightInfo = null) {
         title = isZh ? '提示' : 'Note';
         text = isZh
             ? '补丁恢复说明：<br>仅按 ID 匹配；ID 匹配执行新增/删除/移动/修改，ID 不匹配时按删除/新增处理。'
-            : 'Patch restore note:<br>Match by ID only; matching IDs support add/delete/move/modify, non-matching IDs are handled as delete/create.';
+            : 'Strict ID matching only; unmatched items become delete/create.';
         boxBg = 'var(--info-light)';
         boxBorder = '1px solid var(--info)';
         iconColor = 'var(--info)';
@@ -11840,7 +11866,7 @@ function updateRestoreModalI18n() {
     if (patchWrap) {
         patchWrap.title = isZh
             ? '补丁恢复：\n仅按 ID 匹配；ID 匹配执行新增/删除/移动/修改，ID 不匹配时按删除/新增处理。'
-            : 'Patch Restore:\nMatch by ID only; matching IDs support add/delete/move/modify, non-matching IDs are handled as delete/create.';
+            : 'Strict ID matching only; unmatched items become delete/create.';
     }
 
     const thresholdLabel = document.getElementById('restoreThresholdLabel');
@@ -13746,7 +13772,12 @@ async function loadPermanentFolderChildrenLazy(parentId, childrenContainer, star
             hintSet = window.__canvasPermanentHintSet;
         }
         const options = isReadOnly
-            ? { forceExpandOverrideLazyStop: false, preferPreviewAncestorBadges: true }
+            ? {
+                forceExpandOverrideLazyStop: false,
+                preferPreviewAncestorBadges: true,
+                maxNodes: 50000,
+                suppressLimitWarning: true
+            }
             : undefined;
         const html = slice.map(child => renderTreeNodeWithChanges(child, nextLevel, 50, visited, hintSet, options, underDeletedAncestor)).join('');
 
@@ -14578,7 +14609,10 @@ async function renderTreeView(forceRefresh = false) {
         }
 
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0, 50, new Set(), hintSet);
+        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0, 50, new Set(), hintSet, {
+            maxNodes: 50000,
+            suppressLimitWarning: true
+        });
         while (tempDiv.firstChild) {
             fragment.appendChild(tempDiv.firstChild);
         }
@@ -15161,6 +15195,15 @@ function __saveTreeExpandStateToStorage(treeContainer) {
         });
         const key = __getTreeExpandStateStorageKey(treeContainer);
         localStorage.setItem(key, JSON.stringify(expandedIds));
+        try {
+            if (key && key.startsWith('changesPreviewExpandedNodes:') &&
+                browserAPI && browserAPI.storage && browserAPI.storage.local &&
+                typeof browserAPI.storage.local.set === 'function') {
+                browserAPI.storage.local.set({ [key]: expandedIds }, () => {
+                    try { void browserAPI.runtime?.lastError; } catch (_) { }
+                });
+            }
+        } catch (_) { }
         console.log('[树状态] 保存展开节点:', expandedIds.length, 'key:', key);
     } catch (e) {
         console.error('[树状态] 保存失败:', e);
@@ -16265,24 +16308,32 @@ function computeForceExpandSet(nodes, changeMap, explicitMovedIdSet = null) {
 
 function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = new Set(), forceExpandSet = null, options = {}, underDeletedAncestor = false) {
     // 防止无限递归的保护机制
-    const MAX_DEPTH = maxDepth;
-    const MAX_NODES = 10000;
+    const MAX_DEPTH = Number.isFinite(Number(maxDepth)) ? Number(maxDepth) : 50;
+    const maxNodesRaw = Number.isFinite(Number(options?.maxNodes)) ? Number(options.maxNodes) : 10000;
+    const MAX_NODES = Math.max(10000, Math.round(maxNodesRaw));
+    const suppressLimitWarning = !!(options && options.suppressLimitWarning === true);
 
     if (!node) return '';
     if (level > MAX_DEPTH) {
-        console.warn('[renderTreeNodeWithChanges] 超过最大深度限制:', level);
+        if (!suppressLimitWarning) {
+            console.warn('[renderTreeNodeWithChanges] 超过最大深度限制:', level);
+        }
         return '';
     }
 
     // 检测循环引用
     if (visitedIds.has(node.id)) {
-        console.warn('[renderTreeNodeWithChanges] 检测到循环引用:', node.id);
+        if (!suppressLimitWarning) {
+            console.warn('[renderTreeNodeWithChanges] 检测到循环引用:', node.id);
+        }
         return '';
     }
     visitedIds.add(node.id);
 
     if (visitedIds.size > MAX_NODES) {
-        console.warn('[renderTreeNodeWithChanges] 超过最大节点限制');
+        if (!suppressLimitWarning) {
+            console.warn('[renderTreeNodeWithChanges] 超过最大节点限制');
+        }
         return '';
     }
 
@@ -18697,6 +18748,8 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
         const hasChildren = isFolder && node.children && node.children.length > 0;
         const nextUnderDeletedAncestor = underDeletedAncestor || isDeletedFolder;
         const extraNodeClass = isCollectionGroupNode ? 'collection-group-node' : '';
+        const sourceNodeId = node && node.sourceId != null ? String(node.sourceId) : idStr;
+        const sourceNodeAttr = sourceNodeId ? ` data-source-node-id="${escapeHtml(sourceNodeId)}"` : '';
 
         // 展开逻辑（与“当前变化”对齐）：
         // - 详细模式：默认不自动展开（靠路径徽标提示；用户可手动展开）
@@ -18737,7 +18790,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}" data-node-type="folder" data-node-level="${level}">
+                    <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="folder" data-node-level="${level}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                         <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
                         <span class="tree-label">${title}</span>
@@ -18753,7 +18806,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
             const favicon = typeof getFaviconUrl === 'function' ? getFaviconUrl(node.url) : '';
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-type="bookmark" data-node-level="${level}">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="bookmark" data-node-level="${level}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url || '')}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
@@ -20143,28 +20196,8 @@ function showError(message) {
     }
 }
 
-function showToast(message) {
-    // 简单的提示功能
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        background: var(--accent-primary);
-        color: white;
-        border-radius: 8px;
-        box-shadow: var(--shadow-lg);
-        z-index: 10000;
-        animation: slideIn 0.3s ease;
-    `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-        toast.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 2000);
+function showToast(message, type = 'info', duration = 2000) {
+    showHistoryPageToast(message, { type, duration });
 }
 
 
@@ -20557,6 +20590,12 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             showToast(action === 'continueRestoreRecoveryTransaction'
                 ? (isEn ? 'Continue completed.' : '继续完成。')
                 : (isEn ? 'Rollback completed.' : '回滚完成。'));
+            if (action === 'continueRestoreRecoveryTransaction' && result?.restoreRecordWarning) {
+                showToast(
+                    (isEn ? 'Restore history completed with warnings: ' : '恢复记录已写入，但有告警：')
+                    + result.restoreRecordWarning
+                );
+            }
             setTimeout(() => window.location.reload(), 250);
         } catch (error) {
             state.actionRunning = false;
@@ -21390,6 +21429,8 @@ async function executeExportChanges() {
         let content = '';
         let filename = '';
         const timestamp = formatTimeForFilename(); // 当前时间（导出时间）
+        const exportIsoTime = new Date().toISOString();
+        let currentChangesManualExportBundle = null;
 
         // 设置按钮加载状态
         confirmBtn.disabled = true;
@@ -21401,9 +21442,17 @@ async function executeExportChanges() {
         if (format === 'html') {
             if (isHistoryExport) {
                 // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
-                content = useHistoryDomTree
-                    ? await generateHistoryChangesHTMLFromDOM(currentExportHistoryTreeContainer, mode)
-                    : await generateHistoryChangesHTML(currentExportBookmarkTree, currentExportChangeData, mode);
+                if (useHistoryDomTree) {
+                    content = await generateHistoryChangesHTMLFromDOM(currentExportHistoryTreeContainer, mode);
+                } else if (mode === 'collection') {
+                    content = await generateHistoryCollectionChangesHTML(currentExportHistoryRecord, {
+                        treeToExport: currentExportBookmarkTree,
+                        changeMap: currentExportChangeData,
+                        changeData: null
+                    });
+                } else {
+                    content = await generateHistoryChangesHTML(currentExportBookmarkTree, currentExportChangeData, mode);
+                }
 
                 // Construct filename: Note_Hash_Mode_Time
                 const record = currentExportHistoryRecord;
@@ -21423,16 +21472,25 @@ async function executeExportChanges() {
             } else {
                 // 当前变化导出 - 与主 UI 自动归档同源生成
                 content = await generateChangesHTML(currentExportChangeData, mode, depth);
-                const changesPrefix = isZh ? '书签变化' : 'bookmark-changes';
                 const suggestedName = String(currentChangesManualExportLastFileName || '').trim();
-                filename = (/\.html$/i.test(suggestedName) ? suggestedName : `${changesPrefix}-${timestamp}.html`);
+                filename = (/\.html$/i.test(suggestedName)
+                    ? suggestedName
+                    : buildCurrentChangesManualExportFallbackLeafName({ mode, format: 'html', exportTime: exportIsoTime }));
             }
         } else {
             if (isHistoryExport) {
                 // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
-                content = useHistoryDomTree
-                    ? await generateHistoryChangesJSONFromDOM(currentExportHistoryTreeContainer, mode)
-                    : await generateHistoryChangesJSON(currentExportBookmarkTree, currentExportChangeData, mode);
+                if (useHistoryDomTree) {
+                    content = await generateHistoryChangesJSONFromDOM(currentExportHistoryTreeContainer, mode);
+                } else if (mode === 'collection') {
+                    content = await generateHistoryCollectionChangesJSON(currentExportHistoryRecord, {
+                        treeToExport: currentExportBookmarkTree,
+                        changeMap: currentExportChangeData,
+                        changeData: null
+                    });
+                } else {
+                    content = await generateHistoryChangesJSON(currentExportBookmarkTree, currentExportChangeData, mode);
+                }
 
                 // Construct filename: Note_Hash_Mode_Time
                 const record = currentExportHistoryRecord;
@@ -21452,9 +21510,10 @@ async function executeExportChanges() {
             } else {
                 // 当前变化导出 - 与主 UI 自动归档同源生成
                 content = await generateChangesJSON(currentExportChangeData, mode, depth);
-                const changesPrefix = isZh ? '书签变化' : 'bookmark-changes';
                 const suggestedName = String(currentChangesManualExportLastFileName || '').trim();
-                filename = (/\.json$/i.test(suggestedName) ? suggestedName : `${changesPrefix}-${timestamp}.json`);
+                filename = (/\.json$/i.test(suggestedName)
+                    ? suggestedName
+                    : buildCurrentChangesManualExportFallbackLeafName({ mode, format: 'json', exportTime: exportIsoTime }));
             }
             // 如果是 JSON 格式，content 是对象，需要 stringify
             if (typeof content === 'object') {
@@ -21462,52 +21521,31 @@ async function executeExportChanges() {
             }
         }
 
+        if (!isHistoryExport && action === 'download') {
+            const nextRecord = buildCurrentChangesManualExportIndexRecord({
+                mode,
+                format,
+                fileName: filename,
+                stats: normalizeCurrentChangesExportStatsManual(currentExportChangeData),
+                exportTime: exportIsoTime
+            });
+            const stored = await historyStorageGet([MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY]);
+            const mergedLedgerRecords = mergeCurrentChangesManualExportLedger(
+                stored?.[MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY],
+                nextRecord
+            );
+            await historyStorageSet({
+                [MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY]: mergedLedgerRecords
+            });
+
+            currentChangesManualExportBundle = {
+                snapshotKey: nextRecord.snapshotKey,
+                artifactRelativePath: `${nextRecord.snapshotKey}/${filename}`,
+                logMarkdown: buildManualExportLogMarkdown(mergedLedgerRecords)
+            };
+        }
+
         if (action === 'download') {
-            // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
-            try {
-                if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
-                    const folderKey = isHistoryExport ? 'history' : 'current_changes';
-                    const contentType = format === 'html' ? 'text/html;charset=utf-8' : 'application/json;charset=utf-8';
-                    chrome.runtime.sendMessage({
-                        action: 'exportFileToClouds',
-                        folderKey,
-                        lang: currentLang,
-                        fileName: filename,
-                        content,
-                        contentType
-                    }, (resp) => {
-                        try {
-                            if (!resp) return;
-                            const isEnLang = currentLang !== 'zh_CN';
-
-                            const webdavOk = resp.webdav && resp.webdav.success === true;
-                            const githubRepoOk = resp.githubRepo && resp.githubRepo.success === true;
-                            const webdavSkipped = resp.webdav && resp.webdav.skipped === true;
-                            const githubRepoSkipped = resp.githubRepo && resp.githubRepo.skipped === true;
-
-                            if (webdavOk && githubRepoOk) {
-                                showToast(isEnLang ? 'Uploaded to Cloud 1 & Cloud 2' : '已上传到云端1&云端2');
-                                return;
-                            }
-                            if (webdavOk) {
-                                showToast(isEnLang ? 'Uploaded to Cloud 1 (WebDAV)' : '已上传到云端1(WebDAV)');
-                                return;
-                            }
-                            if (githubRepoOk) {
-                                showToast(isEnLang ? 'Uploaded to Cloud 2 (GitHub Repo)' : '已上传到云端2(GitHub仓库)');
-                                return;
-                            }
-
-                            const attempted = !(webdavSkipped && githubRepoSkipped);
-                            const errorMsg = resp.webdav?.error || resp.githubRepo?.error || resp.error || null;
-                            if (attempted && errorMsg) {
-                                showToast(isEnLang ? `Cloud upload failed: ${errorMsg}` : `云端上传失败：${errorMsg}`);
-                            }
-                        } catch (_) { }
-                    });
-                }
-            } catch (_) { }
-
             // 下载文件 - 使用统一的导出文件夹结构
             const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -21515,14 +21553,17 @@ async function executeExportChanges() {
             // 根据导出类型选择不同的子文件夹（根据语言动态选择）
             const exportSubFolder = isHistoryExport ? getHistoryExportFolder() : getCurrentChangesExportFolder();
             const exportPath = `${getHistoryExportRootFolder()}/${exportSubFolder}`;
+            const localFileName = (!isHistoryExport && currentChangesManualExportBundle)
+                ? currentChangesManualExportBundle.artifactRelativePath
+                : filename;
 
             // 尝试使用 chrome.downloads API 以支持子目录
             if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
                 chrome.downloads.download({
                     url: url,
-                    filename: `${exportPath}/${filename}`,
+                    filename: `${exportPath}/${localFileName}`,
                     saveAs: false,
-                    conflictAction: 'uniquify'
+                    conflictAction: (!isHistoryExport && currentChangesManualExportBundle) ? 'overwrite' : 'uniquify'
                 }, (downloadId) => {
                     if (chrome.runtime.lastError) {
                         console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
@@ -21541,6 +21582,29 @@ async function executeExportChanges() {
                 a.download = filename;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
+            }
+
+            if (!isHistoryExport && currentChangesManualExportBundle && chrome?.downloads?.download) {
+                const extraFiles = [
+                    {
+                        relativeName: getManualExportInfoLogFileName('md'),
+                        mimeType: 'text/markdown;charset=utf-8',
+                        content: currentChangesManualExportBundle.logMarkdown
+                    }
+                ];
+                extraFiles.forEach((item) => {
+                    try {
+                        const extraUrl = URL.createObjectURL(new Blob([item.content], { type: item.mimeType }));
+                        chrome.downloads.download({
+                            url: extraUrl,
+                            filename: `${exportPath}/${item.relativeName}`,
+                            saveAs: false,
+                            conflictAction: 'overwrite'
+                        }, () => {
+                            setTimeout(() => URL.revokeObjectURL(extraUrl), 10000);
+                        });
+                    } catch (_) { }
+                });
             }
         } else {
             // 复制到剪贴板
@@ -22733,12 +22797,13 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
         return result;
     }
 
+    const historyRecord = currentExportHistoryRecord || null;
     const counts = getHistoryChangeCounts(currentExportChangeData, currentExportBookmarkTree);
     const exportTimeText = formatExportTimeText();
-    const backupTimeText = currentExportHistoryRecord?.time
-        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+    const backupTimeText = historyRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(historyRecord.time)) : new Date(historyRecord.time).toLocaleString())
         : '';
-    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    const noteText = historyRecord?.note ? historyRecord.note : (isZh ? '（无备注）' : '(No note)');
     const legendFolder = {
         title: isZh
             ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动'
@@ -22770,6 +22835,9 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
             exportDate: now,
             exportMode: mode,
             source: 'bookmark-backup-history',
+            backupTime: historyRecord?.time || null,
+            note: historyRecord?.note || '',
+            fingerprint: historyRecord?.fingerprint || '',
             legend: {
                 '[+]': isZh ? '新增' : 'Added',
                 '[-]': isZh ? '删除' : 'Deleted',
@@ -22783,9 +22851,10 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
 
 // 生成备份历史的变化HTML（从书签树直接生成，不依赖DOM）
 // changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
-async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expandedIds = null) {
+async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expandedIds = null, recordMeta = null) {
     const isZh = currentLang === 'zh_CN';
     const now = new Date().toLocaleString();
+    const historyRecord = recordMeta || currentExportHistoryRecord || null;
 
     // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
     // 注意：expandedIds 可能为空集合（用户已“全收起”）；仍应视为 WYSIWYG，而不是回退到默认展开规则。
@@ -22804,10 +22873,10 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expande
     html += `    <DT><H3>${legendText}</H3>\n`;
     const counts = getHistoryChangeCounts(changeMap, bookmarkTree);
     const exportTimeText = formatExportTimeText();
-    const backupTimeText = currentExportHistoryRecord?.time
-        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+    const backupTimeText = historyRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(historyRecord.time)) : new Date(historyRecord.time).toLocaleString())
         : '';
-    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    const noteText = historyRecord?.note ? historyRecord.note : (isZh ? '（无备注）' : '(No note)');
     html += `    <DL><p>\n`;
     html += `        <DT><A HREF="about:blank">${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}</A>\n`;
     html += `        <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtml(exportTimeText)}</A>\n`;
@@ -22930,9 +22999,10 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expande
 
 // 生成备份历史的变化JSON（从书签树直接生成，不依赖DOM）
 // changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
-async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expandedIds = null) {
+async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expandedIds = null, recordMeta = null) {
     const isZh = currentLang === 'zh_CN';
     const now = new Date().toISOString();
+    const historyRecord = recordMeta || currentExportHistoryRecord || null;
 
     // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
     // 注意：expandedIds 可能为空集合（用户已“全收起”）；仍应视为 WYSIWYG，而不是回退到默认展开规则。
@@ -23052,10 +23122,10 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expande
     // 构建兼容 Chrome bookmarks API 格式的输出
     const counts = getHistoryChangeCounts(changeMap, bookmarkTree);
     const exportTimeText = formatExportTimeText();
-    const backupTimeText = currentExportHistoryRecord?.time
-        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+    const backupTimeText = historyRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(historyRecord.time)) : new Date(historyRecord.time).toLocaleString())
         : '';
-    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    const noteText = historyRecord?.note ? historyRecord.note : (isZh ? '（无备注）' : '(No note)');
     const legendFolder = {
         title: isZh
             ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动'
@@ -23338,57 +23408,97 @@ function initGlobalExport() {
 
     initGlobalExportRangeUI();
 
-    // 导出格式：三选一（HTML / JSON / Markdown）
+    // 变化记录格式：HTML / JSON 互斥二选一；快照固定导出为 HTML；索引可单独导出
     const formatHtmlCbox = document.getElementById('globalExportFormatHtml');
     const formatJsonCbox = document.getElementById('globalExportFormatJson');
-    const formatMdCbox = document.getElementById('globalExportFormatMd');
+    const formatHtmlLabelWrap = document.getElementById('globalExportFormatHtmlLabelWrap');
+    const formatJsonLabelWrap = document.getElementById('globalExportFormatJsonLabelWrap');
+    const contentSnapshotCbox = document.getElementById('globalExportContentSnapshot');
+    const contentChangesCbox = document.getElementById('globalExportContentChanges');
+    const contentIndexCbox = document.getElementById('globalExportContentIndex');
+    const contentIndexLabelWrap = document.getElementById('globalExportContentIndexLabelWrap');
+    const contentIndexDivider = document.getElementById('globalExportContentIndexDivider');
 
-    const packMergeRadio = document.getElementById('globalExportPackMerge');
-    const packZipRadio = document.getElementById('globalExportPackZip');
+    const formatCboxes = [formatHtmlCbox, formatJsonCbox].filter(Boolean);
 
-    const formatCboxes = [formatHtmlCbox, formatJsonCbox, formatMdCbox].filter(Boolean);
+    const syncGlobalExportFormatUi = () => {
+        const shouldLockFormats = !contentChangesCbox?.checked;
 
-    const applyPackRulesForMd = (isMdSelected) => {
-        if (!packMergeRadio || !packZipRadio) return;
+        formatCboxes.forEach((cbox) => {
+            cbox.disabled = shouldLockFormats;
+        });
 
-        if (isMdSelected) {
-            // MD 强制“合并”，并禁用 Zip
-            packMergeRadio.checked = true;
-            packZipRadio.disabled = true;
-            if (packZipRadio.parentElement) packZipRadio.parentElement.style.opacity = '0.5';
-        } else {
-            // 非 MD 恢复 Zip 可用
-            packZipRadio.disabled = false;
-            if (packZipRadio.parentElement) packZipRadio.parentElement.style.opacity = '1';
+        [formatHtmlLabelWrap, formatJsonLabelWrap].filter(Boolean).forEach((labelWrap) => {
+            labelWrap.style.opacity = shouldLockFormats ? '0.55' : '1';
+            labelWrap.style.cursor = shouldLockFormats ? 'default' : 'pointer';
+            labelWrap.style.pointerEvents = shouldLockFormats ? 'none' : '';
+        });
+    };
+
+    const syncGlobalExportIndexUi = () => {
+        const shouldLockIndex = !!(contentSnapshotCbox?.checked || contentChangesCbox?.checked);
+
+        if (contentIndexCbox) {
+            contentIndexCbox.checked = true;
+            contentIndexCbox.disabled = shouldLockIndex;
+        }
+
+        if (contentIndexLabelWrap) {
+            contentIndexLabelWrap.style.opacity = shouldLockIndex ? '0.55' : '1';
+            contentIndexLabelWrap.style.cursor = shouldLockIndex ? 'default' : 'pointer';
+            contentIndexLabelWrap.style.pointerEvents = shouldLockIndex ? 'none' : '';
+        }
+
+        if (contentIndexDivider) {
+            contentIndexDivider.style.opacity = shouldLockIndex ? '0.38' : '0.78';
         }
     };
 
-    const enforceSingleFormat = (activeCbox) => {
-        formatCboxes.forEach((cbox) => {
-            if (cbox !== activeCbox) cbox.checked = false;
-        });
-        applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+    const selectChangesFormat = (next = 'html') => {
+        if (formatHtmlCbox) formatHtmlCbox.checked = next !== 'json';
+        if (formatJsonCbox) formatJsonCbox.checked = next === 'json';
     };
 
-    formatCboxes.forEach((cbox) => {
-        cbox.addEventListener('change', (e) => {
-            const target = e.target;
-            if (target.checked) {
-                enforceSingleFormat(target);
-                return;
-            }
+    const ensureChangesFormatSelection = (preferred = 'html') => {
+        if (!contentChangesCbox?.checked) return;
+        const htmlChecked = !!formatHtmlCbox?.checked;
+        const jsonChecked = !!formatJsonCbox?.checked;
+        if ((htmlChecked && !jsonChecked) || (!htmlChecked && jsonChecked)) {
+            return;
+        }
+        selectChangesFormat(preferred === 'json' ? 'json' : 'html');
+    };
 
-            // 不允许全部取消：如果用户把最后一个也取消，则自动恢复勾选
-            const anyChecked = formatCboxes.some(cb => cb.checked);
-            if (!anyChecked) {
-                target.checked = true;
+    if (formatHtmlCbox) {
+        formatHtmlCbox.addEventListener('change', () => {
+            ensureChangesFormatSelection('html');
+        });
+    }
+    if (formatJsonCbox) {
+        formatJsonCbox.addEventListener('change', () => {
+            ensureChangesFormatSelection('json');
+        });
+    }
+
+    [contentSnapshotCbox, contentChangesCbox].filter(Boolean).forEach((cbox) => {
+        cbox.addEventListener('change', (e) => {
+            if (e.target === contentChangesCbox && contentChangesCbox.checked) {
+                ensureChangesFormatSelection('html');
             }
-            applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+            syncGlobalExportFormatUi();
+            syncGlobalExportIndexUi();
         });
     });
 
-    // 初始化一次（防止默认勾选/历史状态导致 pack 状态不一致）
-    applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+    if (contentIndexCbox) {
+        contentIndexCbox.addEventListener('change', () => {
+            contentIndexCbox.checked = true;
+            syncGlobalExportIndexUi();
+        });
+    }
+
+    syncGlobalExportFormatUi();
+    syncGlobalExportIndexUi();
 
     // 导出卡片点击交互 (让整个卡片可点击)
     document.querySelectorAll('.export-option-card').forEach(card => {
@@ -23984,10 +24094,10 @@ function renderGlobalExportPage() {
                 <input type="checkbox" class="global-export-row-checkbox" data-time="${record.time}" ${isChecked ? 'checked' : ''}>
             </td>
             <td style="text-align: center; font-family: monospace; color: var(--text-secondary);">${seqNumber}</td>
-            <td>
-                <div style="max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: normal; line-height: 1.4;">${noteDisplay}</div>
+            <td style="width: 204px; padding-right: 6px;">
+                <div style="max-width: 204px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4;">${noteDisplay}</div>
             </td>
-            <td style="font-family: monospace; color: var(--text-secondary);">${fingerprint}</td>
+            <td style="width: 92px; padding-left: 4px; font-family: monospace; color: var(--text-secondary);">${fingerprint}</td>
             <td>
             <div class="global-export-toggle-group" data-time="${record.time}">
                 <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>
@@ -24071,6 +24181,580 @@ function updateSelectAllCheckboxState() {
     selectAllCheckbox.indeterminate = !allSelected && !noneSelected;
 }
 
+function getHistoryStorageArea() {
+    return (typeof chrome !== 'undefined' && chrome?.storage?.local)
+        ? chrome.storage.local
+        : ((typeof browser !== 'undefined' && browser?.storage?.local) ? browser.storage.local : null);
+}
+
+function historyStorageGet(keys) {
+    return new Promise((resolve) => {
+        const area = getHistoryStorageArea();
+        if (!area || typeof area.get !== 'function') {
+            resolve({});
+            return;
+        }
+        try {
+            area.get(keys, (result) => resolve(result || {}));
+        } catch (_) {
+            resolve({});
+        }
+    });
+}
+
+function historyStorageSet(payload) {
+    return new Promise((resolve) => {
+        const area = getHistoryStorageArea();
+        if (!area || typeof area.set !== 'function') {
+            resolve(false);
+            return;
+        }
+        try {
+            area.set(payload || {}, () => resolve(!chrome?.runtime?.lastError));
+        } catch (_) {
+            resolve(false);
+        }
+    });
+}
+
+function computeManualExportFallbackHash(seed = '') {
+    const text = String(seed || '');
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+        hash = ((hash << 5) - hash) + text.charCodeAt(i);
+        hash |= 0;
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 8);
+}
+
+function normalizeManualExportFingerprint(value, fallbackSeed = '') {
+    const normalized = String(value || '')
+        .toLowerCase()
+        .replace(/[^0-9a-f]/g, '');
+    if (normalized) {
+        return normalized.slice(0, 8);
+    }
+    return computeManualExportFallbackHash(fallbackSeed);
+}
+
+function buildManualExportSnapshotKey(timeValue, fingerprint, fallbackSeed = '') {
+    const timePart = formatCompactTimeForSnapshotKey(timeValue || new Date().toISOString());
+    const normalizedFingerprint = normalizeManualExportFingerprint(fingerprint, `${timePart}|${fallbackSeed}`);
+    return `${timePart}_${normalizedFingerprint}`;
+}
+
+function formatCompactTimeForSnapshotKey(timeValue) {
+    const normalizedTime = typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(timeValue)
+        ? timeValue.replace('_', 'T').replace(/-(\d{2})-(\d{2})$/, ':$1:$2')
+        : timeValue;
+    const date = normalizedTime ? new Date(normalizedTime) : new Date();
+    const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+    const year = safeDate.getFullYear();
+    const month = String(safeDate.getMonth() + 1).padStart(2, '0');
+    const day = String(safeDate.getDate()).padStart(2, '0');
+    const hours = String(safeDate.getHours()).padStart(2, '0');
+    const minutes = String(safeDate.getMinutes()).padStart(2, '0');
+    const seconds = String(safeDate.getSeconds()).padStart(2, '0');
+    return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+}
+
+function buildManualExportStatsFromHistoryRecord(record) {
+    const statsSource = record?.bookmarkStats || {};
+    const bookmarkDiff = Number.isFinite(Number(statsSource.bookmarkDiff)) ? Number(statsSource.bookmarkDiff) : 0;
+    const folderDiff = Number.isFinite(Number(statsSource.folderDiff)) ? Number(statsSource.folderDiff) : 0;
+    const absoluteStats = resolveAbsoluteDisplayStats(statsSource, {
+        bookmarkDiff,
+        folderDiff,
+        canCalculateDiff: true
+    });
+    const counts = extractCountsFromHistoryRecord(record) || {};
+
+    return {
+        bookmarkAdded: Number(absoluteStats.bookmarkAddedCount || 0),
+        bookmarkDeleted: Number(absoluteStats.bookmarkDeletedCount || 0),
+        folderAdded: Number(absoluteStats.folderAddedCount || 0),
+        folderDeleted: Number(absoluteStats.folderDeletedCount || 0),
+        movedCount: Number(absoluteStats.movedTotal || 0),
+        modifiedCount: Number(absoluteStats.modifiedTotal || 0),
+        bookmarkCount: Number.isFinite(Number(counts.bookmarks)) ? Number(counts.bookmarks) : null,
+        folderCount: Number.isFinite(Number(counts.folders)) ? Number(counts.folders) : null
+    };
+}
+
+function buildManualExportStatsLineFromStats(stats, isZh = currentLang === 'zh_CN') {
+    const safe = stats && typeof stats === 'object' ? stats : {};
+    const toNum = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+    const bookmarkAdded = toNum(safe.bookmarkAdded);
+    const bookmarkDeleted = toNum(safe.bookmarkDeleted);
+    const folderAdded = toNum(safe.folderAdded);
+    const folderDeleted = toNum(safe.folderDeleted);
+    const movedCount = toNum(safe.movedCount);
+    const modifiedCount = toNum(safe.modifiedCount);
+    const bookmarkDiff = toNum(safe.bookmarkDiff);
+    const folderDiff = toNum(safe.folderDiff);
+
+    const hasFineGrained = (bookmarkAdded + bookmarkDeleted + folderAdded + folderDeleted) > 0;
+    const hasAnyChange = hasFineGrained
+        || bookmarkDiff !== 0
+        || folderDiff !== 0
+        || movedCount !== 0
+        || modifiedCount !== 0;
+    if (!hasAnyChange) {
+        return isZh ? '无变化' : 'No changes';
+    }
+
+    const parts = [];
+    if (hasFineGrained) {
+        if (isZh) {
+            if (bookmarkAdded > 0 || bookmarkDeleted > 0) parts.push(`书签+${bookmarkAdded}/-${bookmarkDeleted}`);
+            if (folderAdded > 0 || folderDeleted > 0) parts.push(`文件夹+${folderAdded}/-${folderDeleted}`);
+        } else {
+            if (bookmarkAdded > 0 || bookmarkDeleted > 0) parts.push(`B+${bookmarkAdded}/-${bookmarkDeleted}`);
+            if (folderAdded > 0 || folderDeleted > 0) parts.push(`F+${folderAdded}/-${folderDeleted}`);
+        }
+    } else {
+        const bookmarkDiffText = `${bookmarkDiff > 0 ? '+' : ''}${bookmarkDiff}`;
+        const folderDiffText = `${folderDiff > 0 ? '+' : ''}${folderDiff}`;
+        if (isZh) {
+            if (bookmarkDiff !== 0) parts.push(`书签Δ${bookmarkDiffText}`);
+            if (folderDiff !== 0) parts.push(`文件夹Δ${folderDiffText}`);
+        } else {
+            if (bookmarkDiff !== 0) parts.push(`ΔB${bookmarkDiffText}`);
+            if (folderDiff !== 0) parts.push(`ΔF${folderDiffText}`);
+        }
+    }
+    if (movedCount > 0) {
+        parts.push(isZh ? `移动${movedCount}` : `Moved ${movedCount}`);
+    }
+    if (modifiedCount > 0) {
+        parts.push(isZh ? `修改${modifiedCount}` : `Modified ${modifiedCount}`);
+    }
+    return parts.join(' / ') || (isZh ? '无变化' : 'No changes');
+}
+
+function getSortedManualExportLogRecords(records) {
+    return (Array.isArray(records) ? records : [])
+        .map((record) => cloneSerializableData(record))
+        .filter(Boolean)
+        .sort((a, b) => {
+            const aSeq = Number.isFinite(Number(a?.seqNumber)) ? Number(a.seqNumber) : -1;
+            const bSeq = Number.isFinite(Number(b?.seqNumber)) ? Number(b.seqNumber) : -1;
+            if (aSeq !== bSeq) return bSeq - aSeq;
+            return new Date(b?.time || 0).getTime() - new Date(a?.time || 0).getTime();
+        });
+}
+
+function buildManualExportLogPayload(records) {
+    const list = getSortedManualExportLogRecords(records);
+    const normalizedRecords = list.map((record) => {
+        const item = record && typeof record === 'object' ? record : {};
+        const snapshotPaths = (item.snapshotPaths && typeof item.snapshotPaths === 'object')
+            ? cloneSerializableData(item.snapshotPaths)
+            : {};
+        const changesPathsByMode = (item.changesPathsByMode && typeof item.changesPathsByMode === 'object')
+            ? cloneSerializableData(item.changesPathsByMode)
+            : {};
+        return {
+            seqNumber: Number.isFinite(Number(item.seqNumber)) ? Number(item.seqNumber) : null,
+            note: String(item.note || ''),
+            time: item.time || null,
+            fingerprint: String(item.fingerprint || ''),
+            sourceKind: item.sourceKind === 'current_changes' ? 'current_changes' : 'history_record',
+            direction: String(item.directionKey || item.direction || 'local').trim().toLowerCase() || 'local',
+            type: String(item.type || '').trim().toLowerCase() || '',
+            overwriteMode: String(item.overwriteMode || '').trim().toLowerCase() === 'overwrite' ? 'overwrite' : 'versioned',
+            snapshotKey: String(item.snapshotKey || ''),
+            hasSnapshot: item.hasSnapshot === true,
+            hasChanges: item.hasChanges === true,
+            changesViewMode: normalizeHistoryDetailMode(item.changesViewMode || 'simple'),
+            snapshotPaths,
+            changesPathsByMode,
+            stats: cloneSerializableData(item.stats || {})
+        };
+    });
+
+    return {
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+        records: normalizedRecords
+    };
+}
+
+function buildHistoryManualExportInfoLogFileName(records, fallbackTime = new Date().toISOString()) {
+    const isZh = currentLang === 'zh_CN';
+    const baseName = getManualExportInfoLogFileName('md').replace(/\.md$/i, '');
+    const sorted = getSortedManualExportLogRecords(records)
+        .slice()
+        .sort((a, b) => new Date(a?.time || 0).getTime() - new Date(b?.time || 0).getTime());
+    const startTime = sorted[0]?.time || fallbackTime;
+    const endTime = sorted[sorted.length - 1]?.time || fallbackTime;
+    const startToken = formatCompactTimeForSnapshotKey(startTime);
+    const endToken = formatCompactTimeForSnapshotKey(endTime);
+    const rangeText = isZh
+        ? `_${startToken}开始_${endToken}截止`
+        : `_from_${startToken}_to_${endToken}`;
+    return `${baseName}${rangeText}.md`;
+}
+
+function buildManualExportLogStatus(record, isZh = currentLang === 'zh_CN') {
+    const hasPayload = record?.hasSnapshot === true || record?.hasChanges === true;
+    if (hasPayload) return 'success';
+    return '-';
+}
+
+function normalizeManualExportLogDirectionKey(record) {
+    const raw = String(record?.directionKey || record?.direction || '').trim().toLowerCase();
+    if (!raw) return 'local';
+    return raw;
+}
+
+function buildManualExportLogDirection(record, isZh = currentLang === 'zh_CN') {
+    const key = normalizeManualExportLogDirectionKey(record);
+    const mapZh = {
+        upload: '上传',
+        download: '下载',
+        webdav: '云端1',
+        github_repo: '云端2',
+        gist: '云端3',
+        cloud: '云端',
+        local: '本地',
+        both: '云端+本地',
+        webdav_github_local: '云端1+云端2+本地',
+        webdav_local: '云端1+本地',
+        github_repo_local: '云端2+本地',
+        gist_local: '云端3+本地',
+        cloud_local: '云端+本地'
+    };
+    const mapEn = {
+        upload: 'Upload',
+        download: 'Download',
+        webdav: 'Cloud1',
+        github_repo: 'Cloud2',
+        gist: 'Cloud3',
+        cloud: 'Cloud',
+        local: 'Local',
+        both: 'Cloud+Local',
+        webdav_github_local: 'Cloud1+Cloud2+Local',
+        webdav_local: 'Cloud1+Local',
+        github_repo_local: 'Cloud2+Local',
+        gist_local: 'Cloud3+Local',
+        cloud_local: 'Cloud+Local'
+    };
+    const mapped = (isZh ? mapZh : mapEn)[key];
+    return mapped || (isZh ? '本地' : 'Local');
+}
+
+function inferManualExportLogTypeKey(record) {
+    const explicit = String(record?.type || '').trim().toLowerCase();
+    if (explicit) return explicit;
+
+    const noteLower = String(record?.note || '').toLowerCase();
+    if (noteLower.includes('自动') || noteLower.includes('auto')) return 'auto';
+    if (noteLower.includes('手动') || noteLower.includes('manual')) return 'manual';
+    if (noteLower.includes('恢复') || noteLower.includes('restore')) return 'restore';
+    return 'manual';
+}
+
+function buildManualExportLogType(record, isZh = currentLang === 'zh_CN') {
+    if (record?.sourceKind === 'current_changes') {
+        return isZh ? '当前变化' : 'Current Changes';
+    }
+
+    const key = inferManualExportLogTypeKey(record);
+    const mapZh = {
+        auto: '自动',
+        manual: '手动',
+        switch: '切换',
+        auto_switch: '自动切换',
+        restore: '恢复'
+    };
+    const mapEn = {
+        auto: 'Auto',
+        manual: 'Manual',
+        switch: 'Switch',
+        auto_switch: 'Auto Switch',
+        restore: 'Restore'
+    };
+    return (isZh ? mapZh : mapEn)[key] || (isZh ? '手动' : 'Manual');
+}
+
+function normalizeManualExportLogOverwriteMode(record) {
+    return String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite'
+        ? 'overwrite'
+        : 'versioned';
+}
+
+function buildManualExportLogStrategy(record, isZh = currentLang === 'zh_CN') {
+    if (record?.sourceKind === 'current_changes') {
+        return isZh ? '手动导出' : 'Manual Export';
+    }
+    const mode = normalizeManualExportLogOverwriteMode(record);
+    if (mode === 'overwrite') return isZh ? '覆盖' : 'Overwrite';
+    return isZh ? '多版本' : 'Versioned';
+}
+
+function buildManualExportLogSourceType(record, isZh = currentLang === 'zh_CN') {
+    if (record?.sourceKind === 'current_changes') {
+        return isZh ? '当前变化' : 'Current Changes';
+    }
+
+    const noteLower = String(record?.note || '').toLowerCase();
+    if (noteLower.includes('自动') || noteLower.includes('auto')) {
+        return isZh ? '自动' : 'Auto';
+    }
+    if (noteLower.includes('手动') || noteLower.includes('manual')) {
+        return isZh ? '手动' : 'Manual';
+    }
+    return isZh ? '手动' : 'Manual';
+}
+
+function buildManualExportLogChangesCell(record, isZh = currentLang === 'zh_CN') {
+    if (record?.hasChanges !== true) return '-';
+
+    const statsText = buildManualExportStatsLineFromStats(record?.stats || {}, isZh);
+    if (record?.sourceKind !== 'current_changes') {
+        return statsText;
+    }
+
+    const mode = normalizeHistoryDetailMode(record?.changesViewMode || 'simple');
+    const modeLabel = getHistoryDetailModeLabel(mode, isZh);
+    const formatKeys = Object.keys(record?.changesPathsByMode?.[mode] || {})
+        .filter((key) => key === 'html' || key === 'json');
+    const formatLabel = (() => {
+        const hasHtml = formatKeys.includes('html');
+        const hasJson = formatKeys.includes('json');
+        if (hasHtml && hasJson) return 'HTML+JSON';
+        if (hasJson) return 'JSON';
+        return 'HTML';
+    })();
+    return `${modeLabel}/${formatLabel} · ${statsText}`;
+}
+
+function buildManualExportLogLedgerMarker(payload) {
+    try {
+        const jsonText = JSON.stringify(payload || {});
+        const encoded = btoa(unescape(encodeURIComponent(jsonText)));
+        return `<!-- BB_MANUAL_EXPORT_LEDGER ${encoded} -->`;
+    } catch (_) {
+        return '';
+    }
+}
+
+function buildManualExportLogMarkdown(records) {
+    const isZh = currentLang === 'zh_CN';
+    const escapeCell = (value) => String(value == null ? '' : value)
+        .replace(/\|/g, '\\|')
+        .replace(/\r?\n/g, ' ')
+        .trim();
+    const lines = [];
+    const payload = buildManualExportLogPayload(records);
+    const list = payload.records || [];
+
+    lines.push(isZh ? '# 备份历史log（实时备注）' : '# Backup History Log (Real-time Notes)');
+    lines.push('');
+    lines.push(`${isZh ? '生成时间' : 'Generated at'}: ${formatTime(new Date())}`);
+    lines.push(isZh
+        ? '说明：此文件用于多版本恢复索引与备注展示。'
+        : 'Note: this file is used for versioned restore indexing and notes display.');
+
+    const ledgerMarker = buildManualExportLogLedgerMarker(payload);
+
+    const timelineRecords = list
+        .filter((record) => record && record.sourceKind !== 'current_changes')
+        .slice()
+        .sort((a, b) => new Date(a?.time || 0).getTime() - new Date(b?.time || 0).getTime());
+
+    if (timelineRecords.length > 0) {
+        const baselineRecord = timelineRecords[0] || {};
+        const baselineSnapshotKey = String(baselineRecord?.snapshotKey || '').trim()
+            || formatCompactTimeForSnapshotKey(baselineRecord?.time || new Date().toISOString());
+        const baselineTime = new Date(baselineRecord?.time || Date.now());
+        const baselineIso = Number.isFinite(baselineTime.getTime())
+            ? baselineTime.toISOString()
+            : new Date().toISOString();
+        const baselineReason = isZh ? '初始化后建立基线' : 'Initialize baseline';
+        const baselineComment = `<!-- BB_BASELINE {"reason":"initialize","time":"${baselineIso}","snapshotKey":"${baselineSnapshotKey}"} -->`;
+        const baselineCommentWithLedger = ledgerMarker
+            ? `${baselineComment} ${ledgerMarker}`
+            : baselineComment;
+        const startTime = formatTime(timelineRecords[0]?.time || '');
+        const endTime = formatTime(timelineRecords[timelineRecords.length - 1]?.time || '');
+
+        lines.push('');
+        lines.push(isZh ? '## 基线分界线' : '## Baseline Boundaries');
+        lines.push(`- ${baselineSnapshotKey} · ${baselineReason} ${baselineCommentWithLedger}`);
+        lines.push(`${isZh ? '当前开始' : 'Current Start'}: ${startTime}`);
+        lines.push(`${isZh ? '当前截止' : 'Current End'}: ${endTime}`);
+    }
+
+    if (ledgerMarker && timelineRecords.length === 0) {
+        lines.push(ledgerMarker);
+    }
+    lines.push('');
+    lines.push(isZh ? '## 当前' : '## Current');
+    lines.push(isZh
+        ? '| 序号 | 备注 | 时间 | 哈希 | 状态 | 方向 | 方向键 | 类型 | 策略 | 快照键 | 变化 |'
+        : '| Seq | Note | Time | Hash | Status | Direction | DirectionKey | Type | Strategy | SnapshotKey | Changes |');
+    lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
+
+    list.forEach((record) => {
+        const directionKey = normalizeManualExportLogDirectionKey(record);
+        lines.push(`| ${escapeCell(record?.seqNumber ?? '-')} | ${escapeCell(record?.note || '-')} | ${escapeCell(formatTime(record?.time || ''))} | ${escapeCell(record?.fingerprint || '-')} | ${escapeCell(buildManualExportLogStatus(record, isZh))} | ${escapeCell(buildManualExportLogDirection(record, isZh))} | ${escapeCell(directionKey)} | ${escapeCell(buildManualExportLogType(record, isZh))} | ${escapeCell(buildManualExportLogStrategy(record, isZh))} | ${escapeCell(record?.snapshotKey || '-')} | ${escapeCell(buildManualExportLogChangesCell(record, isZh))} |`);
+    });
+
+    return lines.join('\n');
+}
+
+function mergeCurrentChangesManualExportLedger(existingRecords, nextRecord) {
+    const records = Array.isArray(existingRecords) ? cloneSerializableData(existingRecords) : [];
+    const snapshotKey = String(nextRecord?.snapshotKey || '').trim();
+    if (!snapshotKey) return records;
+
+    const existingIndex = records.findIndex((item) => String(item?.snapshotKey || '').trim() === snapshotKey);
+    const nextChangesByMode = nextRecord?.changesPathsByMode && typeof nextRecord.changesPathsByMode === 'object'
+        ? nextRecord.changesPathsByMode
+        : {};
+
+    if (existingIndex >= 0) {
+        const existing = records[existingIndex] && typeof records[existingIndex] === 'object' ? records[existingIndex] : {};
+        const merged = {
+            ...existing,
+            ...nextRecord,
+            seqNumber: Number.isFinite(Number(existing.seqNumber)) ? Number(existing.seqNumber) : (Number.isFinite(Number(nextRecord.seqNumber)) ? Number(nextRecord.seqNumber) : null),
+            changesPathsByMode: cloneSerializableData(existing.changesPathsByMode || {})
+        };
+
+        Object.entries(nextChangesByMode).forEach(([modeKey, formats]) => {
+            if (!merged.changesPathsByMode[modeKey] || typeof merged.changesPathsByMode[modeKey] !== 'object') {
+                merged.changesPathsByMode[modeKey] = {};
+            }
+            Object.assign(merged.changesPathsByMode[modeKey], cloneSerializableData(formats || {}));
+        });
+
+        records[existingIndex] = merged;
+    } else {
+        const maxSeq = records.reduce((max, item) => {
+            const seq = Number.isFinite(Number(item?.seqNumber)) ? Number(item.seqNumber) : 0;
+            return Math.max(max, seq);
+        }, 0);
+        records.push({
+            ...cloneSerializableData(nextRecord),
+            seqNumber: maxSeq + 1
+        });
+    }
+
+    return records
+        .slice()
+        .sort((a, b) => new Date(b?.time || 0).getTime() - new Date(a?.time || 0).getTime());
+}
+
+function parseManualExportSnapshotKeyFromLeafName(fileName) {
+    const text = String(fileName || '').trim();
+    const match = /(\d{8}_\d{6})_([0-9a-f]{6,12})/i.exec(text);
+    if (!match) return '';
+    return `${match[1]}_${String(match[2] || '').toLowerCase()}`;
+}
+
+function buildCurrentChangesManualExportIndexRecord({ mode, format, fileName, stats, exportTime }) {
+    const snapshotKey = parseManualExportSnapshotKeyFromLeafName(fileName)
+        || buildManualExportSnapshotKey(exportTime, '', fileName);
+    const normalizedStats = stats && typeof stats === 'object' ? cloneSerializableData(stats) : {};
+    return {
+        seqNumber: null,
+        note: currentLang === 'zh_CN' ? '当前变化' : 'Current Changes',
+        time: exportTime,
+        fingerprint: snapshotKey.split('_').pop() || '',
+        sourceKind: 'current_changes',
+        direction: 'local',
+        directionKey: 'local',
+        type: 'manual',
+        overwriteMode: 'versioned',
+        snapshotKey,
+        hasSnapshot: false,
+        hasChanges: true,
+        changesViewMode: normalizeCurrentChangesExportModeManual(mode),
+        changesPathsByMode: {
+            [normalizeCurrentChangesExportModeManual(mode)]: {
+                [String(format || '').toLowerCase() === 'json' ? 'json' : 'html']: `${snapshotKey}/${fileName}`
+            }
+        },
+        stats: normalizedStats
+    };
+}
+
+function buildCurrentChangesManualExportFallbackLeafName({ mode, format, exportTime }) {
+    const snapshotKey = buildManualExportSnapshotKey(
+        exportTime,
+        '',
+        `${String(exportTime || '').trim()}|current_changes|${normalizeCurrentChangesExportModeManual(mode)}|${String(format || '').trim().toLowerCase()}`
+    );
+    return buildGlobalExportChangesLeafName(snapshotKey, normalizeCurrentChangesExportModeManual(mode), format);
+}
+
+function buildGlobalExportRecordNamingInfo(record, mode, seqMap, seqWidth) {
+    const shortFingerprint = normalizeManualExportFingerprint(record.fingerprint, `${record.time || ''}|${record.note || ''}`);
+    const seqNumber = seqMap.get(String(record.time));
+    const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
+    const snapshotKey = buildManualExportSnapshotKey(record.time, shortFingerprint, `${record.time || ''}|${record.note || ''}`);
+
+    return {
+        seqNumber,
+        seqStr,
+        snapshotKey,
+        snapshotLeafName: `${snapshotKey}.html`,
+        changesLeafNames: {
+            html: buildGlobalExportChangesLeafName(snapshotKey, mode, 'html'),
+            json: buildGlobalExportChangesLeafName(snapshotKey, mode, 'json')
+        }
+    };
+}
+
+function buildGlobalExportChangesLeafName(snapshotKey, mode, format = 'html') {
+    const isZh = currentLang === 'zh_CN';
+    const normalizedMode = normalizeHistoryDetailMode(mode);
+    const modeText = normalizedMode === 'detailed'
+        ? (isZh ? '详细' : 'detailed')
+        : (normalizedMode === 'collection' ? (isZh ? '集合' : 'collection') : (isZh ? '简略' : 'simple'));
+    const ext = String(format || '').toLowerCase() === 'json' ? 'json' : 'html';
+    const prefix = isZh ? '书签变化' : 'bookmark-changes';
+    return `${prefix}_${modeText}_${snapshotKey}.${ext}`;
+}
+
+const MANUAL_EXPORT_ZIP_FOLDER_RESTORE_RECOMMEND_BYTES = 100 * 1024 * 1024;
+const MANUAL_EXPORT_ZIP_FOLDER_RESTORE_STRONG_RECOMMEND_BYTES = 500 * 1024 * 1024;
+
+function buildGlobalExportZipHintSuffix(sizeBytes, isZh = currentLang === 'zh_CN') {
+    const normalizedSize = Number(sizeBytes);
+    if (!Number.isFinite(normalizedSize) || normalizedSize < MANUAL_EXPORT_ZIP_FOLDER_RESTORE_RECOMMEND_BYTES) {
+        return '';
+    }
+    if (normalizedSize >= MANUAL_EXPORT_ZIP_FOLDER_RESTORE_STRONG_RECOMMEND_BYTES) {
+        return isZh
+            ? '（超500MB恢复建议先解压为文件夹）'
+            : ' (Over 500MB: extract to folder before restore)';
+    }
+    return isZh
+        ? '（超100MB恢复建议先解压为文件夹）'
+        : ' (Over 100MB: extract to folder before restore)';
+}
+
+function extractSnapshotChildrenForGlobalExport(bookmarkTree) {
+    const cloned = cloneSerializableData(Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree])
+        .filter(Boolean);
+    if (cloned.length === 1 && Array.isArray(cloned[0]?.children)) {
+        return cloned[0].children;
+    }
+    return cloned;
+}
+
+async function generateExportSnapshotHtmlContentForGlobal(record) {
+    await ensureRecordBookmarkTree(record);
+    if (!record.bookmarkTree) {
+        throw new Error('Missing bookmarkTree for snapshot export');
+    }
+    return convertBookmarkTreeToNetscapeHTML(record.bookmarkTree, record.time || new Date().toISOString());
+}
+
 async function startGlobalExport() {
     // 从 globalExportSelectedState 获取选中的记录
     const selectedTimes = Object.entries(globalExportSelectedState)
@@ -24090,17 +24774,6 @@ async function startGlobalExport() {
         .filter(n => Number.isFinite(n) && n > 0)
         .sort((a, b) => a - b);
     const rangeText = formatSelectedSequenceRanges(selectedSeqNumbers, currentLang);
-    const selectionLabel = (() => {
-        if (currentLang === 'zh_CN') {
-            return rangeText
-                ? `【序号${rangeText}-共${selectedTimes.length}个】`
-                : `【共${selectedTimes.length}个】`;
-        }
-        return rangeText
-            ? `[No${rangeText}-${selectedTimes.length}items]`
-            : `[${selectedTimes.length}items]`;
-    })();
-    const selectionPrefix = sanitizeFilenameSegment(selectionLabel);
     const seqWidth = String(Math.max(syncHistory?.length || 1, 1)).length;
 
     const confirmBtn = document.getElementById('globalExportConfirmBtn');
@@ -24111,186 +24784,153 @@ async function startGlobalExport() {
     try {
         const formatHtml = document.getElementById('globalExportFormatHtml').checked;
         const formatJson = document.getElementById('globalExportFormatJson').checked;
-        const formatMd = document.getElementById('globalExportFormatMd') ? document.getElementById('globalExportFormatMd').checked : false;
+        const exportSnapshot = Boolean(document.getElementById('globalExportContentSnapshot')?.checked);
+        const exportChanges = Boolean(document.getElementById('globalExportContentChanges')?.checked);
+        const exportIndex = Boolean(document.getElementById('globalExportContentIndex')?.checked);
 
-        const packMode = document.querySelector('input[name="globalExportPackMode"]:checked')?.value || 'zip';
-
-        if (!formatHtml && !formatJson && !formatMd) {
-            showToast(currentLang === 'zh_CN' ? '没有选择导出格式' : 'No export format selected');
+        if (!exportSnapshot && !exportChanges && !exportIndex) {
+            showToast(currentLang === 'zh_CN' ? '至少选择快照、变化记录或索引文件之一' : 'Select Snapshot, Change Records, or Index Files');
+            return;
+        }
+        if (exportChanges && !formatHtml && !formatJson) {
+            showToast(currentLang === 'zh_CN' ? '变化记录需要选择一种导出格式' : 'Select one change records format');
             return;
         }
 
         let processedCount = 0;
         const totalCount = selectedTimesSorted.length;
+        const files = [];
+        const timestamp = formatTimeForFilename(); // 导出时间（本地时间）
+        const zipPrefix = currentLang === 'zh_CN' ? '备份历史归档' : 'Backup_History_Archive';
+        const zipRootFolder = `${zipPrefix}_${timestamp}`;
+        const manualExportRoot = `${zipRootFolder}`;
+        const manualExportRecords = [];
+        for (const recordTime of selectedTimesSorted) {
+            // 更新进度
+            processedCount++;
+            confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在处理' : 'Processing'} (${processedCount}/${totalCount})`;
+            // 让UI有时间渲染
+            await new Promise(r => requestAnimationFrame(r));
 
-        // ---------------------------------------------------------------------
-        // 模式 A: ZIP 归档 (每个备份独立文件夹)
-        // ---------------------------------------------------------------------
-        if (packMode === 'zip') {
-            const files = [];
-            const timestamp = formatTimeForFilename(); // 导出时间（本地时间）
-            const zipPrefix = currentLang === 'zh_CN' ? '全局备份归档' : 'Global_Backup_Archive';
-            const zipRootFolder = selectionPrefix ? `${selectionPrefix}_${zipPrefix}_${timestamp}` : `${zipPrefix}_${timestamp}`;
-            for (const recordTime of selectedTimesSorted) {
-                // 更新进度
-                processedCount++;
-                confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在处理' : 'Processing'} (${processedCount}/${totalCount})`;
-                // 让UI有时间渲染
-                await new Promise(r => requestAnimationFrame(r));
+            const record = syncHistory.find(r => String(r.time) === String(recordTime));
+            if (!record) continue;
 
-                const record = syncHistory.find(r => String(r.time) === String(recordTime));
-                if (!record) continue;
-
-                // 获取保存的视图模式
-                const savedMode = getRecordDetailMode(record.time);
-                const defaultMode = historyDetailMode || 'simple';
-                const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
-
-                const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
-                // Sanitize note for filename use
-                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
-                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
-                const modeStr = mode === 'detailed'
-                    ? (currentLang === 'zh_CN' ? '_详细' : '_Detailed')
-                    : (mode === 'collection' ? (currentLang === 'zh_CN' ? '_集合' : '_Collection') : (currentLang === 'zh_CN' ? '_简略' : '_Simple'));
-                const defaultPrefix = currentLang === 'zh_CN' ? '书签' : 'bookmark';
-
-                const baseName = cleanNote
-                    ? `${cleanNote}${fingerprint}${modeStr}_${dateStr}`
-                    : `${defaultPrefix}${fingerprint}${modeStr}_${dateStr}`;
-
-                const seqNumber = seqMap.get(String(record.time));
-                const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
-                const fileBasePath = `${zipRootFolder}/${seqStr}_${baseName}`;
-
-                if (formatHtml) {
-                    try {
-                        const htmlContent = await generateExportHtmlContentForGlobal(record, mode);
-                        files.push({
-                            name: `${fileBasePath}.html`,
-                            data: new TextEncoder().encode(htmlContent)
-                        });
-                    } catch (err) {
-                        console.error('HTML Gen Error', err);
-                    }
-                }
-
-                if (formatJson) {
-                    try {
-                        const jsonContentObj = await generateExportJsonContentForGlobal(record, mode);
-                        files.push({
-                            name: `${fileBasePath}.json`,
-                            data: new TextEncoder().encode(JSON.stringify(jsonContentObj, null, 2))
-                        });
-                    } catch (err) {
-                        console.error('JSON Gen Error', err);
-                    }
-                }
-
-                // ZIP mode does not explicitly support MD as per requirements (MD enforces Merge), 
-                // but if we wanted to support it, we'd add it here.
-            }
-
-            if (files.length === 0) {
-                // 如果只选了MD但强行进了Zip模式（不应该发生），则报错
-                throw new Error('No files generated (MD format requires Merge mode)');
-            }
-
-            // 确保 ZIP 内的文件名排序为倒序（大的在前）
-            files.sort((a, b) => String(b.name).localeCompare(String(a.name)));
-
-            const zipBlob = __zipStore(files);
-            const zipUrl = URL.createObjectURL(zipBlob);
-            const zipName = selectionPrefix
-                ? `${selectionPrefix}_${zipPrefix}_${timestamp}.zip`
-                : `${zipPrefix}_${timestamp}.zip`;
-
-            downloadBlob(zipUrl, zipName);
-        }
-        // ---------------------------------------------------------------------
-        // 模式 B: 单一文件合并 (Merged Single File)
-        // ---------------------------------------------------------------------
-        else if (packMode === 'merge') {
-            const mergedRoot = {
-                title: currentLang === 'zh_CN' ? '全局备份合并历史' : 'Global Merged Backup History',
-                children: []
+            const savedMode = getRecordDetailMode(record.time);
+            const defaultMode = historyDetailMode || 'simple';
+            const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
+            const naming = buildGlobalExportRecordNamingInfo(record, mode, seqMap, seqWidth);
+            const recordFolderRelativePath = `${naming.snapshotKey}`;
+            const recordFolderPath = `${manualExportRoot}/${recordFolderRelativePath}`;
+            const manualExportRecord = {
+                seqNumber: naming.seqNumber,
+                note: record.note || '',
+                time: record.time || null,
+                fingerprint: record.fingerprint || '',
+                sourceKind: 'history_record',
+                direction: String(record.direction || '').trim().toLowerCase() || 'local',
+                directionKey: String(record.direction || '').trim().toLowerCase() || 'local',
+                type: String(record.type || '').trim().toLowerCase() || '',
+                overwriteMode: String(record.overwriteMode || '').trim().toLowerCase() === 'overwrite'
+                    ? 'overwrite'
+                    : 'versioned',
+                snapshotKey: naming.snapshotKey,
+                hasSnapshot: false,
+                hasChanges: false,
+                changesViewMode: mode,
+                snapshotPaths: {},
+                changesPathsByMode: {},
+                stats: buildManualExportStatsFromHistoryRecord(record)
             };
 
-            const mergedItems = [];
-            for (const recordTime of selectedTimesSorted) {
-                processedCount++;
-                confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在合并' : 'Merging'} (${processedCount}/${totalCount})`;
-                await new Promise(r => requestAnimationFrame(r));
-
-                const record = syncHistory.find(r => String(r.time) === String(recordTime));
-                if (!record) continue;
-
-                // 获取保存的视图模式
-                const savedMode = getRecordDetailMode(record.time);
-                const defaultMode = historyDetailMode || 'simple';
-                const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
-
-                // 1. 获取该记录的处理后树（带 [+] [-] 前缀）
-                const processedTree = await getProcessedTreeForRecord(record, mode);
-
-                // 2. 创建容器文件夹
-                const timeStr = formatTime(record.time);
-                // 改为 Note + Hash + Mode + Time 格式
-                const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 8)}]` : '';
-                const titlePrefix = record.note ? record.note : (currentLang === 'zh_CN' ? '备份' : 'Backup');
-                const modeLabel = getHistoryDetailModeLabel(mode);
-
-                const seqNumber = seqMap.get(String(record.time));
-                const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
-                const containerTitle = `${seqStr} ${titlePrefix}${fingerprint} (${modeLabel}) (${timeStr})`;
-                const containerFolder = {
-                    title: containerTitle,
-                    children: processedTree.children || [] // processedTree 本身是 root，我们取其 children
-                };
-
-                mergedItems.push({ seq: Number.isFinite(seqNumber) ? seqNumber : -1, folder: containerFolder });
+            if (exportSnapshot) {
+                try {
+                    const htmlContent = await generateExportSnapshotHtmlContentForGlobal(record);
+                    const snapshotLeafName = naming.snapshotLeafName;
+                    files.push({
+                        name: `${recordFolderPath}/${snapshotLeafName}`,
+                        data: new TextEncoder().encode(htmlContent)
+                    });
+                    manualExportRecord.snapshotPaths.html = `${recordFolderRelativePath}/${snapshotLeafName}`;
+                    manualExportRecord.hasSnapshot = true;
+                } catch (err) {
+                    console.error('Snapshot HTML Gen Error', err);
+                }
             }
 
-            // 3. 添加到合并根（倒序：大的在前）
-            mergedItems
-                .sort((a, b) => b.seq - a.seq)
-                .forEach(item => mergedRoot.children.push(item.folder));
-
-            // 4. 生成合并后的文件
-            if (formatHtml) {
-                const htmlContent = generateBookmarkExportHTMLFromTree(mergedRoot);
-                const blob = new Blob([htmlContent], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const timestamp = formatTimeForFilename();
-                const mergedPrefix = currentLang === 'zh_CN' ? '全局合并历史' : 'Global_Merged_History';
-                const namePrefix = selectionPrefix ? `${selectionPrefix}_${mergedPrefix}` : mergedPrefix;
-                downloadBlob(url, `${namePrefix}_${timestamp}.html`);
+            if (exportChanges && formatHtml) {
+                try {
+                    const htmlContent = await generateExportHtmlContentForGlobal(record, mode);
+                    const changesLeafName = naming.changesLeafNames.html;
+                    files.push({
+                        name: `${recordFolderPath}/${changesLeafName}`,
+                        data: new TextEncoder().encode(htmlContent)
+                    });
+                    if (!manualExportRecord.changesPathsByMode[mode]) {
+                        manualExportRecord.changesPathsByMode[mode] = {};
+                    }
+                    manualExportRecord.changesPathsByMode[mode].html = `${recordFolderRelativePath}/${changesLeafName}`;
+                    manualExportRecord.hasChanges = true;
+                } catch (err) {
+                    console.error('Changes HTML Gen Error', err);
+                }
             }
 
-            if (formatJson) {
-                const jsonContent = JSON.stringify(mergedRoot, null, 2);
-                const blob = new Blob([jsonContent], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const timestamp = formatTimeForFilename();
-                const mergedPrefix = currentLang === 'zh_CN' ? '全局合并历史' : 'Global_Merged_History';
-                const namePrefix = selectionPrefix ? `${selectionPrefix}_${mergedPrefix}` : mergedPrefix;
-                downloadBlob(url, `${namePrefix}_${timestamp}.json`);
+            if (exportChanges && formatJson) {
+                try {
+                    const jsonContentObj = await generateExportJsonContentForGlobal(record, mode);
+                    const enrichedChangesJson = cloneSerializableData(jsonContentObj) || {};
+                    enrichedChangesJson._exportInfo = {
+                        ...(enrichedChangesJson._exportInfo || {}),
+                        exportDate: new Date().toISOString(),
+                        exportMode: mode,
+                        source: 'bookmark-backup-history-manual-export-changes',
+                        backupTime: record.time || null,
+                        note: record.note || '',
+                        seqNumber: naming.seqNumber,
+                        fingerprint: record.fingerprint || '',
+                        snapshotKey: naming.snapshotKey
+                    };
+                    const changesLeafName = naming.changesLeafNames.json;
+                    files.push({
+                        name: `${recordFolderPath}/${changesLeafName}`,
+                        data: new TextEncoder().encode(JSON.stringify(enrichedChangesJson, null, 2))
+                    });
+                    if (!manualExportRecord.changesPathsByMode[mode]) {
+                        manualExportRecord.changesPathsByMode[mode] = {};
+                    }
+                    manualExportRecord.changesPathsByMode[mode].json = `${recordFolderRelativePath}/${changesLeafName}`;
+                    manualExportRecord.hasChanges = true;
+                } catch (err) {
+                    console.error('Changes JSON Gen Error', err);
+                }
             }
 
-            if (formatMd) {
-                // 使用 generateHistorySummaryMD 生成摘要表格 (替代原来的内容导出)
-                // 注意：这里我们只生成一个包含所有选定记录摘要的文件
-                // 我们不需要遍历记录来生成内容，而是直接传入 selectedTimes（需确保 generateHistorySummaryMD 接受此参数）
-
-                const mdContent = await generateHistorySummaryMD(selectedTimesSorted);
-                const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const timestamp = formatTimeForFilename();
-                const prefix = currentLang === 'zh_CN' ? '书签备份历史记录' : 'Bookmark_Backup_History';
-                const namePrefix = selectionPrefix ? `${selectionPrefix}_${prefix}` : prefix;
-                downloadBlob(url, `${namePrefix}_${timestamp}.md`);
+            if (exportIndex && (manualExportRecord.hasSnapshot || manualExportRecord.hasChanges || (!exportSnapshot && !exportChanges))) {
+                manualExportRecords.push(manualExportRecord);
             }
         }
+
+        if (exportIndex && manualExportRecords.length > 0) {
+            const logMarkdown = buildManualExportLogMarkdown(manualExportRecords);
+            files.push({
+                name: `${manualExportRoot}/${buildHistoryManualExportInfoLogFileName(manualExportRecords, timestamp)}`,
+                data: new TextEncoder().encode(logMarkdown)
+            });
+        }
+
+        if (files.length === 0) {
+            throw new Error('No files generated');
+        }
+
+        // 确保 ZIP 内的文件名排序为倒序（大的在前）
+        files.sort((a, b) => String(b.name).localeCompare(String(a.name)));
+
+        const zipBlob = __zipStore(files);
+        const zipUrl = URL.createObjectURL(zipBlob);
+        const zipHintSuffix = buildGlobalExportZipHintSuffix(zipBlob.size, currentLang === 'zh_CN');
+        const zipName = `${zipPrefix}_${timestamp}${zipHintSuffix}.zip`;
+
+        downloadBlob(zipUrl, zipName);
 
         closeGlobalExportModal();
         showToast(currentLang === 'zh_CN' ? '全局导出成功' : 'Global export successful');
@@ -24412,62 +25052,6 @@ function __zipStore(files) {
 }
 
 function downloadBlob(url, filename) {
-    // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
-    try {
-        if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
-            const lower = String(filename || '').toLowerCase();
-            const ext = lower.includes('.') ? lower.slice(lower.lastIndexOf('.')) : '';
-            const contentTypeMap = {
-                '.html': 'text/html;charset=utf-8',
-                '.json': 'application/json;charset=utf-8',
-                '.md': 'text/markdown;charset=utf-8',
-                '.txt': 'text/plain;charset=utf-8',
-                '.zip': 'application/zip'
-            };
-            const contentType = contentTypeMap[ext] || 'application/octet-stream';
-            const isText = ext === '.html' || ext === '.json' || ext === '.md' || ext === '.txt';
-
-            (async () => {
-                try {
-                    const res = await fetch(url);
-                    if (!res.ok) return;
-
-                    if (isText) {
-                        const text = await res.text();
-                        chrome.runtime.sendMessage({
-                            action: 'exportFileToClouds',
-                            folderKey: 'history',
-                            lang: currentLang,
-                            fileName: filename,
-                            content: text,
-                            contentType
-                        }, () => { });
-                        return;
-                    }
-
-                    const buf = await res.arrayBuffer();
-                    // Chrome sendMessage 不支持直接传递 ArrayBuffer，需转换为 Base64
-                    const bytes = new Uint8Array(buf);
-                    const chunkSize = 0x2000;
-                    let binary = '';
-                    for (let i = 0; i < bytes.length; i += chunkSize) {
-                        const chunk = bytes.subarray(i, i + chunkSize);
-                        binary += String.fromCharCode(...chunk);
-                    }
-                    const base64 = btoa(binary);
-                    chrome.runtime.sendMessage({
-                        action: 'exportFileToClouds',
-                        folderKey: 'history',
-                        lang: currentLang,
-                        fileName: filename,
-                        contentBase64Binary: base64,
-                        contentType
-                    }, () => { });
-                } catch (_) { }
-            })();
-        }
-    } catch (_) { }
-
     // 使用统一的导出文件夹结构（根据语言动态选择）
     const exportPath = `${getHistoryExportRootFolder()}/${getHistoryExportFolder()}`;
 
@@ -24501,20 +25085,6 @@ function downloadBlob(url, filename) {
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 10000);
     }
-}
-
-// 辅助：获取 JSON 内容对象（复用 generateHistoryChangesJSON 的逻辑但只返回对象）
-async function generateExportJsonContentForGlobal(record, mode) {
-    // 逻辑同 generateExportHtmlContentForGlobal，准备数据
-    const { treeToExport, changeMap } = await prepareDataForExport(record);
-
-    // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
-    let expandedIds = null;
-    if (mode === 'detailed' && hasRecordExpandedState(record.time)) {
-        expandedIds = getRecordExpandedState(record.time);
-    }
-
-    return await generateHistoryChangesJSON(treeToExport, changeMap, mode, expandedIds);
 }
 
 // 辅助：准备导出数据 (Tree + ChangeMap)
@@ -24652,17 +25222,132 @@ async function prepareDataForExport(record) {
     };
 }
 
-// 重构：原有的 HTML 生成函数调用
-async function generateExportHtmlContentForGlobal(record, mode) {
-    const { treeToExport, changeMap } = await prepareDataForExport(record);
+async function buildHistoryCollectionExportPayload(record, prepared = null) {
+    const isZh = currentLang === 'zh_CN';
+    const lang = isZh ? 'zh_CN' : 'en';
+    const resolved = prepared || await prepareDataForExport(record);
+    const treeToExport = resolved?.treeToExport || null;
+    const changeMap = resolved?.changeMap instanceof Map ? resolved.changeMap : new Map();
+    const changeData = resolved?.changeData || null;
+
+    let collectionChildren = Array.isArray(changeData?.collectionChildren)
+        ? cloneSerializableData(changeData.collectionChildren)
+        : null;
+
+    if (!collectionChildren) {
+        const statsSource = (changeData && changeData.stats && typeof changeData.stats === 'object')
+            ? changeData.stats
+            : (record && record.bookmarkStats ? record.bookmarkStats : {});
+        const normalizedStats = normalizeCurrentChangesExportStatsManual({ stats: statsSource });
+        collectionChildren = buildCurrentChangesExportTreeManual(treeToExport, changeMap, {
+            mode: 'collection',
+            lang,
+            stats: normalizedStats
+        });
+    }
+
+    const counts = getHistoryChangeCounts(changeMap, treeToExport);
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = record?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(record.time)) : new Date(record.time).toLocaleString())
+        : '';
+    const noteText = record?.note ? record.note : (isZh ? '（无备注）' : '(No note)');
+    const legendTitle = isZh
+        ? '前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动'
+        : 'Prefix legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved';
+
+    return {
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: [
+            {
+                title: legendTitle,
+                children: [
+                    {
+                        title: `${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备份时间' : 'Backup Time'}: ${backupTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备注' : 'Note'}: ${noteText}`,
+                        url: 'about:blank'
+                    }
+                ]
+            },
+            ...(Array.isArray(collectionChildren) ? collectionChildren : [])
+        ],
+        _exportInfo: {
+            exportDate: new Date().toISOString(),
+            exportMode: 'collection',
+            source: 'bookmark-backup-history',
+            backupTime: record?.time || null,
+            note: record?.note || '',
+            fingerprint: record?.fingerprint || '',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[>>]': isZh ? '移动' : 'Moved',
+                '[~>>]': isZh ? '修改+移动' : 'Modified+Moved'
+            }
+        }
+    };
+}
+
+async function generateHistoryCollectionChangesHTML(record, prepared = null) {
+    const payload = await buildHistoryCollectionExportPayload(record, prepared);
+    const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+    return buildCurrentChangesNetscapeHtmlManual(payload, lang);
+}
+
+async function generateHistoryCollectionChangesJSON(record, prepared = null) {
+    return await buildHistoryCollectionExportPayload(record, prepared);
+}
+
+// 辅助：获取 JSON 内容对象（复用 generateHistoryChangesJSON 的逻辑但只返回对象）
+async function generateExportJsonContentForGlobal(record, mode) {
+    const normalizedMode = normalizeRestoreMergeViewMode(mode) || 'simple';
+    const prepared = await prepareDataForExport(record);
+
+    if (normalizedMode === 'collection') {
+        return await generateHistoryCollectionChangesJSON(record, prepared);
+    }
+
+    const { treeToExport, changeMap } = prepared;
 
     // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
     let expandedIds = null;
-    if (mode === 'detailed' && hasRecordExpandedState(record.time)) {
+    if (normalizedMode === 'detailed' && hasRecordExpandedState(record.time)) {
         expandedIds = getRecordExpandedState(record.time);
     }
 
-    return await generateHistoryChangesHTML(treeToExport, changeMap, mode, expandedIds);
+    return await generateHistoryChangesJSON(treeToExport, changeMap, normalizedMode, expandedIds, record);
+}
+
+// 重构：原有的 HTML 生成函数调用
+async function generateExportHtmlContentForGlobal(record, mode) {
+    const normalizedMode = normalizeRestoreMergeViewMode(mode) || 'simple';
+    const prepared = await prepareDataForExport(record);
+
+    if (normalizedMode === 'collection') {
+        return await generateHistoryCollectionChangesHTML(record, prepared);
+    }
+
+    const { treeToExport, changeMap } = prepared;
+
+    // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
+    let expandedIds = null;
+    if (normalizedMode === 'detailed' && hasRecordExpandedState(record.time)) {
+        expandedIds = getRecordExpandedState(record.time);
+    }
+
+    return await generateHistoryChangesHTML(treeToExport, changeMap, normalizedMode, expandedIds, record);
 }
 
 // 辅助：获取处理过的树（带前缀，已过滤）供合并使用
@@ -24757,227 +25442,3 @@ async function generateHistoryChangesMD(treeRoot, changeMap = new Map(), mode = 
 }
 
 // 辅助：生成 Markdown 摘要表格 (逻辑移植自 popup.js)
-async function generateHistorySummaryMD(selectedTimes) {
-    let mdContent = '';
-    const lang = currentLang; // 获取当前语言
-    const naText = lang === 'zh_CN' ? '无' : 'N/A';
-
-    // 1. 获取选中的记录并按时间排序 (新的在前)
-    // selectedTimes 是时间戳字符串数组，syncHistory 是记录数组
-    const selectedRecords = syncHistory.filter(r => selectedTimes.includes(String(r.time)))
-        .sort((a, b) => new Date(b.time) - new Date(a.time));
-    const seqMap = buildSequenceMapFromHistory(syncHistory);
-
-    // 2. 准备表头和文本
-    const exportTitle = {
-        'zh_CN': "# 书签备份历史记录",
-        'en': "# Bookmark Backup History"
-    };
-    const exportNote = {
-        'zh_CN': "注意：此文件包含了所选备份历史记录的摘要统计表格。",
-        'en': "Note: This file contains a summary table of the selected backup history records."
-    };
-    const tableHeaders = {
-        seq: { 'zh_CN': "序号", 'en': "No." },
-        notes: { 'zh_CN': "备注", 'en': "Notes" },
-        timestamp: { 'zh_CN': "时间戳", 'en': "Timestamp" },
-        bookmarkChange: { 'zh_CN': "书签变化", 'en': "BKM Change" },
-        folderChange: { 'zh_CN': "文件夹变化", 'en': "FLD Change" },
-        movedCount: { 'zh_CN': "移动", 'en': "Moved" },
-        modifiedCount: { 'zh_CN': "修改", 'en': "Modified" },
-        location: { 'zh_CN': "位置", 'en': "Location" },
-        backupMode: { 'zh_CN': "方式", 'en': "Mode" },
-        status: { 'zh_CN': "状态/错误", 'en': "Status/Error" },
-        hash: { 'zh_CN': "哈希值", 'en': "Hash" }
-    };
-    const locationValues = {
-        upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
-        cloud: { 'zh_CN': "云端1, 云端2", 'en': "Cloud 1, Cloud 2" },
-        webdav: { 'zh_CN': "云端1", 'en': "Cloud 1" },
-        github_repo: { 'zh_CN': "云端2", 'en': "Cloud 2" },
-        gist: { 'zh_CN': "云端2", 'en': "Cloud 2" }, // legacy
-        webdav_github_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
-        cloud_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
-        webdav_local: { 'zh_CN': "云端1, 本地", 'en': "Cloud 1, Local" },
-        github_repo_local: { 'zh_CN': "云端2, 本地", 'en': "Cloud 2, Local" },
-        gist_local: { 'zh_CN': "云端2, 本地", 'en': "Cloud 2, Local" }, // legacy
-        local: { 'zh_CN': "本地", 'en': "Local" },
-        both: { 'zh_CN': "云端1, 本地", 'en': "Cloud 1, Local" }, // 兼容旧记录
-        none: { 'zh_CN': "无", 'en': "None" }
-    };
-    const statusValues = {
-        success: { 'zh_CN': "成功", 'en': "Success" },
-        error: { 'zh_CN': "错误", 'en': "Error" },
-        locked: { 'zh_CN': "文件锁定", 'en': "File Locked" },
-        noBackupNeeded: { 'zh_CN': "无需备份", 'en': "No backup needed" },
-        checkCompleted: { 'zh_CN': "检查完成", 'en': "Check completed" }
-    };
-    const backupModeValues = {
-        auto: { 'zh_CN': "自动", 'en': "Auto" },
-        manual: { 'zh_CN': "手动", 'en': "Manual" },
-        switch: { 'zh_CN': "切换", 'en': "Switch" },
-        migration: { 'zh_CN': "迁移", 'en': "Migration" },
-        check: { 'zh_CN': "检查", 'en': "Check" },
-        restore: { 'zh_CN': "恢复", 'en': "Restore" },
-        unknown: { 'zh_CN': "未知", 'en': "Unknown" }
-    };
-
-    const formatTimeForExport = (date) => {
-        return `${date.getFullYear()}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-    };
-
-    // Header section
-    mdContent += exportTitle[lang] + "\n\n";
-    mdContent += exportNote[lang] + "\n\n";
-
-    // Table Headers
-    mdContent += `| ${tableHeaders.seq[lang]} | ${tableHeaders.notes[lang]} | ${tableHeaders.timestamp[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.movedCount[lang]} | ${tableHeaders.modifiedCount[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.backupMode[lang]} | ${tableHeaders.status[lang]} | ${tableHeaders.hash[lang]} |\n`;
-    mdContent += "|---|---|---|---|---|---|---|---|---|---|---|\n";
-
-    // 3. 遍历记录生成表格行
-    let previousDateStr = null;
-
-    selectedRecords.forEach(record => {
-        const recordDate = new Date(record.time);
-        const time = formatTimeForExport(recordDate);
-
-        // 检查日期是否变化（年月日）
-        const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
-
-        // 如果日期变化，添加分界线
-        if (previousDateStr && previousDateStr !== currentDateStr) {
-            const formattedPreviousDate = lang === 'en' ?
-                `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
-                `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-
-            // 添加简洁的分界线，并入表格中
-            mdContent += `|  | **${formattedPreviousDate}** |  |  |  |  |  |  |  |  |  |\n`;
-        }
-        previousDateStr = currentDateStr;
-
-        // 获取统计数据逻辑（与 popup.js / 主UI一致：显示 +x/-y 的绝对量；旧数据回退到 diff）
-        const bookmarkAdded = typeof record.bookmarkStats?.bookmarkAdded === 'number' ? record.bookmarkStats.bookmarkAdded : 0;
-        const bookmarkDeleted = typeof record.bookmarkStats?.bookmarkDeleted === 'number' ? record.bookmarkStats.bookmarkDeleted : 0;
-        const folderAdded = typeof record.bookmarkStats?.folderAdded === 'number' ? record.bookmarkStats.folderAdded : 0;
-        const folderDeleted = typeof record.bookmarkStats?.folderDeleted === 'number' ? record.bookmarkStats.folderDeleted : 0;
-
-        // 格式化书签变化（+x/-y 或者 0）
-        let bookmarkChangeText = '';
-        if (bookmarkAdded > 0 && bookmarkDeleted > 0) {
-            bookmarkChangeText = `+${bookmarkAdded}/-${bookmarkDeleted}`;
-        } else if (bookmarkAdded > 0) {
-            bookmarkChangeText = `+${bookmarkAdded}`;
-        } else if (bookmarkDeleted > 0) {
-            bookmarkChangeText = `-${bookmarkDeleted}`;
-        } else {
-            // 兼容旧数据：使用 bookmarkDiff
-            const diff = record.bookmarkStats?.bookmarkDiff ?? 0;
-            bookmarkChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
-        }
-
-        // 格式化文件夹变化（+x/-y 或者 0）
-        let folderChangeText = '';
-        if (folderAdded > 0 && folderDeleted > 0) {
-            folderChangeText = `+${folderAdded}/-${folderDeleted}`;
-        } else if (folderAdded > 0) {
-            folderChangeText = `+${folderAdded}`;
-        } else if (folderDeleted > 0) {
-            folderChangeText = `-${folderDeleted}`;
-        } else {
-            // 兼容旧数据：使用 folderDiff
-            const diff = record.bookmarkStats?.folderDiff ?? 0;
-            folderChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
-        }
-
-        let movedTotal = 0;
-        if (typeof record.bookmarkStats?.movedCount === 'number' && record.bookmarkStats.movedCount > 0) {
-            movedTotal = record.bookmarkStats.movedCount;
-        } else {
-            const bookmarkMovedCount = typeof record.bookmarkStats?.bookmarkMoved === 'number'
-                ? record.bookmarkStats.bookmarkMoved
-                : (record.bookmarkStats?.bookmarkMoved ? 1 : 0);
-            const folderMovedCount = typeof record.bookmarkStats?.folderMoved === 'number'
-                ? record.bookmarkStats.folderMoved
-                : (record.bookmarkStats?.folderMoved ? 1 : 0);
-            movedTotal = bookmarkMovedCount + folderMovedCount;
-        }
-        const movedText = movedTotal > 0 ? String(movedTotal) : '-';
-
-        let modifiedTotal = 0;
-        if (typeof record.bookmarkStats?.modifiedCount === 'number' && record.bookmarkStats.modifiedCount > 0) {
-            modifiedTotal = record.bookmarkStats.modifiedCount;
-        } else {
-            const bookmarkModifiedCount = typeof record.bookmarkStats?.bookmarkModified === 'number'
-                ? record.bookmarkStats.bookmarkModified
-                : (record.bookmarkStats?.bookmarkModified ? 1 : 0);
-            const folderModifiedCount = typeof record.bookmarkStats?.folderModified === 'number'
-                ? record.bookmarkStats.folderModified
-                : (record.bookmarkStats?.folderModified ? 1 : 0);
-            modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
-        }
-        const modifiedText = modifiedTotal > 0 ? String(modifiedTotal) : '-';
-
-        let locationText = naText;
-        const recordDirection = (record.direction ?? 'none').toString();
-        if (locationValues[recordDirection]) {
-            locationText = locationValues[recordDirection][lang];
-        } else if (recordDirection === 'download') {
-            // 兼容旧记录
-            locationText = locationValues.local[lang];
-        } else if (recordDirection === 'none') {
-            locationText = locationValues.none[lang];
-        }
-
-        const normalizeBackupModeKey = (recordType, direction) => {
-            const raw = (recordType ?? '').toString().trim();
-            const lowered = raw.toLowerCase();
-
-            if (lowered === 'restore' || raw.includes('恢复')) return 'restore';
-            if (lowered === 'manual' || raw === '（手动）' || raw.includes('手动')) return 'manual';
-            if (lowered === 'switch' || lowered === 'auto_switch' || raw === '（切换）' || raw.includes('切换')) return 'switch';
-            if (lowered === 'migration' || raw === '（迁移）' || raw.includes('迁移')) return 'migration';
-            if (lowered === 'check' || raw.includes('检查')) return 'check';
-            // “direction === none” 基本是检查类记录
-            if (direction === 'none') return 'check';
-            if (lowered === 'auto' || raw === '（自动）' || raw.includes('自动') || !raw) return 'auto';
-            return 'unknown';
-        };
-        const backupModeKey = normalizeBackupModeKey(record.type, record.direction);
-        const backupModeText = (backupModeValues[backupModeKey] || backupModeValues.unknown)[lang];
-
-        let statusText = naText;
-        if (record.status === 'success') {
-            if (record.direction === 'none') {
-                statusText = statusValues.checkCompleted[lang] || statusValues.noBackupNeeded[lang];
-            } else {
-                statusText = statusValues.success[lang];
-            }
-        } else if (record.status === 'error') {
-            statusText = record.errorMessage ? `${statusValues.error[lang]}: ${record.errorMessage}` : statusValues.error[lang];
-        } else if (record.status === 'locked') {
-            statusText = statusValues.locked[lang];
-        }
-
-        const fingerprint = record.fingerprint ? String(record.fingerprint) : '-';
-
-        const safeNote = String(record.note || '').replace(/\|/g, '\\|');
-        const safeStatusText = String(statusText || '').replace(/\|/g, '\\|');
-        const safeFingerprint = String(fingerprint || '').replace(/\|/g, '\\|');
-
-        const seqNumber = seqMap.get(String(record.time));
-        const seqText = Number.isFinite(seqNumber) ? String(seqNumber) : '-';
-
-        // 行数据
-        mdContent += `| ${seqText} | ${safeNote} | ${time} | ${bookmarkChangeText} | ${folderChangeText} | ${movedText} | ${modifiedText} | ${locationText} | ${backupModeText} | ${safeStatusText} | ${safeFingerprint} |\n`;
-    });
-
-    // 最后添加日期分界线
-    if (previousDateStr) {
-        const formattedPreviousDate = lang === 'en' ?
-            `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
-            `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-        mdContent += `|  | **${formattedPreviousDate}** |  |  |  |  |  |  |  |  |  |\n`;
-    }
-
-    return mdContent;
-}

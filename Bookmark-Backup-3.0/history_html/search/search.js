@@ -49,6 +49,70 @@ let currentChangesSearchDb = {
     changedItemById: new Map()
 };
 
+function getSearchLangKey() {
+    try {
+        return currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+    } catch (_) {
+        return 'zh_CN';
+    }
+}
+
+function getSearchI18nText(groupKey, fallbackZh, fallbackEn) {
+    const langKey = getSearchLangKey();
+    try {
+        const group = (typeof i18n !== 'undefined' && i18n && typeof i18n === 'object')
+            ? i18n[groupKey]
+            : null;
+        const value = group && typeof group === 'object' ? group[langKey] : '';
+        if (typeof value === 'string' && value.trim()) {
+            return value;
+        }
+    } catch (_) { }
+    return langKey === 'zh_CN' ? fallbackZh : fallbackEn;
+}
+
+function getSearchTreeItemLookupId(treeItem) {
+    if (!treeItem || typeof treeItem.getAttribute !== 'function') return '';
+    try {
+        const sourceId = String(treeItem.getAttribute('data-source-node-id') || '').trim();
+        if (sourceId) return sourceId;
+    } catch (_) { }
+    try {
+        return String(treeItem.getAttribute('data-node-id') || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+function escapeTreeItemLookupId(id) {
+    const raw = String(id || '').trim();
+    if (!raw) return '';
+    try {
+        return (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+            ? CSS.escape(raw)
+            : raw.replace(/["\\]/g, '\\$&');
+    } catch (_) {
+        return raw;
+    }
+}
+
+function queryTreeItemByLookupId(treeContainer, nodeId) {
+    if (!treeContainer) return null;
+    const escapedId = escapeTreeItemLookupId(nodeId);
+    if (!escapedId) return null;
+
+    try {
+        const direct = treeContainer.querySelector(`.tree-item[data-node-id="${escapedId}"]`);
+        if (direct) return direct;
+    } catch (_) { }
+
+    try {
+        return treeContainer.querySelector(`.tree-item[data-source-node-id="${escapedId}"]`);
+    } catch (_) {
+        return null;
+    }
+}
+
 // ==================== 搜索上下文管理器 (Phase 4) ====================
 
 /**
@@ -462,7 +526,7 @@ function renderSearchResultsPanel(results, options = {}) {
         const typeToggleHtml = isCurrentChangesView
             ? buildSearchTypeToggleHtml(currentChangesTypeCounts, currentChangesTypeFilter, { variant: 'main' })
             : '';
-        const emptyText = options.emptyText || i18n.searchNoResults[currentLang];
+        const emptyText = options.emptyText || getSearchI18nText('searchNoResults', '没有找到匹配结果', 'No results');
         panel.innerHTML = `${typeToggleHtml}<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
         showSearchResultsPanel();
         return;
@@ -1152,8 +1216,7 @@ function getCurrentChangesVisibleNodeIdSet(options = {}) {
         const idSet = new Set();
         nodes.forEach((nodeEl) => {
             if (visibleOnly && !isTreeItemVisuallyVisibleInRoot(nodeEl, root)) return;
-            const raw = nodeEl?.getAttribute('data-node-id');
-            const id = String(raw || '').trim();
+            const id = getSearchTreeItemLookupId(nodeEl);
             if (id) idSet.add(id);
         });
         return idSet.size > 0 ? idSet : null;
@@ -1172,10 +1235,7 @@ function buildCurrentChangesDomOrderMap(rootEl, options = {}) {
         let order = 0;
         nodes.forEach((nodeEl) => {
             if (visibleOnly && !isTreeItemVisuallyVisibleInRoot(nodeEl, rootEl)) return;
-            const raw = nodeEl && typeof nodeEl.getAttribute === 'function'
-                ? nodeEl.getAttribute('data-node-id')
-                : '';
-            const id = String(raw || '').trim();
+            const id = getSearchTreeItemLookupId(nodeEl);
             if (!id || orderMap.has(id)) return;
             orderMap.set(id, order++);
         });
@@ -1867,13 +1927,21 @@ function compareScopedSearchMatches(a, b, scopedOrderMap) {
 function searchCurrentChangesAndRender(query) {
     // 数据尚未准备好：先给出加载提示
     if (!(treeChangeMap instanceof Map)) {
-        renderSearchResultsPanel([], { view: 'current-changes', query, emptyText: i18n.searchLoading[currentLang] });
+        renderSearchResultsPanel([], {
+            view: 'current-changes',
+            query,
+            emptyText: getSearchI18nText('searchLoading', '加载中...', 'Loading...')
+        });
         return;
     }
 
     const db = buildCurrentChangesSearchDb();
     if (!db.items || db.items.length === 0) {
-        renderSearchResultsPanel([], { view: 'current-changes', query, emptyText: i18n.searchNoResults[currentLang] });
+        renderSearchResultsPanel([], {
+            view: 'current-changes',
+            query,
+            emptyText: getSearchI18nText('searchNoResults', '没有找到匹配结果', 'No results')
+        });
         return;
     }
 
@@ -1904,7 +1972,11 @@ function searchCurrentChangesAndRender(query) {
         ? scopedMeta.orderMap
         : new Map();
     if (!scopedItems.length) {
-        renderSearchResultsPanel([], { view: 'current-changes', query, emptyText: i18n.searchNoResults[currentLang] });
+        renderSearchResultsPanel([], {
+            view: 'current-changes',
+            query,
+            emptyText: getSearchI18nText('searchNoResults', '没有找到匹配结果', 'No results')
+        });
         return;
     }
 
@@ -2086,18 +2158,7 @@ function getCurrentChangesSearchTreeContainer(previewContainer) {
 }
 
 function getCurrentChangesTreeItemInContainer(treeContainer, nodeId) {
-    if (!treeContainer) return null;
-    const id = String(nodeId || '').trim();
-    if (!id) return null;
-
-    let escapedId = id;
-    try {
-        escapedId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
-            ? CSS.escape(id)
-            : id.replace(/["\\]/g, '\\$&');
-    } catch (_) { }
-
-    return treeContainer.querySelector(`.tree-item[data-node-id="${escapedId}"]`);
+    return queryTreeItemByLookupId(treeContainer, nodeId);
 }
 
 function normalizeSearchNodeTitle(text) {
@@ -2167,7 +2228,7 @@ function collectCurrentChangesSearchFallbackCandidates(treeContainer, searchItem
     const seenIds = new Set();
     const pushCandidate = (itemEl) => {
         if (!itemEl) return;
-        const nodeId = String(itemEl.getAttribute('data-node-id') || '').trim();
+        const nodeId = getSearchTreeItemLookupId(itemEl);
         if (!nodeId || seenIds.has(nodeId)) return;
         seenIds.add(nodeId);
         results.push(itemEl);
@@ -2324,12 +2385,14 @@ async function appendCurrentChangesLoadMoreBatch(loadMoreBtn) {
     }
 }
 
-async function ensureCurrentChangesTargetByScan(nodeId, previewContainer) {
+async function ensureCurrentChangesTargetByScan(nodeId, previewContainer, options = {}) {
     const id = String(nodeId || '').trim();
     const treeContainer = getCurrentChangesSearchTreeContainer(previewContainer);
     if (!id || !treeContainer) return null;
+    const searchItem = options && options.searchItem ? options.searchItem : null;
 
-    const findTarget = () => getCurrentChangesTreeItemInContainer(treeContainer, id);
+    const findTarget = () => getCurrentChangesTreeItemInContainer(treeContainer, id)
+        || (searchItem ? findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem) : null);
     let target = findTarget();
     if (target) return target;
 
@@ -2368,8 +2431,10 @@ async function ensureCurrentChangesTargetByScan(nodeId, previewContainer) {
 async function ensureCurrentChangesHistoryTreeTargetByScan(nodeId, treeContainer, options = {}) {
     const id = String(nodeId || '').trim();
     if (!id || !treeContainer) return null;
+    const searchItem = options && options.searchItem ? options.searchItem : null;
 
-    const findTarget = () => getTreeItemByNodeIdInContainer(treeContainer, id);
+    const findTarget = () => getTreeItemByNodeIdInContainer(treeContainer, id)
+        || (searchItem ? findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem) : null);
     let target = findTarget();
     if (target) return target;
 
@@ -2509,7 +2574,7 @@ async function ensureCurrentChangesTargetRendered(nodeId, previewContainer, opti
     }
 
     try {
-        target = await ensureCurrentChangesTargetByScan(id, previewContainer);
+        target = await ensureCurrentChangesTargetByScan(id, previewContainer, options);
         if (target) return target;
     } catch (_) { }
 
@@ -4247,13 +4312,19 @@ function buildBackupHistorySearchDb() {
 function searchBackupHistoryAndRender(query) {
     // 数据尚未准备好
     if (!Array.isArray(syncHistory) || syncHistory.length === 0) {
-        renderHistorySearchResultsPanel([], { query, emptyText: i18n.searchLoading?.[currentLang] || 'Loading...' });
+        renderHistorySearchResultsPanel([], {
+            query,
+            emptyText: getSearchI18nText('searchLoading', '加载中...', 'Loading...')
+        });
         return;
     }
 
     const db = buildBackupHistorySearchDb();
     if (!db.items || db.items.length === 0) {
-        renderHistorySearchResultsPanel([], { query, emptyText: i18n.searchNoResults?.[currentLang] || 'No results' });
+        renderHistorySearchResultsPanel([], {
+            query,
+            emptyText: getSearchI18nText('searchNoResults', '没有找到匹配结果', 'No results')
+        });
         return;
     }
 
@@ -4395,7 +4466,7 @@ function renderHistorySearchResultsPanel(results, options = {}) {
     searchUiState.selectedIndex = -1;
 
     if (!searchUiState.results.length) {
-        const emptyText = options.emptyText || i18n.searchNoResults?.[currentLang] || '没有找到匹配的记录';
+        const emptyText = options.emptyText || getSearchI18nText('searchNoResults', '没有找到匹配的记录', 'No matching records');
         panel.innerHTML = `<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
         showSearchResultsPanel();
         return;
@@ -5302,9 +5373,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     }
 
     if (!sourceResults.length && !limitedResults.length) {
-        const emptyText = options.emptyText || (typeof i18n !== 'undefined' && typeof currentLang !== 'undefined'
-            ? i18n.searchNoResults[currentLang]
-            : '无匹配结果');
+        const emptyText = options.emptyText || getSearchI18nText('searchNoResults', '无匹配结果', 'No results');
         const typeToggleHtml = buildSearchTypeToggleHtml(counts, activeFilter, { variant: 'detail' });
         panel.innerHTML = `${typeToggleHtml}<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
         showHistoryDetailSearchPanel(modalContainer);
@@ -5424,18 +5493,7 @@ function updateHistoryDetailSearchSelection(modalContainer, nextIndex, options =
 // ==================== Phase 2.5: 定位与高亮 ====================
 
 function getTreeItemByNodeIdInContainer(treeContainer, nodeId) {
-    if (!treeContainer) return null;
-    const id = String(nodeId || '');
-    if (!id) return null;
-
-    let escapedId = id;
-    try {
-        escapedId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
-            ? CSS.escape(id)
-            : id.replace(/["\\]/g, '\\$&');
-    } catch (_) { }
-
-    return treeContainer.querySelector(`.tree-item[data-node-id="${escapedId}"]`);
+    return queryTreeItemByLookupId(treeContainer, nodeId);
 }
 
 function getHistoryDetailSearchLazyContext(treeContainer, options = {}) {
@@ -5579,6 +5637,7 @@ async function ensureHistoryDetailPathRendered(idPath, treeContainer, options = 
 async function ensureHistoryDetailTargetRendered(nodeId, treeContainer, options = {}) {
     const id = String(nodeId || '');
     if (!id || !treeContainer) return null;
+    const searchItem = options && options.searchItem ? options.searchItem : null;
 
     let target = getTreeItemByNodeIdInContainer(treeContainer, id);
     if (target) return target;
@@ -5587,6 +5646,13 @@ async function ensureHistoryDetailTargetRendered(nodeId, treeContainer, options 
     for (const path of pathCandidates) {
         target = await ensureHistoryDetailPathRendered(path, treeContainer, options);
         if (target) return target;
+    }
+
+    if (searchItem) {
+        try {
+            target = findCurrentChangesSearchTreeItemByContent(treeContainer, searchItem);
+            if (target) return target;
+        } catch (_) { }
     }
 
     return getTreeItemByNodeIdInContainer(treeContainer, id);
@@ -5740,9 +5806,17 @@ async function locateNodeInHistoryDetailPreview(nodeId, treeContainer, options =
             }
         } catch (_) { }
     }
+    if (!target) {
+        try {
+            await waitHistoryDetailDomSettle(treeContainer, { idleMs: 60, timeoutMs: 240 });
+            target = await ensureHistoryDetailTargetRendered(id, treeContainer, options);
+            if (!target) {
+                target = await ensureCurrentChangesHistoryTreeTargetByScan(id, treeContainer, options);
+            }
+        } catch (_) { }
+    }
 
     if (!target) {
-        console.warn('[Search] Phase 2.5 target not found:', id);
         return false;
     }
 

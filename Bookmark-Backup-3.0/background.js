@@ -68,7 +68,16 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
     }
 };
 const BOOKMARK_CHANGES_DIRTY_KEY = 'bookmarkChangesDirty';
+const ACTIVE_BACKUP_PROGRESS_KEY = 'activeBackupProgress';
+const BACKUP_PROGRESS_FINAL_STATE_LINGER_MS = 1600;
+const BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS = 80;
 const ANALYSIS_QUICK_REOPEN_CACHE_MS = 2000;
+const SPARSE_DIRTY_RECHECK_MIN_INTERVAL_MS = 60000;
+const BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
+    local: 0,
+    github_repo: 1,
+    webdav: 2
+});
 
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 // const EXPORT_ROOT_FOLDER = 'Bookmark Backup';  // 父文件夹保持英文 - REMOVED
@@ -229,6 +238,191 @@ function buildSnapshotNamingContext(options = {}) {
     };
 }
 
+const BACKUP_TARGET_IDS = ['webdav', 'github_repo', 'local'];
+
+function normalizeAllowedBackupTargets(input) {
+    if (input == null) return null;
+
+    const set = new Set();
+    const push = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (BACKUP_TARGET_IDS.includes(normalized)) {
+            set.add(normalized);
+        }
+    };
+
+    if (input instanceof Set) {
+        input.forEach(push);
+        return set;
+    }
+
+    if (Array.isArray(input)) {
+        input.forEach(push);
+        return set;
+    }
+
+    if (typeof input === 'object') {
+        Object.entries(input).forEach(([key, enabled]) => {
+            if (enabled) push(key);
+        });
+        return set;
+    }
+
+    push(input);
+    return set;
+}
+
+function isBackupTargetAllowed(allowedTargets, targetKey) {
+    const normalized = normalizeAllowedBackupTargets(allowedTargets);
+    if (normalized == null) return true;
+    return normalized.has(String(targetKey || '').trim().toLowerCase());
+}
+
+function createBackupTargetSummary(allowedTargets = null) {
+    const normalized = normalizeAllowedBackupTargets(allowedTargets);
+    const summary = {};
+    BACKUP_TARGET_IDS.forEach((targetKey) => {
+        summary[targetKey] = {
+            allowed: normalized == null ? true : normalized.has(targetKey),
+            attempted: false,
+            success: false,
+            skipped: true,
+            failureCount: 0,
+            errors: []
+        };
+    });
+    return summary;
+}
+
+function mergeBackupTargetAttempt(summary, targetKey, result) {
+    const bucket = summary?.[targetKey];
+    if (!bucket || bucket.allowed !== true) return;
+    if (!result || result.skipped === true) return;
+
+    bucket.attempted = true;
+    bucket.skipped = false;
+    if (result.success === true) {
+        bucket.success = true;
+        return;
+    }
+
+    bucket.failureCount += 1;
+    bucket.success = false;
+    const errorText = String(result.error || '').trim();
+    if (errorText && !bucket.errors.includes(errorText)) {
+        bucket.errors.push(errorText);
+    }
+}
+
+function finalizeBackupTargetSummary(summary) {
+    const next = summary || {};
+    BACKUP_TARGET_IDS.forEach((targetKey) => {
+        const bucket = next[targetKey];
+        if (!bucket) return;
+        if (bucket.allowed !== true) {
+            bucket.attempted = false;
+            bucket.success = false;
+            bucket.skipped = true;
+            return;
+        }
+        if (!bucket.attempted) {
+            bucket.success = false;
+            bucket.skipped = true;
+            return;
+        }
+        bucket.success = bucket.failureCount === 0;
+        bucket.skipped = false;
+    });
+    return next;
+}
+
+function deriveInfoLogAllowedTargets(primaryAllowedTargets, archiveTargetSummary = null, archiveResult = null) {
+    const normalizedPrimary = normalizeAllowedBackupTargets(primaryAllowedTargets);
+    if (normalizedPrimary == null) return null;
+
+    if (archiveResult?.skipped === true) {
+        return normalizedPrimary;
+    }
+
+    const next = new Set();
+    normalizedPrimary.forEach((targetKey) => {
+        const bucket = archiveTargetSummary?.[targetKey];
+        if (!bucket) {
+            if (archiveResult?.success === false) return;
+            next.add(targetKey);
+            return;
+        }
+        if (bucket.attempted === true) {
+            if (bucket.success === true) {
+                next.add(targetKey);
+            }
+            return;
+        }
+        next.add(targetKey);
+    });
+    return next;
+}
+
+function getBackupTargetDisplayName(targetKey, lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    const key = String(targetKey || '').trim().toLowerCase();
+    if (key === 'webdav') return isEn ? 'Cloud 1 (WebDAV)' : '云端1(WebDAV)';
+    if (key === 'github_repo') return isEn ? 'Cloud 2 (GitHub Repo)' : '云端2(GitHub仓库)';
+    if (key === 'local') return isEn ? 'Local' : '本地';
+    return key || (isEn ? 'Unknown target' : '未知目标');
+}
+
+function buildBackupTargetWarningMessage(targetKey, phase, lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    const targetText = getBackupTargetDisplayName(targetKey, lang);
+    const normalizedPhase = String(phase || '').trim().toLowerCase();
+
+    if (normalizedPhase === 'changes') {
+        return isEn
+            ? `${targetText} current-changes archive did not finish. Check network or remote service status.`
+            : `${targetText} 当前变化归档未完成，请检查网络或远端服务状态。`;
+    }
+
+    if (normalizedPhase === 'info_log') {
+        return isEn
+            ? `${targetText} backup-history log did not finish. Check network or remote service status.`
+            : `${targetText} 备份历史log未完成，请检查网络或远端服务状态。`;
+    }
+
+    if (normalizedPhase === 'info_log_skipped') {
+        return isEn
+            ? `${targetText} backup-history log was skipped because current-changes archive was incomplete.`
+            : `${targetText} 备份历史log已跳过，因为当前变化归档未完整成功。`;
+    }
+
+    return '';
+}
+
+function collectBackupTargetWarningsFromSummary(targetSummary, phase, lang = 'zh_CN') {
+    const warnings = [];
+    const summary = targetSummary && typeof targetSummary === 'object' ? targetSummary : {};
+    BACKUP_TARGET_IDS.forEach((targetKey) => {
+        const bucket = summary[targetKey];
+        if (!bucket || bucket.allowed !== true) return;
+        if (bucket.attempted !== true) return;
+        if (bucket.success === true) return;
+        const text = buildBackupTargetWarningMessage(targetKey, phase, lang);
+        if (text && !warnings.includes(text)) {
+            warnings.push(text);
+        }
+    });
+    return warnings;
+}
+
+function appendUniqueWarning(warnings, text) {
+    const normalized = String(text || '').trim();
+    if (!normalized) return;
+    if (!Array.isArray(warnings)) return;
+    if (!warnings.includes(normalized)) {
+        warnings.push(normalized);
+    }
+}
+
 function normalizeBookmarkFolderType(value) {
     const text = String(value || '').trim().toLowerCase();
     return text || '';
@@ -283,12 +477,29 @@ function getOverwriteSnapshotFileName() {
     return 'bookmark_backup.html';
 }
 
+function getOverwriteInfoLogFileNameCandidates() {
+    return [
+        '覆盖备注log.md',
+        'overwrite-notes-log.md'
+    ];
+}
 
 function isVersionedInfoLogFileNameLike(fileName = '') {
     const normalized = String(fileName || '').trim().toLowerCase();
     if (!normalized) return false;
     return /^备份历史log(?:[_-].+)?\.md$/i.test(normalized)
         || /^backup-history-log(?:[_-].+)?\.md$/i.test(normalized);
+}
+
+function isOverwriteInfoLogFileNameLike(fileName = '') {
+    const normalized = String(fileName || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return /^覆盖备注log(?:[_-].+)?\.md$/i.test(normalized)
+        || /^overwrite-notes-log(?:[_-].+)?\.md$/i.test(normalized);
+}
+
+function isBackupInfoLogFileNameLike(fileName = '') {
+    return isVersionedInfoLogFileNameLike(fileName) || isOverwriteInfoLogFileNameLike(fileName);
 }
 
 function normalizeLocalVersionedBrowserLabel(value = '') {
@@ -321,7 +532,7 @@ function generateLocalVersionedInstanceId() {
 
 function parseLocalVersionedInfoLogFileIdentity(fileName = '') {
     const normalizedName = String(fileName || '').trim();
-    if (!normalizedName || !isVersionedInfoLogFileNameLike(normalizedName)) {
+    if (!normalizedName || !isBackupInfoLogFileNameLike(normalizedName)) {
         return { browserLabel: '', instanceId: '' };
     }
 
@@ -353,7 +564,7 @@ function parseLocalVersionedInfoLogFileIdentity(fileName = '') {
 async function findLocalVersionedInfoLogInstanceIdFromDownloads(browserLabel = '') {
     const normalizedBrowserLabel = String(browserLabel || '').trim().toLowerCase();
     const versionedFolderCandidates = Array.from(new Set(
-        getVersionedFolderCandidates()
+        [...getVersionedFolderCandidates(), ...getOverwriteFolderCandidates()]
             .map(name => String(name || '').trim().toLowerCase())
             .filter(Boolean)
     ));
@@ -361,7 +572,7 @@ async function findLocalVersionedInfoLogInstanceIdFromDownloads(browserLabel = '
     try {
         const items = await new Promise((resolve) => {
             browserAPI.downloads.search({
-                filenameRegex: '.*(?:备份历史log|backup-history-log)(?:[_-].+)?\\.md$',
+                filenameRegex: '.*(?:备份历史log|backup-history-log|覆盖备注log|overwrite-notes-log)(?:[_-].+)?\\.md$',
                 state: 'complete'
             }, (results) => resolve(Array.isArray(results) ? results : []));
         });
@@ -451,6 +662,38 @@ function buildVersionedInfoLogCurrentRange(records, baselineMarkers = []) {
     };
 }
 
+function buildBackupInfoLogCurrentRange(records, options = {}) {
+    const targetMode = normalizeOverwriteMode(options?.targetMode || 'versioned');
+    if (targetMode === 'versioned') {
+        return buildVersionedInfoLogCurrentRange(records, options?.baselineMarkers || []);
+    }
+
+    const list = (Array.isArray(records) ? records : [])
+        .filter((record) => normalizeOverwriteMode(record?.overwriteMode) === 'overwrite')
+        .slice()
+        .sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime());
+    if (!list.length) {
+        return {
+            startTime: '',
+            endTime: '',
+            startToken: '',
+            endToken: ''
+        };
+    }
+
+    const newestRecord = list[0] || null;
+    const oldestRecord = list[list.length - 1] || null;
+    const startTime = String(oldestRecord?.time || '').trim();
+    const endTime = String(newestRecord?.time || '').trim();
+
+    return {
+        startTime,
+        endTime,
+        startToken: formatVersionedInfoLogRangeToken(startTime),
+        endToken: formatVersionedInfoLogRangeToken(endTime)
+    };
+}
+
 
 function shouldCreateLocalVersionedInfoLogArchive(reason = '') {
     const key = String(reason || '').trim().toLowerCase();
@@ -466,10 +709,14 @@ function buildLocalVersionedInfoLogArchiveFileName(fileName = '', options = {}) 
     const extName = dotIndex >= 0 ? rawName.slice(dotIndex) : '.md';
     const createdAt = String(options?.createdAt || new Date().toISOString()).trim();
     const fallbackTimePart = formatSyncTimeForFileName(createdAt || new Date().toISOString());
-    const range = buildVersionedInfoLogCurrentRange(options?.records || [], options?.baselineMarkers || []);
+    const targetMode = normalizeOverwriteMode(options?.targetMode || 'versioned');
+    const range = buildBackupInfoLogCurrentRange(options?.records || [], {
+        targetMode,
+        baselineMarkers: options?.baselineMarkers || []
+    });
     const startToken = range.startToken || fallbackTimePart;
     const endToken = range.endToken || fallbackTimePart;
-    const isZh = /备份历史log/i.test(baseName);
+    const isZh = /备份历史log|覆盖备注log/i.test(baseName) || /[\u4e00-\u9fa5]/.test(baseName);
     const browserLabel = normalizeLocalVersionedBrowserLabel(options?.browserName || getCurrentLocalVersionedBrowserLabel());
     const instanceId = normalizeLocalVersionedInstanceId(options?.instanceId || '');
 
@@ -561,6 +808,8 @@ let consecutiveLockCount = 0;
 // 添加变量保存原始下载栏状态
 let originalDownloadShelfState = true; // 默认为显示
 let isBookmarkBackupInProgress = false; // 标记是否正在进行书签备份
+let lastVisibleBookmarkDownloadAt = 0;
+const ensuredWebDAVCollectionCache = new Map();
 let bookmarkDownloadIds = new Set(); // 存储书签备份相关的下载ID
 let nonBookmarkDownloadCount = 0; // 追踪非书签备份下载的数量
 // 跟踪书签和文件夹的操作状态
@@ -647,9 +896,198 @@ async function setBookmarkChangesDirty(isDirty) {
     } catch (_) { }
 }
 
+function analysisHasNetChanges(stats = null) {
+    if (!stats || typeof stats !== 'object') return false;
+
+    return (
+        Number(stats.bookmarkDiff || 0) !== 0 ||
+        Number(stats.folderDiff || 0) !== 0 ||
+        Number(stats.bookmarkAdded || 0) > 0 ||
+        Number(stats.bookmarkDeleted || 0) > 0 ||
+        Number(stats.folderAdded || 0) > 0 ||
+        Number(stats.folderDeleted || 0) > 0 ||
+        Number(stats.movedCount || 0) > 0 ||
+        Number(stats.modifiedCount || 0) > 0 ||
+        stats.bookmarkMoved === true ||
+        stats.bookmarkModified === true ||
+        stats.folderMoved === true ||
+        stats.folderModified === true
+    );
+}
+
+function buildAnalysisChangeDescription(stats, preferredLang = 'zh_CN') {
+    if (!analysisHasNetChanges(stats)) {
+        return '';
+    }
+
+    const changes = [];
+    const bmAdded = Number(stats?.bookmarkAdded || 0);
+    const bmDeleted = Number(stats?.bookmarkDeleted || 0);
+    const fdAdded = Number(stats?.folderAdded || 0);
+    const fdDeleted = Number(stats?.folderDeleted || 0);
+    const bookmarkDiff = Number(stats?.bookmarkDiff || 0);
+    const folderDiff = Number(stats?.folderDiff || 0);
+    const movedCount = Number(stats?.movedCount || 0);
+    const modifiedCount = Number(stats?.modifiedCount || 0);
+    const isZh = preferredLang === 'zh_CN';
+
+    if (bmAdded > 0) {
+        changes.push(`${isZh ? '+' : '+'}${bmAdded} ${isZh ? '书签' : 'bookmarks'}`);
+    }
+    if (bmDeleted > 0) {
+        changes.push(`-${bmDeleted} ${isZh ? '书签' : 'bookmarks'}`);
+    }
+    if (fdAdded > 0) {
+        changes.push(`${isZh ? '+' : '+'}${fdAdded} ${isZh ? '文件夹' : 'folders'}`);
+    }
+    if (fdDeleted > 0) {
+        changes.push(`-${fdDeleted} ${isZh ? '文件夹' : 'folders'}`);
+    }
+
+    if (bmAdded === 0 && bmDeleted === 0 && bookmarkDiff !== 0) {
+        changes.push(`${bookmarkDiff > 0 ? '+' : ''}${bookmarkDiff} ${isZh ? '书签' : 'bookmarks'}`);
+    }
+    if (fdAdded === 0 && fdDeleted === 0 && folderDiff !== 0) {
+        changes.push(`${folderDiff > 0 ? '+' : ''}${folderDiff} ${isZh ? '文件夹' : 'folders'}`);
+    }
+
+    if (movedCount > 0 || stats?.bookmarkMoved || stats?.folderMoved) {
+        changes.push(
+            movedCount > 0
+                ? (isZh ? `${movedCount}个移动` : `${movedCount} moved`)
+                : (isZh ? '移动' : 'moved')
+        );
+    }
+
+    if (modifiedCount > 0 || stats?.bookmarkModified || stats?.folderModified) {
+        changes.push(
+            modifiedCount > 0
+                ? (isZh ? `${modifiedCount}个修改` : `${modifiedCount} modified`)
+                : (isZh ? '修改' : 'modified')
+        );
+    }
+
+    return changes.length > 0
+        ? `(${changes.join(isZh ? '，' : ', ')})`
+        : '';
+}
+
+async function clearDirtyStateIfAnalysisIsClean(stats, options = {}) {
+    if (analysisHasNetChanges(stats)) {
+        return false;
+    }
+
+    const currentStore = await browserAPI.storage.local.get([
+        BOOKMARK_CHANGES_DIRTY_KEY,
+        'lastBookmarkData',
+        'lastBookmarkChangeTime'
+    ]);
+
+    const dirty = currentStore?.[BOOKMARK_CHANGES_DIRTY_KEY] === true;
+    if (!dirty) {
+        return false;
+    }
+
+    if ('expectedLastBookmarkChangeTime' in options) {
+        const expectedChangeTime = Number(options.expectedLastBookmarkChangeTime || 0);
+        const actualChangeTime = Number(currentStore?.lastBookmarkChangeTime || 0);
+        if (expectedChangeTime !== actualChangeTime) {
+            return false;
+        }
+    }
+
+    if ('expectedLastBookmarkDataTimestamp' in options) {
+        const expectedBaselineTs = options.expectedLastBookmarkDataTimestamp ?? null;
+        const actualBaselineTs = currentStore?.lastBookmarkData?.timestamp ?? null;
+        if (expectedBaselineTs !== actualBaselineTs) {
+            return false;
+        }
+    }
+
+    await setBookmarkChangesDirty(false);
+
+    try {
+        const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+        if (!autoSync) {
+            await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
+        }
+    } catch (_) { }
+
+    if (options.refreshBadge !== false) {
+        try {
+            await setBadge();
+        } catch (_) { }
+    }
+
+    return true;
+}
+
+let sparseDirtyRecheckInFlight = false;
+let lastSparseDirtyRecheckAt = 0;
+
+async function confirmNetChangesBeforeMarkDirty(reason = 'bookmark_event') {
+    try {
+        const analysis = await updateAndCacheAnalysis();
+        return analysisHasNetChanges(analysis);
+    } catch (error) {
+        // fail-open：确认失败时保留“有变化”判定，避免漏掉真实变化
+        console.warn(`[confirmNetChangesBeforeMarkDirty] ${reason} failed, fallback to dirty=true:`, error);
+        return true;
+    }
+}
+
+async function runSparseDirtyRecheck(reason = 'generic', options = {}) {
+    try {
+        const now = Date.now();
+        const force = options.force === true;
+
+        if (!force) {
+            if (sparseDirtyRecheckInFlight) {
+                return { success: true, skipped: 'in_flight' };
+            }
+            if ((now - lastSparseDirtyRecheckAt) < SPARSE_DIRTY_RECHECK_MIN_INTERVAL_MS) {
+                return { success: true, skipped: 'cooldown' };
+            }
+        }
+
+        const {
+            [BOOKMARK_CHANGES_DIRTY_KEY]: bookmarkChangesDirty = false,
+            [ACTIVE_BACKUP_PROGRESS_KEY]: activeBackupProgress = null
+        } = await browserAPI.storage.local.get({
+            [BOOKMARK_CHANGES_DIRTY_KEY]: false,
+            [ACTIVE_BACKUP_PROGRESS_KEY]: null
+        });
+
+        if (bookmarkChangesDirty !== true) {
+            return { success: true, skipped: 'clean' };
+        }
+
+        if (
+            isTrackedBackupProgressActive(activeBackupProgress) ||
+            isSyncing ||
+            isBookmarkImporting ||
+            isBookmarkRestoring ||
+            isBookmarkBulkChanging
+        ) {
+            return { success: true, skipped: 'busy' };
+        }
+
+        sparseDirtyRecheckInFlight = true;
+        lastSparseDirtyRecheckAt = now;
+        await getBackupStatsInternal();
+        return { success: true };
+    } catch (error) {
+        console.warn(`[runSparseDirtyRecheck] ${reason} failed:`, error);
+        return { success: false, error: error?.message || String(error) };
+    } finally {
+        sparseDirtyRecheckInFlight = false;
+    }
+}
+
 // 角标闪烁动画相关变量（用于初始化上传等操作的进度指示）
 let badgeBlinkIntervalId = null;
 let badgeBlinkState = false;
+let badgeBlinkConfigSignature = '';
 
 /**
  * 启动角标呼吸闪烁动画
@@ -659,9 +1097,15 @@ let badgeBlinkState = false;
  * @param {number} interval - 闪烁间隔毫秒数（默认500ms）
  */
 function startBadgeBlink(text = '...', color1 = '#FF9800', color2 = '#FFE0B2', interval = 500) {
+    const nextSignature = JSON.stringify([text, color1, color2, interval]);
+    if (badgeBlinkIntervalId && badgeBlinkConfigSignature === nextSignature) {
+        return;
+    }
+
     // 如果已经在闪烁，先停止
     stopBadgeBlink();
 
+    badgeBlinkConfigSignature = nextSignature;
     badgeBlinkState = false;
 
     // 设置初始状态
@@ -685,6 +1129,226 @@ function stopBadgeBlink() {
         badgeBlinkIntervalId = null;
     }
     badgeBlinkState = false;
+    badgeBlinkConfigSignature = '';
+}
+
+function isTrackedBackupProgressActive(progress) {
+    if (!progress || typeof progress !== 'object') return false;
+    const kind = String(progress.kind || '').trim().toLowerCase();
+    return progress.status === 'running' && (kind === 'init' || kind === 'manual' || kind === 'switch');
+}
+
+function normalizeBackupProgressTargetKeys(targetKeys = []) {
+    return Array.from(new Set(
+        (Array.isArray(targetKeys) ? targetKeys : [])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+    )).sort((left, right) => {
+        const leftRank = Object.prototype.hasOwnProperty.call(BACKUP_PROGRESS_TARGET_ORDER, left)
+            ? BACKUP_PROGRESS_TARGET_ORDER[left]
+            : Number.MAX_SAFE_INTEGER;
+        const rightRank = Object.prototype.hasOwnProperty.call(BACKUP_PROGRESS_TARGET_ORDER, right)
+            ? BACKUP_PROGRESS_TARGET_ORDER[right]
+            : Number.MAX_SAFE_INTEGER;
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        return left.localeCompare(right);
+    });
+}
+
+function normalizeBackupProgressTargetStates(targetKeys = [], targetStates = {}) {
+    const normalizedKeys = normalizeBackupProgressTargetKeys(targetKeys);
+    const nextStates = {};
+    normalizedKeys.forEach((key) => {
+        const raw = String(targetStates?.[key] || '').trim().toLowerCase();
+        nextStates[key] = ['pending', 'running', 'success', 'failed', 'skipped'].includes(raw)
+            ? raw
+            : 'pending';
+    });
+    return nextStates;
+}
+
+function computeBackupProgressPercent(state = {}) {
+    const status = String(state.status || '').trim().toLowerCase();
+    if (status === 'success' || status === 'error') return 100;
+
+    const phase = String(state.phase || '').trim().toLowerCase();
+    const totalTargets = Math.max(0, Number(state.totalTargets) || 0);
+    const completedTargets = Math.min(
+        totalTargets,
+        Math.max(0, Number(state.completedTargets) || 0)
+    );
+
+    if (phase === 'preparing') {
+        return totalTargets > 0 ? 14 : 8;
+    }
+    if (phase === 'uploading') {
+        if (totalTargets <= 0) return 28;
+        return Math.max(18, Math.min(90, 18 + Math.round((completedTargets / totalTargets) * 68)));
+    }
+    if (phase === 'finalizing') {
+        return 94;
+    }
+    return 10;
+}
+
+function createBackupProgressTracker(kind, options = {}) {
+    const normalizedKind = String(kind || '').trim().toLowerCase();
+    const enabled = normalizedKind === 'init' || normalizedKind === 'manual' || normalizedKind === 'switch';
+
+    let state = enabled
+        ? {
+            version: 1,
+            kind: normalizedKind,
+            direction: String(options.direction || 'upload').trim() || 'upload',
+            status: 'running',
+            phase: 'preparing',
+            targetKeys: [],
+            targetStates: {},
+            totalTargets: 0,
+            completedTargets: 0,
+            successTargets: 0,
+            failedTargets: 0,
+            progressPercent: 8,
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            lastTargetKey: '',
+            lastError: ''
+        }
+        : null;
+    let storageWriteQueue = Promise.resolve();
+
+    const refreshDerivedState = () => {
+        if (!enabled || !state) return;
+
+        state.targetKeys = normalizeBackupProgressTargetKeys(state.targetKeys);
+        state.targetStates = normalizeBackupProgressTargetStates(state.targetKeys, state.targetStates);
+        state.totalTargets = state.targetKeys.length;
+
+        const values = Object.values(state.targetStates);
+        state.completedTargets = values.filter((value) =>
+            value === 'success' || value === 'failed' || value === 'skipped'
+        ).length;
+        state.successTargets = values.filter((value) => value === 'success').length;
+        state.failedTargets = values.filter((value) => value === 'failed').length;
+
+        if (state.status === 'running') {
+            state.progressPercent = computeBackupProgressPercent(state);
+        }
+    };
+
+    const queuePersist = async () => {
+        if (!enabled || !state) return;
+        refreshDerivedState();
+        const snapshot = {
+            ...state,
+            targetKeys: [...state.targetKeys],
+            targetStates: { ...state.targetStates },
+            updatedAt: new Date().toISOString()
+        };
+        state.updatedAt = snapshot.updatedAt;
+        storageWriteQueue = storageWriteQueue
+            .catch(() => { })
+            .then(async () => {
+                await browserAPI.storage.local.set({
+                    [ACTIVE_BACKUP_PROGRESS_KEY]: snapshot
+                });
+            });
+        await storageWriteQueue;
+    };
+
+    const queueClear = async () => {
+        if (!enabled) return;
+        storageWriteQueue = storageWriteQueue
+            .catch(() => { })
+            .then(async () => {
+                await browserAPI.storage.local.remove(ACTIVE_BACKUP_PROGRESS_KEY);
+            });
+        await storageWriteQueue;
+    };
+
+    return {
+        enabled,
+        async start() {
+            if (!enabled) return;
+            await queuePersist();
+            startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
+        },
+        async setTargets(targetKeys = []) {
+            if (!enabled || !state) return;
+            state.targetKeys = normalizeBackupProgressTargetKeys(targetKeys);
+            state.targetStates = normalizeBackupProgressTargetStates(state.targetKeys, state.targetStates);
+            state.phase = 'uploading';
+            await queuePersist();
+        },
+        async markTargetsRunning(targetKeys = []) {
+            if (!enabled || !state) return;
+            const normalizedKeys = normalizeBackupProgressTargetKeys(targetKeys);
+            if (normalizedKeys.length === 0) return;
+            const nextTargetStates = { ...state.targetStates };
+            normalizedKeys.forEach((key) => {
+                nextTargetStates[key] = 'running';
+            });
+            await this.patch({
+                phase: 'uploading',
+                targetStates: nextTargetStates,
+                lastTargetKey: normalizedKeys[normalizedKeys.length - 1] || state.lastTargetKey || ''
+            });
+        },
+        async patch(patch = {}) {
+            if (!enabled || !state) return;
+            if (!patch || typeof patch !== 'object') return;
+
+            const nextState = {
+                ...state,
+                ...patch
+            };
+            if (Array.isArray(patch.targetKeys)) {
+                nextState.targetKeys = normalizeBackupProgressTargetKeys(patch.targetKeys);
+            }
+            if (patch.targetStates && typeof patch.targetStates === 'object') {
+                nextState.targetStates = { ...patch.targetStates };
+            }
+            state = nextState;
+            await queuePersist();
+        },
+        async markTarget(targetKey, nextStatus, options = {}) {
+            if (!enabled || !state) return;
+            const normalizedKey = String(targetKey || '').trim();
+            if (!normalizedKey) return;
+            const normalizedStatus = ['pending', 'running', 'success', 'failed', 'skipped'].includes(
+                String(nextStatus || '').trim().toLowerCase()
+            )
+                ? String(nextStatus || '').trim().toLowerCase()
+                : 'pending';
+            const nextTargetStates = {
+                ...state.targetStates,
+                [normalizedKey]: normalizedStatus
+            };
+            await this.patch({
+                phase: 'uploading',
+                targetStates: nextTargetStates,
+                lastTargetKey: normalizedKey,
+                ...(options.lastError ? { lastError: String(options.lastError) } : {})
+            });
+        },
+        async finalize(status, options = {}) {
+            if (!enabled || !state) return;
+            state.status = String(status || '').trim().toLowerCase() === 'error' ? 'error' : 'success';
+            state.phase = 'finalizing';
+            state.progressPercent = 100;
+            if (options && Object.prototype.hasOwnProperty.call(options, 'lastError')) {
+                state.lastError = String(options.lastError || '');
+            }
+            await queuePersist();
+        },
+        async clear(options = {}) {
+            const lingerMs = Math.max(0, Number(options?.delayMs) || 0);
+            if (lingerMs > 0) {
+                await delayMs(lingerMs);
+            }
+            await queueClear();
+        }
+    };
 }
 
 // 最近移动的节点（用于前端稳定显示蓝色移动标识）
@@ -982,10 +1646,43 @@ function initializeOperationTracking() {
 // 在初始化时设置角标
 async function initializeBadge() {
     try {
-        const { autoSync, lastSyncStatus, isYellowHandActive } = await browserAPI.storage.local.get({
+        const initialStore = await browserAPI.storage.local.get({
             autoSync: true,
             lastSyncStatus: 'success',
-            isYellowHandActive: false // 新增：获取黄色角标状态
+            isYellowHandActive: false, // 新增：获取黄色角标状态
+            [BOOKMARK_CHANGES_DIRTY_KEY]: false,
+            [ACTIVE_BACKUP_PROGRESS_KEY]: null
+        });
+
+        const initialDirty = initialStore?.[BOOKMARK_CHANGES_DIRTY_KEY] === true;
+        const initialActiveBackupProgress = initialStore?.[ACTIVE_BACKUP_PROGRESS_KEY] || null;
+
+        // 启动入口也遵循“先正式核验，再用状态做决定”：
+        // 如果 storage 中遗留 dirty=true，就先做一次稀疏正式比树，
+        // 再决定循环提醒和角标，避免启动时先吃旧黄标。
+        if (
+            initialDirty &&
+            !isTrackedBackupProgressActive(initialActiveBackupProgress) &&
+            !isSyncing &&
+            !isBookmarkImporting &&
+            !isBookmarkRestoring &&
+            !isBookmarkBulkChanging
+        ) {
+            try {
+                await runSparseDirtyRecheck('initialize-badge', { force: true });
+            } catch (reconcileError) {
+                console.warn('[initializeBadge] 启动兜底核验失败:', reconcileError);
+            }
+        }
+
+        const {
+            autoSync,
+            lastSyncStatus,
+            isYellowHandActive
+        } = await browserAPI.storage.local.get({
+            autoSync: initialStore?.autoSync ?? true,
+            lastSyncStatus: initialStore?.lastSyncStatus ?? 'success',
+            isYellowHandActive: initialStore?.isYellowHandActive ?? false
         });
 
         if (!autoSync) {
@@ -2075,6 +2772,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             return latestTree;
         };
         const bookmarks = await captureStableBookmarks();
+        const sharedSnapshotHtml = convertToEdgeHTML(bookmarks);
 
         const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
@@ -2106,7 +2804,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             try {
                 const uploadResult = await uploadBookmarks(bookmarks, {
                     ...snapshotNaming,
-                    overwriteMode: restoreRecordOverwriteMode
+                    overwriteMode: restoreRecordOverwriteMode,
+                    htmlContent: sharedSnapshotHtml
                 });
                 if (uploadResult?.success) {
                     webDAVSuccess = true;
@@ -2122,7 +2821,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             try {
                 const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
                     ...snapshotNaming,
-                    overwriteMode: restoreRecordOverwriteMode
+                    overwriteMode: restoreRecordOverwriteMode,
+                    htmlContent: sharedSnapshotHtml
                 });
                 if (uploadResult?.success) {
                     githubRepoSuccess = true;
@@ -2139,7 +2839,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 const localResult = await uploadBookmarksToLocal(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
-                    forceEnable
+                    forceEnable,
+                    htmlContent: sharedSnapshotHtml
                 });
                 return localResult?.success !== false;
             } catch (uploadError) {
@@ -2181,6 +2882,11 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         }
 
         const restoreErrorMessage = uploadErrors.length > 0 ? uploadErrors.join('; ') : '';
+        const successfulBackupTargets = [];
+        if (webDAVSuccess) successfulBackupTargets.push('webdav');
+        if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
+        if (localSuccess) successfulBackupTargets.push('local');
+
         if (restoreSyncDirection === 'none') {
             throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
         }
@@ -2195,7 +2901,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             {
                 overwriteMode: restoreRecordOverwriteMode,
                 skipAutoArtifacts: true,
-                localBookmarks: bookmarks
+                localBookmarks: bookmarks,
+                successfulBackupTargets
             }
         );
 
@@ -2330,13 +3037,78 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
 
                 try {
                     const activeLang = await getCurrentLang();
-                    await syncVersionedInfoLogIfNeeded({
+                    let restoreChangesArchiveResult = null;
+
+                    if (baselineTree && finalCurrentTree) {
+                        restoreChangesArchiveResult = await exportCurrentChangesArchiveToCloud({
+                            syncTime,
+                            fingerprint: snapshotNaming.fingerprint,
+                            localBookmarks: finalCurrentTree,
+                            previousBookmarks: baselineTree,
+                            explicitMovedIds: Array.isArray(finalBookmarkStats?.explicitMovedIds)
+                                ? finalBookmarkStats.explicitMovedIds
+                                : [],
+                            overwriteMode: restoreRecordOverwriteMode,
+                            suppressLocalDownloadNotification: true,
+                            allowedTargets: successfulBackupTargets
+                        });
+                        collectBackupTargetWarningsFromSummary(
+                            restoreChangesArchiveResult?.targetSummary || null,
+                            'changes',
+                            activeLang
+                        ).forEach((text) => {
+                            if (text && !uploadErrors.includes(text)) {
+                                uploadErrors.push(text);
+                            }
+                        });
+                    } else {
+                        restoreChangesArchiveResult = {
+                            success: false,
+                            targetSummary: createBackupTargetSummary(successfulBackupTargets)
+                        };
+                        const skipWarning = activeLang === 'en'
+                            ? 'Restore current-changes archive was skipped because the restore baseline or current tree is unavailable.'
+                            : '恢复记录的当前变化归档已跳过，因为恢复基线或当前树不可用。';
+                        if (!uploadErrors.includes(skipWarning)) {
+                            uploadErrors.push(skipWarning);
+                        }
+                    }
+
+                    const infoLogAllowedTargets = deriveInfoLogAllowedTargets(
+                        successfulBackupTargets,
+                        restoreChangesArchiveResult?.targetSummary || null,
+                        restoreChangesArchiveResult
+                    );
+                    if (
+                        Array.isArray(successfulBackupTargets)
+                        && infoLogAllowedTargets instanceof Set
+                    ) {
+                        const blockedTargets = successfulBackupTargets.filter((targetKey) => !infoLogAllowedTargets.has(targetKey));
+                        blockedTargets.forEach((targetKey) => {
+                            const warningText = buildBackupTargetWarningMessage(targetKey, 'info_log_skipped', activeLang);
+                            if (warningText && !uploadErrors.includes(warningText)) {
+                                uploadErrors.push(warningText);
+                            }
+                        });
+                    }
+
+                    const versionedInfoLogResult = await syncVersionedInfoLogIfNeeded({
                         lang: activeLang,
                         overwriteMode: restoreRecordOverwriteMode,
-                        syncHistory
+                        syncHistory,
+                        allowedTargets: infoLogAllowedTargets
+                    });
+                    collectBackupTargetWarningsFromSummary(
+                        versionedInfoLogResult?.targetSummary || null,
+                        'info_log',
+                        activeLang
+                    ).forEach((text) => {
+                        if (text && !uploadErrors.includes(text)) {
+                            uploadErrors.push(text);
+                        }
                     });
                 } catch (postSyncError) {
-                    console.warn('[triggerRestoreBackup] 恢复后同步备份历史log失败:', postSyncError);
+                    console.warn('[triggerRestoreBackup] 恢复后同步变化归档或备份历史log失败:', postSyncError);
                 }
             }
         }
@@ -2364,7 +3136,12 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             });
         } catch (_) { }
 
-        return { success: true, syncTime, strategy };
+        return {
+            success: true,
+            syncTime,
+            strategy,
+            warning: uploadErrors.length > 0 ? uploadErrors.join('; ') : ''
+        };
     } catch (error) {
         try {
             await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
@@ -2860,7 +3637,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             success: true,
                             repo: result.repo || null,
                             resolvedBranch: result.resolvedBranch || null,
-                            basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+                            basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null,
+                            branchExists: typeof result.branchExists === 'boolean' ? result.branchExists : null,
+                            branchWillBeCreated: result.branchWillBeCreated === true
                         });
                     } else {
                         sendResponse({ success: false, error: result?.error || '未知错误' });
@@ -2922,7 +3701,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         success: true,
                         repo: result.repo || null,
                         resolvedBranch: result.resolvedBranch || null,
-                        basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+                        basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null,
+                        branchExists: typeof result.branchExists === 'boolean' ? result.branchExists : null,
+                        branchWillBeCreated: result.branchWillBeCreated === true
                     });
                 } catch (error) {
                     sendResponse({ success: false, error: error?.message || '获取仓库信息失败' });
@@ -3198,21 +3979,17 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const folderKey = String(message.folderKey || '').trim();
                     const contentType = message.contentType;
 
-                    // 手动导出上传云端开关（仅影响 Manual Export 路径）
+                    // 手动导出仅保留本地下载；云端上传已停用。
                     const manualExportCloudFolderKeys = new Set(['history', 'current_changes']);
                     if (manualExportCloudFolderKeys.has(folderKey)) {
-                        const cfg = await browserAPI.storage.local.get(['manualExportCloudUploadEnabled']);
-                        const enabled = cfg?.manualExportCloudUploadEnabled === true;
-                        if (!enabled) {
-                            sendResponse({
-                                success: true,
-                                skipped: true,
-                                manualExportCloudUploadDisabled: true,
-                                webdav: { success: false, skipped: true, reason: 'manual_export_cloud_upload_disabled' },
-                                githubRepo: { success: false, skipped: true, reason: 'manual_export_cloud_upload_disabled' }
-                            });
-                            return;
-                        }
+                        sendResponse({
+                            success: true,
+                            skipped: true,
+                            manualExportCloudUploadDisabled: true,
+                            webdav: { success: false, skipped: true, reason: 'manual_export_local_only' },
+                            githubRepo: { success: false, skipped: true, reason: 'manual_export_local_only' }
+                        });
+                        return;
                     }
 
                     // 支持两种方式传递二进制数据：
@@ -4090,13 +4867,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === "initSync") {
             return handleMessageWithRestoreRecoveryWriteLock(message, sendResponse, () => {
                 if (message.direction === "upload") {
-                // 启动角标呼吸闪烁，提示用户正在进行初始化上传
-                startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
+                    const progressTracker = createBackupProgressTracker('init', {
+                        direction: 'upload'
+                    });
+                    let progressClearedEarly = false;
 
-                // 上传本地书签到云端/本地
-                browserAPI.bookmarks.getTree()
-                    .then(async (bookmarks) => {
+                    (async () => {
                         try {
+                            await progressTracker.start();
+
+                            const bookmarks = await new Promise((resolve, reject) => {
+                                browserAPI.bookmarks.getTree((result) => {
+                                    if (browserAPI.runtime.lastError) {
+                                        reject(new Error(browserAPI.runtime.lastError.message));
+                                        return;
+                                    }
+                                    resolve(result);
+                                });
+                            });
+
                             const syncTime = new Date().toISOString();
                             const snapshotNaming = buildSnapshotNamingContext({ syncTime });
 
@@ -4105,17 +4894,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             let localSuccess = false;
                             let errors = [];
 
-                            // 添加结果对象用于存储过程信息
                             const result = {
                                 localFileName: null
                             };
 
-                            // 检查云端1：WebDAV配置
                             const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
                             const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
                             const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
-                            // 检查云端2：GitHub Repository 配置
                             const githubRepoConfig = await browserAPI.storage.local.get([
                                 'githubRepoToken',
                                 'githubRepoOwner',
@@ -4130,27 +4916,36 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             );
                             const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
 
-                            // 检查本地备份配置
                             const localConfig = await browserAPI.storage.local.get([
                                 'defaultDownloadEnabled'
                             ]);
-
-                            // 检查是否启用任一本地备份方式
                             const defaultDownloadEnabled = localConfig.defaultDownloadEnabled === true;
-                            // 检查至少有一种备份方式已配置
                             const localBackupConfigured = defaultDownloadEnabled;
-                            // const hasAtLeastOneConfigured = (webDAVConfigured && webDAVEnabled) || localBackupConfigured; // Original was this
 
-                            // 按优先级并行启动上传任务：本地 > 云端2(GitHub) > 云端1(WebDAV)
+                            const backupTargetKeys = [];
+                            if (localBackupConfigured) backupTargetKeys.push('local');
+                            if (githubRepoConfigured && githubRepoEnabled) backupTargetKeys.push('github_repo');
+                            if (webDAVConfigured && webDAVEnabled) backupTargetKeys.push('webdav');
+                            await progressTracker.setTargets(backupTargetKeys);
+                            await progressTracker.markTargetsRunning(backupTargetKeys);
+                            const sharedSnapshotHtml = convertToEdgeHTML(bookmarks);
+
                             const targetTasks = [];
 
                             if (localBackupConfigured) {
                                 targetTasks.push((async () => {
                                     const startedAt = Date.now();
                                     try {
-                                        const localResult = await uploadBookmarksToLocal(bookmarks, snapshotNaming);
+                                        await progressTracker.markTarget('local', 'running');
+                                        const localResult = await uploadBookmarksToLocal(bookmarks, {
+                                            ...snapshotNaming,
+                                            forceShowDownloadNotification: true,
+                                            waitForDownloadCompletion: false,
+                                            htmlContent: sharedSnapshotHtml
+                                        });
                                         localSuccess = true;
                                         result.localFileName = localResult.fileName;
+                                        await progressTracker.markTarget('local', 'success');
                                         return {
                                             target: 'local',
                                             success: true,
@@ -4158,11 +4953,15 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                             fileName: localResult.fileName
                                         };
                                     } catch (error) {
+                                        const errorText = `本地备份失败: ${error?.message || '未知错误'}`;
+                                        await progressTracker.markTarget('local', 'failed', {
+                                            lastError: errorText
+                                        });
                                         return {
                                             target: 'local',
                                             success: false,
                                             durationMs: Date.now() - startedAt,
-                                            error: `本地备份失败: ${error?.message || '未知错误'}`
+                                            error: errorText
                                         };
                                     }
                                 })());
@@ -4172,32 +4971,49 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 targetTasks.push((async () => {
                                     const startedAt = Date.now();
                                     try {
-                                        const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, snapshotNaming);
+                                        await progressTracker.markTarget('github_repo', 'running');
+                                        const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
+                                            ...snapshotNaming,
+                                            htmlContent: sharedSnapshotHtml
+                                        });
                                         if (uploadResult?.success) {
                                             githubRepoSuccess = true;
+                                            await progressTracker.markTarget('github_repo', 'success');
                                             return { target: 'github_repo', success: true, durationMs: Date.now() - startedAt };
                                         }
                                         if (uploadResult?.repoNotConfigured || uploadResult?.repoDisabled) {
+                                            const errorText = uploadResult?.error || 'GitHub仓库未启用或未配置';
+                                            await progressTracker.markTarget('github_repo', 'skipped', {
+                                                lastError: errorText
+                                            });
                                             return {
                                                 target: 'github_repo',
                                                 success: false,
                                                 skipped: true,
                                                 durationMs: Date.now() - startedAt,
-                                                error: uploadResult?.error || 'GitHub仓库未启用或未配置'
+                                                error: errorText
                                             };
                                         }
+                                        const errorText = uploadResult?.error || '上传到GitHub仓库失败';
+                                        await progressTracker.markTarget('github_repo', 'failed', {
+                                            lastError: errorText
+                                        });
                                         return {
                                             target: 'github_repo',
                                             success: false,
                                             durationMs: Date.now() - startedAt,
-                                            error: uploadResult?.error || '上传到GitHub仓库失败'
+                                            error: errorText
                                         };
                                     } catch (error) {
+                                        const errorText = error?.message || '上传到GitHub仓库失败';
+                                        await progressTracker.markTarget('github_repo', 'failed', {
+                                            lastError: errorText
+                                        });
                                         return {
                                             target: 'github_repo',
                                             success: false,
                                             durationMs: Date.now() - startedAt,
-                                            error: error?.message || '上传到GitHub仓库失败'
+                                            error: errorText
                                         };
                                     }
                                 })());
@@ -4207,32 +5023,49 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 targetTasks.push((async () => {
                                     const startedAt = Date.now();
                                     try {
-                                        const uploadResult = await uploadBookmarks(bookmarks, snapshotNaming);
+                                        await progressTracker.markTarget('webdav', 'running');
+                                        const uploadResult = await uploadBookmarks(bookmarks, {
+                                            ...snapshotNaming,
+                                            htmlContent: sharedSnapshotHtml
+                                        });
                                         if (uploadResult?.success) {
                                             webDAVSuccess = true;
+                                            await progressTracker.markTarget('webdav', 'success');
                                             return { target: 'webdav', success: true, durationMs: Date.now() - startedAt };
                                         }
                                         if (uploadResult?.webDAVNotConfigured) {
+                                            const errorText = uploadResult?.error || 'WebDAV未配置';
+                                            await progressTracker.markTarget('webdav', 'skipped', {
+                                                lastError: errorText
+                                            });
                                             return {
                                                 target: 'webdav',
                                                 success: false,
                                                 skipped: true,
                                                 durationMs: Date.now() - startedAt,
-                                                error: uploadResult?.error || 'WebDAV未配置'
+                                                error: errorText
                                             };
                                         }
+                                        const errorText = uploadResult?.error || '上传到WebDAV失败';
+                                        await progressTracker.markTarget('webdav', 'failed', {
+                                            lastError: errorText
+                                        });
                                         return {
                                             target: 'webdav',
                                             success: false,
                                             durationMs: Date.now() - startedAt,
-                                            error: uploadResult?.error || '上传到WebDAV失败'
+                                            error: errorText
                                         };
                                     } catch (error) {
+                                        const errorText = error?.message || '上传到WebDAV失败';
+                                        await progressTracker.markTarget('webdav', 'failed', {
+                                            lastError: errorText
+                                        });
                                         return {
                                             target: 'webdav',
                                             success: false,
                                             durationMs: Date.now() - startedAt,
-                                            error: error?.message || '上传到WebDAV失败'
+                                            error: errorText
                                         };
                                     }
                                 })());
@@ -4260,7 +5093,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 });
                             }
 
-                            // 确定备份方向
                             let syncDirection = 'none';
                             if (localSuccess && webDAVSuccess && githubRepoSuccess) {
                                 syncDirection = 'webdav_github_local';
@@ -4280,62 +5112,98 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 syncDirection = 'none';
                             }
 
-                            // 添加首次上传记录
-                            const syncStatus = (webDAVSuccess || githubRepoSuccess || localSuccess) ? 'success' : 'error';
+                            const success = (webDAVSuccess || githubRepoSuccess || localSuccess);
+                            const syncStatus = success ? 'success' : 'error';
                             const errorMessage = errors.length > 0 ? errors.join('; ') : '';
-                            // --- 修改：传递 'auto' 作为 syncType ---
-                            await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, 'auto', null, snapshotNaming.fingerprint);
+                            const successfulBackupTargets = [];
+                            if (webDAVSuccess) successfulBackupTargets.push('webdav');
+                            if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
+                            if (localSuccess) successfulBackupTargets.push('local');
 
-                            // --- 新增：在成功后调用 setBadge ---
-                            // 停止角标闪烁
+                            await progressTracker.finalize(success ? 'success' : 'error', {
+                                lastError: errorMessage
+                            });
+
+                            if (success) {
+                                try {
+                                    await setBookmarkChangesDirty(false);
+                                } catch (_) { }
+                            }
+
                             stopBadgeBlink();
 
-                            // 恢复正常角标状态
                             try {
-                                await setBadge(); // 更新角标为正常状态
+                                await setBadge();
                             } catch (badgeError) {
-                                console.error('[initSync] 更新角标失败:', badgeError);
+                                console.error('[initSync] 提前更新角标失败:', badgeError);
                             }
-                            // --- 结束新增 ---
 
-                            // 注意：角标闪烁已停止，用户可通过角标恢复正常状态判断操作完成
+                            if (success) {
+                                try {
+                                    await progressTracker.clear({
+                                        delayMs: BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS
+                                    });
+                                    progressClearedEarly = true;
+                                } catch (_) { }
+                            }
+
+                            const updateSyncResult = await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, 'auto', null, snapshotNaming.fingerprint, {
+                                localBookmarks: bookmarks,
+                                successfulBackupTargets
+                            });
+                            const postSyncWarnings = Array.isArray(updateSyncResult?.postSyncWarnings)
+                                ? updateSyncResult.postSyncWarnings.filter(Boolean)
+                                : [];
+                            postSyncWarnings.forEach((text) => {
+                                if (text && !errors.includes(text)) {
+                                    errors.push(text);
+                                }
+                            });
+                            await browserAPI.storage.local.set({ initialized: success });
+                            try {
+                                await setBadge();
+                            } catch (badgeError) {
+                                console.error('[initSync] 收尾阶段更新角标失败:', badgeError);
+                            }
 
                             sendResponse({
-                                success: (webDAVSuccess || githubRepoSuccess || localSuccess),
+                                success,
                                 webDAVSuccess,
                                 githubRepoSuccess,
                                 localSuccess,
-                                localFileName: result.localFileName, // 添加文件名到响应
+                                localFileName: result.localFileName,
                                 error: errors.length > 0 ? errors.join('; ') : null
                             });
                         } catch (error) {
-                            // 停止角标闪烁
+                            try {
+                                await progressTracker.finalize('error', {
+                                    lastError: error?.message || '初始化上传失败'
+                                });
+                            } catch (_) { }
+                            try {
+                                await browserAPI.storage.local.set({ initialized: false });
+                            } catch (_) { }
                             stopBadgeBlink();
-                            // 尝试恢复正常角标状态
                             try {
                                 await setBadge();
-                            } catch (e) { }
+                            } catch (_) { }
 
                             sendResponse({
                                 success: false,
                                 error: error.message || '上传失败'
                             });
+                        } finally {
+                            if (!progressClearedEarly) {
+                                try {
+                                    await progressTracker.clear({
+                                        delayMs: BACKUP_PROGRESS_FINAL_STATE_LINGER_MS
+                                    });
+                                } catch (_) { }
+                            }
                         }
-                    })
-                    .catch(async (error) => {
-                        // 停止角标闪烁
-                        stopBadgeBlink();
-                        // 尝试恢复正常角标状态
-                        try {
-                            await setBadge();
-                        } catch (e) { }
+                    })();
 
-                        sendResponse({
-                            success: false,
-                            error: error.message || '获取书签失败'
-                        });
-                    });
-                return true;  // 保持消息通道开放
+                    return true;  // 保持消息通道开放
             } else if (message.direction === "download") {
                 // 从云端下载书签
                 getRestoreRecoveryWriteLockedResponse()
@@ -5500,28 +6368,35 @@ async function handleBookmarkChange() {
             const dirtyBecameTrue = !dirtyBefore;
 
             // 更新最后书签变更时间（无论模式如何）
-            const updatePayload = {
+            await browserAPI.storage.local.set({
                 lastBookmarkChangeTime: Date.now()
-            };
-            // 只有在手动备份模式下才设置活动标志
-            if (!autoSync) {
-                updatePayload.hasBookmarkActivitySinceLastCheck = true;
-            }
-            if (dirtyBecameTrue) {
-                updatePayload[BOOKMARK_CHANGES_DIRTY_KEY] = true;
-            }
-            await browserAPI.storage.local.set(updatePayload);
+            });
             // 任何一次书签事件都要使分析缓存失效。
             // 否则 dirty=true 期间的后续操作会继续复用旧分析，导致状态卡片/当前变化不刷新。
             cachedBookmarkAnalysis = null;
 
-            // 非实时模式下，角标只在“第一次脏变化”时变黄；后续变化不重复刷新。
+            let confirmedHasChanges = false;
+            // 仅在“首次待变脏”时做一次正式确认，避免休眠恢复等噪音事件导致角标先黄后回弹。
             if (dirtyBecameTrue) {
-                await setBadge();
+                confirmedHasChanges = await confirmNetChangesBeforeMarkDirty('bookmark_change_first_dirty');
+                if (confirmedHasChanges) {
+                    const dirtyPayload = {
+                        [BOOKMARK_CHANGES_DIRTY_KEY]: true
+                    };
+                    // 手动模式的活动标志仅在确认有净变化后设置
+                    if (!autoSync) {
+                        dirtyPayload.hasBookmarkActivitySinceLastCheck = true;
+                    }
+                    await browserAPI.storage.local.set(dirtyPayload);
+                    await setBadge();
+                } else if (!autoSync) {
+                    // 无净变化时确保手动提醒标志不残留
+                    await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
+                }
             }
 
             // 向Popup页面发送消息，通知书签已更改
-            if (dirtyBecameTrue) {
+            if (dirtyBecameTrue && confirmedHasChanges) {
                 try {
                     const response = await browserAPI.runtime.sendMessage({
                         action: "bookmarkChanged",
@@ -5595,18 +6470,9 @@ async function uploadBookmarks(bookmarks, options = {}) {
         await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建文件夹失败');
 
         // 将书签数据转换为Edge格式的HTML
-        const htmlContent = convertToEdgeHTML(bookmarks);
-
-        // 尝试删除已存在的文件
-        try {
-            await fetchWithTimeout(fullUrl, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': authHeader
-                }
-            }, 8000);
-        } catch (error) {
-        }
+        const htmlContent = typeof options.htmlContent === 'string'
+            ? options.htmlContent
+            : convertToEdgeHTML(bookmarks);
 
         // 上传新文件
         const response = await putWebDAVWithRetry(fullUrl, {
@@ -5655,7 +6521,9 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
     }
 
     // 将书签数据转换为Edge格式的HTML
-    const htmlContent = convertToEdgeHTML(bookmarks);
+    const htmlContent = typeof options.htmlContent === 'string'
+        ? options.htmlContent
+        : convertToEdgeHTML(bookmarks);
 
     // 获取覆盖策略设置
     const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
@@ -6318,8 +7186,10 @@ function shouldIncludeVersionedInfoLogRecord(record, options = {}) {
         return true;
     }
 
-    // 多版本恢复索引：成功记录默认全部保留，避免“实际版本很多但索引行很少”
-    if (targetMode === 'versioned' && status === 'success') {
+    // 两种策略的成功记录都保留：
+    // - 多版本：恢复索引需要完整历史
+    // - 覆盖：当前覆盖快照需要从 log 补备注 / 哈希 / 变化统计
+    if ((targetMode === 'versioned' || targetMode === 'overwrite') && status === 'success') {
         return true;
     }
 
@@ -6539,8 +7409,6 @@ function buildVersionedInfoLogRecordFromEntry(entry) {
     if (!entry || typeof entry !== 'object') return null;
 
     const overwriteMode = resolveOverwriteModeFromVersionedInfoLogEntry(entry);
-    if (overwriteMode === 'overwrite') return null;
-
     const snapshotKey = resolveSnapshotKeyFromVersionedInfoLogEntry(entry, overwriteMode);
     if (!snapshotKey) return null;
 
@@ -6563,8 +7431,8 @@ function buildVersionedInfoLogRecordFromEntry(entry) {
         note: String(entry?.note || '').trim(),
         fingerprint,
         snapshotKey,
-        snapshotName: `${snapshotKey}.html`,
-        snapshotFolderName: snapshotKey
+        snapshotName: overwriteMode === 'overwrite' ? getOverwriteSnapshotFileName() : `${snapshotKey}.html`,
+        snapshotFolderName: overwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey
     };
 }
 
@@ -6576,32 +7444,43 @@ function buildVersionedInfoLogRecordMergeKey(record) {
     const time = Number.isFinite(timeMs) ? new Date(timeMs).toISOString() : timeRaw;
     const directionKey = String(record?.direction || '').trim().toLowerCase();
     const strategy = normalizeOverwriteMode(record?.overwriteMode);
+    const note = String(record?.note || '').trim().toLowerCase();
+    const seq = record?.seqNumber != null ? String(record.seqNumber).trim() : '';
 
-    if (snapshotKey) {
+    if (snapshotKey && snapshotKey !== '__overwrite__') {
         return `snapshot:${snapshotKey}`;
+    }
+    if (strategy === 'overwrite') {
+        return `${time}|${directionKey}|${strategy}|${hash}|${note}|${seq}`;
     }
     if (hash) {
         return `hash:${hash}`;
     }
 
-    return `${time}|${directionKey}|${strategy}|${String(record?.note || '').trim().toLowerCase()}`;
+    return `${time}|${directionKey}|${strategy}|${note}|${seq}`;
 }
 
-function normalizeVersionedInfoLogLedgerRecords(value) {
+function normalizeInfoLogRecordsByMode(value, targetMode = 'versioned') {
+    const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
     const list = Array.isArray(value) ? value : [];
     const deduped = [];
     const seen = new Set();
 
     for (const item of list) {
         if (!item || typeof item !== 'object') continue;
-        if (normalizeOverwriteMode(item?.overwriteMode) !== 'versioned') continue;
+        if (normalizeOverwriteMode(item?.overwriteMode) !== normalizedTargetMode) continue;
 
+        const resolvedSnapshotKey = resolveSnapshotKeyForRecord(item);
         const normalized = {
             ...item,
-            overwriteMode: 'versioned',
-            snapshotKey: resolveSnapshotKeyForRecord(item),
-            snapshotName: resolveSnapshotKeyForRecord(item) ? `${resolveSnapshotKeyForRecord(item)}.html` : (item?.snapshotName || ''),
-            snapshotFolderName: resolveSnapshotKeyForRecord(item) || item?.snapshotFolderName || '',
+            overwriteMode: normalizedTargetMode,
+            snapshotKey: resolvedSnapshotKey,
+            snapshotName: normalizedTargetMode === 'overwrite'
+                ? getOverwriteSnapshotFileName()
+                : (resolvedSnapshotKey ? `${resolvedSnapshotKey}.html` : (item?.snapshotName || '')),
+            snapshotFolderName: normalizedTargetMode === 'overwrite'
+                ? '__overwrite__'
+                : (resolvedSnapshotKey || item?.snapshotFolderName || ''),
             fingerprint: normalizeSyncFingerprint(String(item?.fingerprint || '').replace(/^#/, '').trim())
         };
 
@@ -6613,6 +7492,10 @@ function normalizeVersionedInfoLogLedgerRecords(value) {
 
     deduped.sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime());
     return deduped.slice(0, 1000);
+}
+
+function normalizeVersionedInfoLogLedgerRecords(value) {
+    return normalizeInfoLogRecordsByMode(value, 'versioned');
 }
 
 function normalizeVersionedInfoLogLedger(value) {
@@ -6641,6 +7524,50 @@ function importVersionedInfoLogMarkdownToLedger(text) {
         records: normalizeVersionedInfoLogLedgerRecords(records),
         baselineMarkers: parseVersionedInfoLogBaselineMarkersFromMarkdown(text)
     };
+}
+
+function buildInfoLogRecordsFromSources({ syncHistory = [], importedCandidates = [], targetMode = 'versioned' } = {}) {
+    const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
+    const sourceRecords = [];
+
+    sourceRecords.push(...(Array.isArray(syncHistory) ? syncHistory : []).filter((record) => (
+        normalizeOverwriteMode(record?.overwriteMode) === normalizedTargetMode
+    )));
+
+    for (const candidate of Array.isArray(importedCandidates) ? importedCandidates : []) {
+        const entries = parseVersionedInfoLogMarkdown(candidate?.text || '');
+        for (const entry of entries) {
+            const record = buildVersionedInfoLogRecordFromEntry(entry);
+            if (!record) continue;
+            if (normalizeOverwriteMode(record?.overwriteMode) !== normalizedTargetMode) continue;
+            sourceRecords.push(record);
+        }
+    }
+
+    return normalizeInfoLogRecordsByMode(sourceRecords, normalizedTargetMode);
+}
+
+function buildLatestOverwriteInfoLogRecords(records = []) {
+    const list = normalizeInfoLogRecordsByMode(records, 'overwrite');
+    if (!list.length) return [];
+
+    const sorted = list.slice().sort((a, b) => {
+        const aTime = parseVersionedInfoLogTimeToMs(a?.time);
+        const bTime = parseVersionedInfoLogTimeToMs(b?.time);
+        if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+            return bTime - aTime;
+        }
+
+        const aSeq = Number.isFinite(Number(a?.seqNumber)) ? Number(a.seqNumber) : -1;
+        const bSeq = Number.isFinite(Number(b?.seqNumber)) ? Number(b.seqNumber) : -1;
+        if (aSeq !== bSeq) {
+            return bSeq - aSeq;
+        }
+
+        return 0;
+    });
+
+    return sorted.length > 0 ? [sorted[0]] : [];
 }
 
 function buildVersionedInfoLogTableLines(records, lang = 'zh_CN') {
@@ -6871,12 +7798,12 @@ function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN', options = {}) {
 
     const lines = [];
     lines.push(isOverwriteLog
-        ? (isZh ? '# 覆盖备注log（仅展示）' : '# Overwrite Notes Log (Display Only)')
+        ? (isZh ? '# 覆盖备注log（覆盖记录）' : '# Overwrite Notes Log (Overwrite Records)')
         : (isZh ? '# 备份历史log（实时备注）' : '# Backup History Log (Real-time Notes)'));
     lines.push('');
     lines.push(`${isZh ? '生成时间' : 'Generated at'}: ${formatVersionedInfoLogTime(new Date().toISOString())}`);
     lines.push(isOverwriteLog
-        ? (isZh ? '说明：此文件仅用于覆盖模式备注展示，不参与恢复索引。' : 'Note: this file is for overwrite-mode notes display only and is not used as a restore index.')
+        ? (isZh ? '说明：此文件只记录当前覆盖快照的备注、哈希与变化统计；扩展内不会额外生成旧覆盖快照。若使用云端2（GitHub），旧版本可借助仓库提交历史查看。' : 'Note: this file only stores note/hash/change stats for the current overwrite snapshot. The extension does not create extra old overwrite snapshots here. If you use Cloud 2 (GitHub), older overwrite versions can be checked through repo commit history.')
         : (isZh ? '说明：此文件用于多版本恢复索引与备注展示。' : 'Note: this file is used for versioned restore indexing and notes display.'));
 
     if (!isOverwriteLog && baselineMarkers.length > 0) {
@@ -6967,16 +7894,20 @@ function buildVersionedInfoLogRowMergeKey(rowLine) {
     const time = valueAt(2);
     const directionKey = valueAt(6);
     const strategy = valueAt(8);
+    const note = valueAt(1);
+    const seq = valueAt(0);
 
-    if (snapshotKey) {
+    if (snapshotKey && snapshotKey !== '__overwrite__') {
         return `snapshot:${snapshotKey}`;
+    }
+    if (strategy === 'overwrite' || snapshotKey === '__overwrite__') {
+        return `${time}|${directionKey}|overwrite|${hash}|${note}|${seq}`;
     }
     if (hash) {
         return `hash:${hash}`;
     }
 
-    const note = valueAt(1);
-    return `${time}|${directionKey}|${strategy}|${note}`;
+    return `${time}|${directionKey}|${strategy}|${note}|${seq}`;
 }
 
 function mergeVersionedInfoLogMarkdown(existingText, generatedText, options = {}) {
@@ -7047,7 +7978,7 @@ async function fetchBestExistingVersionedInfoLogText({ cachedMarkdown = '' } = {
             && settings.username
             && settings.password
         ) {
-            tasks.push(fetchRemoteVersionedInfoLog('webdav', settings));
+            tasks.push(fetchRemoteInfoLog('webdav', settings, { targetMode: normalizedTargetMode }));
         }
 
         if (
@@ -7057,7 +7988,7 @@ async function fetchBestExistingVersionedInfoLogText({ cachedMarkdown = '' } = {
             && settings.githubRepoName
             && settings.githubRepoBranch
         ) {
-            tasks.push(fetchRemoteVersionedInfoLog('github', settings));
+            tasks.push(fetchRemoteInfoLog('github', settings, { targetMode: normalizedTargetMode }));
         }
 
         if (tasks.length > 0) {
@@ -7108,8 +8039,9 @@ async function getVerifiedLocalVersionedInfoLogReference(state = {}) {
     return '';
 }
 
-async function fetchExistingVersionedInfoLogCandidates({ cachedMarkdown = '', localReferenceMarkdown = '' } = {}) {
+async function fetchExistingInfoLogCandidates({ cachedMarkdown = '', localReferenceMarkdown = '', targetMode = 'versioned' } = {}) {
     const candidates = [];
+    const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
 
     const pushCandidate = (text, source = '') => {
         const normalized = String(text || '').trim();
@@ -7159,12 +8091,21 @@ async function fetchExistingVersionedInfoLogCandidates({ cachedMarkdown = '', lo
             settled.forEach((item) => {
                 if (item.status !== 'fulfilled') return;
                 if (item.value?.indexFound !== true) return;
+                if (normalizeOverwriteMode(item.value?.targetMode || normalizedTargetMode) !== normalizedTargetMode) return;
                 pushCandidate(item.value?.text || '', item.value?.source || 'remote');
             });
         }
     } catch (_) { }
 
     return candidates;
+}
+
+async function fetchExistingVersionedInfoLogCandidates({ cachedMarkdown = '', localReferenceMarkdown = '' } = {}) {
+    return fetchExistingInfoLogCandidates({
+        cachedMarkdown,
+        localReferenceMarkdown,
+        targetMode: 'versioned'
+    });
 }
 
 function buildVersionedInfoLogLedgerFromSources({ syncHistory = [], importedCandidates = [], baselineMarkers = [] } = {}) {
@@ -7187,7 +8128,7 @@ function buildVersionedInfoLogLedgerFromSources({ syncHistory = [], importedCand
     });
 }
 
-async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'versioned', syncHistory = [] } = {}) {
+async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'versioned', syncHistory = [], suppressLocalDownloadNotification = false, allowedTargets = null } = {}) {
     const state = await browserAPI.storage.local.get([
         'versionedInfoLogEnabled',
         'versionedInfoLogEvery',
@@ -7207,8 +8148,6 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
     ]);
 
     const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
-    const forceVersionedPolicy = normalizedOverwriteMode === 'versioned';
-    const shouldUploadOverwriteNotesLog = normalizedOverwriteMode === 'overwrite';
     const isInitialSyncHistory = Array.isArray(syncHistory) && syncHistory.length <= 1;
     const shouldPreserveAndMergeVersionedLog = normalizedOverwriteMode === 'versioned';
     const previousMode = normalizeOverwriteMode(state.lastSyncedOverwriteMode);
@@ -7257,17 +8196,18 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
         } catch (_) { }
     };
 
-    const enabled = forceVersionedPolicy
-        ? true
-        : (state.versionedInfoLogEnabled !== false);
-    if (!enabled) {
-        await persistModeState();
-        return { success: false, skipped: true, reason: 'disabled' };
+    if (normalizedOverwriteMode === 'overwrite') {
+        await browserAPI.storage.local.set({
+            versionedInfoLogEnabled: true,
+            versionedInfoLogEvery: 1,
+            versionedInfoLogCounter: 0,
+            lastSyncedOverwriteMode: normalizedOverwriteMode,
+            ...(baselineMarkersChanged ? { versionedInfoLogBaselineMarkers: baselineMarkers } : {})
+        });
+        return { success: true, skipped: true, reason: 'disabled-in-overwrite-mode' };
     }
 
-    const every = (forceVersionedPolicy || isInitialSyncHistory)
-        ? 1
-        : clampVersionedInfoLogEvery(state.versionedInfoLogEvery);
+    const every = 1;
     const currentCounter = Number.isFinite(Number(state.versionedInfoLogCounter))
         ? Number(state.versionedInfoLogCounter)
         : 0;
@@ -7291,9 +8231,6 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
     });
 
     const versionedFileName = lang === 'zh_CN' ? '备份历史log.md' : 'backup-history-log.md';
-    const overwriteNotesFileName = lang === 'zh_CN' ? '覆盖备注log.md' : 'overwrite-notes-log.md';
-
-
     let ledger = storedLedger;
     let importedCandidates = [];
     if (shouldPreserveAndMergeVersionedLog) {
@@ -7331,22 +8268,13 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
         });
     }
 
-    const generatedVersionedContent = normalizedOverwriteMode === 'versioned'
+    const versionedContent = normalizedOverwriteMode === 'versioned'
         ? buildVersionedInfoLogMarkdown(ledger.records, lang, {
             targetMode: 'versioned',
             baselineMarkers,
             segmentByBaseline: true
         })
-        : buildVersionedInfoLogMarkdown(syncHistory, lang, {
-            targetMode: 'versioned',
-            baselineMarkers,
-            segmentByBaseline: true
-        });
-    const overwriteNotesContent = buildVersionedInfoLogMarkdown(syncHistory, lang, {
-        targetMode: 'overwrite',
-        segmentByBaseline: false
-    });
-    const versionedContent = generatedVersionedContent;
+        : '';
 
     const shouldRetainPreviousLocalVersionedFile = normalizedOverwriteMode === 'versioned'
         && shouldCreateLocalVersionedInfoLogArchive(baselineReason)
@@ -7361,10 +8289,10 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
             createdAt: new Date().toISOString(),
             records: ledger.records,
             baselineMarkers,
+            targetMode: 'versioned',
             instanceId: localVersionedInstanceId
         })
         : versionedFileName;
-
     const buildLocalMarkdownRelativePath = ({ folderKey = 'backup_root', localFileName = '' } = {}) => {
         const exportRootFolder = getExportRootFolderByLang(lang);
         const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
@@ -7421,27 +8349,35 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
         return cleaned;
     };
 
-    const uploadMarkdownLogFile = async ({ fileName, content, folderKey = 'backup_root', localFileNameOverride = '', localConflictAction = 'overwrite', localOnly = false, localCleanupDownloadId = null, localCleanupFileName = '', localCleanupRelativePath = '' }) => {
+    const allowWebDAV = isBackupTargetAllowed(allowedTargets, 'webdav');
+    const allowGitHubRepo = isBackupTargetAllowed(allowedTargets, 'github_repo');
+    const allowLocal = isBackupTargetAllowed(allowedTargets, 'local');
+
+    const uploadMarkdownLogFile = async ({ fileName, content, folderKey = 'backup_root', localFileNameOverride = '', localConflictAction = 'overwrite', localOnly = false, localCleanupDownloadId = null, localCleanupFileName = '', localCleanupRelativePath = '', suppressLocalShelfNotification = false }) => {
         const remoteResults = localOnly
             ? [{ success: false, skipped: true, reason: 'local-only' }, { success: false, skipped: true, reason: 'local-only' }]
             : await Promise.all([
-                uploadExportFileToWebDAV({
-                    lang,
-                    folderKey,
-                    fileName,
-                    content,
-                    contentType: 'text/markdown;charset=utf-8'
-                }),
-                uploadExportFileToGitHubRepo({
-                    lang,
-                    folderKey,
-                    fileName,
-                    content
-                })
+                allowWebDAV
+                    ? uploadExportFileToWebDAV({
+                        lang,
+                        folderKey,
+                        fileName,
+                        content,
+                        contentType: 'text/markdown;charset=utf-8'
+                    })
+                    : Promise.resolve({ success: false, skipped: true, reason: 'target-not-allowed' }),
+                allowGitHubRepo
+                    ? uploadExportFileToGitHubRepo({
+                        lang,
+                        folderKey,
+                        fileName,
+                        content
+                    })
+                    : Promise.resolve({ success: false, skipped: true, reason: 'target-not-allowed' })
             ]);
         const [webdav, githubRepo] = remoteResults;
 
-        const localEnabled = state.defaultDownloadEnabled === true;
+        const localEnabled = state.defaultDownloadEnabled === true && allowLocal;
         let local = { success: false, skipped: true, error: 'Local backup disabled' };
 
         if (localEnabled) {
@@ -7457,77 +8393,97 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
                 });
             }
 
-            local = await new Promise((resolve) => {
-                browserAPI.downloads.download({
-                    url: dataUrl,
-                    filename: relativePath,
-                    saveAs: false,
-                    conflictAction: localConflictAction === 'uniquify' ? 'uniquify' : 'overwrite'
-                }, (downloadId) => {
-                    if (browserAPI.runtime?.lastError) {
-                        resolve({ success: false, error: browserAPI.runtime.lastError.message });
-                    } else {
-                        resolve({ success: true, downloadId, fileName: localFileName, relativePath });
-                    }
-                });
+            const localResult = await downloadDataUrlWithShelfControl({
+                url: dataUrl,
+                filename: relativePath,
+                conflictAction: localConflictAction === 'uniquify' ? 'uniquify' : 'overwrite',
+                suppressShelfNotification: suppressLocalShelfNotification === true
             });
+            local = localResult.success === true
+                ? { success: true, downloadId: localResult.downloadId, fileName: localFileName, relativePath }
+                : { success: false, error: localResult.error };
         }
 
         const success = (webdav?.success === true) || (githubRepo?.success === true) || (local?.success === true);
-        return { success, webdav, githubRepo, local, fileName, localFileName: String(local?.fileName || localFileNameOverride || fileName || '') };
+        const targetSummary = createBackupTargetSummary(allowedTargets);
+        mergeBackupTargetAttempt(targetSummary, 'webdav', webdav);
+        mergeBackupTargetAttempt(targetSummary, 'github_repo', githubRepo);
+        mergeBackupTargetAttempt(targetSummary, 'local', local);
+        finalizeBackupTargetSummary(targetSummary);
+        return { success, webdav, githubRepo, local, fileName, localFileName: String(local?.fileName || localFileNameOverride || fileName || ''), targetSummary };
     };
 
     const previousLocalVersionedFileName = String(state.versionedInfoLogLastLocalFileName || '').trim();
     const shouldCleanupPreviousLocalVersionedFile = normalizedOverwriteMode === 'versioned'
         && !shouldRetainPreviousLocalVersionedFile;
 
-    const versionedResult = await uploadMarkdownLogFile({
-        fileName: versionedFileName,
-        content: versionedContent,
-        folderKey: 'backup_root_versioned',
-        localFileNameOverride: normalizedOverwriteMode === 'versioned'
-            ? currentLocalVersionedFileName
-            : '',
-        localCleanupDownloadId: shouldCleanupPreviousLocalVersionedFile
-            ? state.versionedInfoLogLastLocalDownloadId
-            : null,
-        localCleanupFileName: shouldCleanupPreviousLocalVersionedFile
-            ? previousLocalVersionedFileName
-            : '',
-        localCleanupRelativePath: shouldCleanupPreviousLocalVersionedFile
-            ? buildLocalMarkdownRelativePath({
-                folderKey: 'backup_root_versioned',
-                localFileName: previousLocalVersionedFileName
-            })
-            : ''
-    });
-
-    let overwriteNotesResult = {
+    let versionedResult = {
         success: false,
         skipped: true,
-        reason: shouldUploadOverwriteNotesLog ? 'not-run' : 'skip-in-versioned-mode',
-        fileName: overwriteNotesFileName
+        reason: normalizedOverwriteMode === 'versioned' ? 'not-run' : 'skip-in-overwrite-mode',
+        fileName: versionedFileName
     };
 
-    if (shouldUploadOverwriteNotesLog) {
-        overwriteNotesResult = await uploadMarkdownLogFile({
-            fileName: overwriteNotesFileName,
-            content: overwriteNotesContent,
-            folderKey: 'backup_root_overwrite'
+    if (normalizedOverwriteMode === 'versioned') {
+        versionedResult = await uploadMarkdownLogFile({
+            fileName: versionedFileName,
+            content: versionedContent,
+            folderKey: 'backup_root_versioned',
+            localFileNameOverride: currentLocalVersionedFileName,
+            localCleanupDownloadId: shouldCleanupPreviousLocalVersionedFile
+                ? state.versionedInfoLogLastLocalDownloadId
+                : null,
+            localCleanupFileName: shouldCleanupPreviousLocalVersionedFile
+                ? previousLocalVersionedFileName
+                : '',
+            localCleanupRelativePath: shouldCleanupPreviousLocalVersionedFile
+                ? buildLocalMarkdownRelativePath({
+                    folderKey: 'backup_root_versioned',
+                    localFileName: previousLocalVersionedFileName
+                })
+                : '',
+            suppressLocalShelfNotification: suppressLocalDownloadNotification === true
         });
     }
 
-    const success = versionedResult?.success === true || overwriteNotesResult?.success === true;
+    const webdavUploadFailures = [{
+        fileName: versionedFileName,
+        webdav: versionedResult?.webdav
+    }].filter(item => item && item.webdav && item.webdav.skipped !== true && item.webdav.success !== true)
+        .map(item => ({
+            fileName: item.fileName,
+            error: item.webdav.error || '上传到 WebDAV 失败'
+        }));
+
+    const githubUploadFailures = [{
+        fileName: versionedFileName,
+        githubRepo: versionedResult?.githubRepo
+    }].filter(item => item && item.githubRepo && item.githubRepo.skipped !== true && item.githubRepo.success !== true)
+        .map(item => ({
+            fileName: item.fileName,
+            path: item.githubRepo.path || '',
+            error: item.githubRepo.error || '上传到 GitHub 仓库失败'
+        }));
+
+    if (webdavUploadFailures.length > 0) {
+        console.warn(`[syncVersionedInfoLogIfNeeded] WebDAV 上传失败: ${webdavUploadFailures.map(item => `${item.fileName} -> ${item.error}`).join(' | ')}`);
+    }
+
+    if (githubUploadFailures.length > 0) {
+        console.warn(`[syncVersionedInfoLogIfNeeded] GitHub 上传失败: ${githubUploadFailures.map(item => `${item.fileName}${item.path ? ` (${item.path})` : ''} -> ${item.error}`).join(' | ')}`);
+    }
+
+    const success = versionedResult?.success === true;
 
     try {
         const storagePayload = {
-            versionedInfoLogLastMarkdown: versionedContent,
             lastSyncedOverwriteMode: normalizedOverwriteMode,
             ...(baselineMarkersChanged ? { versionedInfoLogBaselineMarkers: baselineMarkers } : {}),
             ...(normalizedOverwriteMode === 'versioned' ? {
+                versionedInfoLogLastMarkdown: versionedContent,
                 versionedInfoLogLedger: ledger,
-                ...(localVersionedInstanceId ? { versionedInfoLogLocalInstanceId: localVersionedInstanceId } : {})
-            } : {})
+            } : {}),
+            ...(localVersionedInstanceId ? { versionedInfoLogLocalInstanceId: localVersionedInstanceId } : {})
         };
 
         if (versionedResult?.local?.success === true && normalizedOverwriteMode === 'versioned') {
@@ -7550,12 +8506,11 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
         skipped: false,
         every,
         fileName: versionedFileName,
-        overwriteFileName: overwriteNotesFileName,
         webdav: versionedResult?.webdav,
         githubRepo: versionedResult?.githubRepo,
         local: versionedResult?.local,
         versioned: versionedResult,
-        overwriteNotes: overwriteNotesResult,
+        targetSummary: versionedResult?.targetSummary || createBackupTargetSummary(allowedTargets),
         importedSourceCount: importedCandidates.length,
         ledgerRecordCount: Array.isArray(ledger?.records) ? ledger.records.length : 0
     };
@@ -7875,17 +8830,21 @@ async function buildCurrentChangesManualExportArtifact({ mode, format, lang, exp
     return artifacts.find(item => item && item.mode === normalizedMode && item.format === normalizedFormat) || artifacts[0] || null;
 }
 
-async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang, overwriteMode }) {
+async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang, overwriteMode, suppressLocalDownloadNotification = false, allowedTargets = null }) {
     const list = Array.isArray(artifacts) ? artifacts : [];
-    if (list.length === 0) return { success: true, skipped: true };
+    const targetSummary = createBackupTargetSummary(allowedTargets);
+    if (list.length === 0) return { success: true, skipped: true, targetSummary: finalizeBackupTargetSummary(targetSummary) };
 
     const exportRootFolder = getExportRootFolderByLang(lang);
     const overwriteFolder = getOverwriteFolderByLang(lang);
+    const allowWebDAV = isBackupTargetAllowed(allowedTargets, 'webdav');
+    const allowGitHubRepo = isBackupTargetAllowed(allowedTargets, 'github_repo');
+    const allowLocal = isBackupTargetAllowed(allowedTargets, 'local');
 
     const localConfig = await browserAPI.storage.local.get([
         'defaultDownloadEnabled'
     ]);
-    const localEnabled = localConfig.defaultDownloadEnabled === true;
+    const localEnabled = localConfig.defaultDownloadEnabled === true && allowLocal;
 
     const tasks = [];
 
@@ -7905,19 +8864,23 @@ async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang,
         tasks.push((async () => {
             try {
                 const [webdav, githubRepo] = await Promise.all([
-                    uploadExportFileToWebDAV({
-                        lang,
-                        folderKey: cloudFolderKey,
-                        fileName,
-                        content: artifact.content,
-                        contentType: artifact.contentType
-                    }),
-                    uploadExportFileToGitHubRepo({
-                        lang,
-                        folderKey: cloudFolderKey,
-                        fileName,
-                        content: artifact.content
-                    })
+                    allowWebDAV
+                        ? uploadExportFileToWebDAV({
+                            lang,
+                            folderKey: cloudFolderKey,
+                            fileName,
+                            content: artifact.content,
+                            contentType: artifact.contentType
+                        })
+                        : Promise.resolve({ success: false, skipped: true, reason: 'target-not-allowed' }),
+                    allowGitHubRepo
+                        ? uploadExportFileToGitHubRepo({
+                            lang,
+                            folderKey: cloudFolderKey,
+                            fileName,
+                            content: artifact.content
+                        })
+                        : Promise.resolve({ success: false, skipped: true, reason: 'target-not-allowed' })
                 ]);
 
                 const localPath = `${exportRootFolder}/${relativeSnapshotFolder}/${fileName}`;
@@ -7925,19 +8888,11 @@ async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang,
 
                 if (localEnabled) {
                     const dataUrl = `data:${artifact.contentType || 'text/plain;charset=utf-8'},${encodeURIComponent(String(artifact.content))}`;
-                    local = await new Promise((resolve) => {
-                        browserAPI.downloads.download({
-                            url: dataUrl,
-                            filename: localPath,
-                            saveAs: false,
-                            conflictAction: overwriteMode === 'overwrite' ? 'overwrite' : 'uniquify'
-                        }, (downloadId) => {
-                            if (browserAPI.runtime?.lastError) {
-                                resolve({ success: false, error: browserAPI.runtime.lastError.message });
-                            } else {
-                                resolve({ success: true, downloadId });
-                            }
-                        });
+                    local = await downloadDataUrlWithShelfControl({
+                        url: dataUrl,
+                        filename: localPath,
+                        conflictAction: overwriteMode === 'overwrite' ? 'overwrite' : 'uniquify',
+                        suppressShelfNotification: suppressLocalDownloadNotification === true
                     });
                 }
 
@@ -7955,8 +8910,37 @@ async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang,
     }
 
     const results = await Promise.all(tasks);
+    results.forEach((item) => {
+        mergeBackupTargetAttempt(targetSummary, 'webdav', item?.webdav);
+        mergeBackupTargetAttempt(targetSummary, 'github_repo', item?.githubRepo);
+        mergeBackupTargetAttempt(targetSummary, 'local', item?.local);
+    });
+    finalizeBackupTargetSummary(targetSummary);
+
+    const webdavUploadFailures = results
+        .filter(item => item && item.webdav && item.webdav.skipped !== true && item.webdav.success !== true)
+        .map(item => ({
+            fileName: item.fileName || '',
+            error: item.webdav.error || '上传到 WebDAV 失败'
+        }));
+    const githubUploadFailures = results
+        .filter(item => item && item.githubRepo && item.githubRepo.skipped !== true && item.githubRepo.success !== true)
+        .map(item => ({
+            fileName: item.fileName || '',
+            path: item.githubRepo.path || '',
+            error: item.githubRepo.error || '上传到 GitHub 仓库失败'
+        }));
+
+    if (webdavUploadFailures.length > 0) {
+        console.warn(`[uploadCurrentChangesArtifactsToTargets] WebDAV 上传失败: ${webdavUploadFailures.map(item => `${item.fileName} -> ${item.error}`).join(' | ')}`);
+    }
+
+    if (githubUploadFailures.length > 0) {
+        console.warn(`[uploadCurrentChangesArtifactsToTargets] GitHub 上传失败: ${githubUploadFailures.map(item => `${item.fileName}${item.path ? ` (${item.path})` : ''} -> ${item.error}`).join(' | ')}`);
+    }
+
     const success = results.some(r => r && r.success === true);
-    return { success, results };
+    return { success, results, targetSummary };
 }
 
 
@@ -8002,7 +8986,9 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
             artifacts,
             naming,
             lang,
-            overwriteMode
+            overwriteMode,
+            suppressLocalDownloadNotification: options.suppressLocalDownloadNotification === true,
+            allowedTargets: options.allowedTargets || null
         });
     } catch (error) {
         console.warn('[exportCurrentChangesArchiveToCloud] failed:', error);
@@ -8190,7 +9176,25 @@ async function ensureWebDAVCollectionPathExists(serverAddress, pathLike, authHea
     for (const segment of segments) {
         currentSegments.push(segment);
         const collectionUrl = buildWebDAVResourceUrl(serverAddress, currentSegments.join('/'), { collection: true });
-        await ensureWebDAVCollectionExists(collectionUrl, authHeader, errorPrefix);
+        const normalizedUrl = normalizeWebDAVFetchUrl(collectionUrl);
+        const cacheKey = `${normalizedUrl}|${authHeader}`;
+
+        if (ensuredWebDAVCollectionCache.has(cacheKey)) {
+            await ensuredWebDAVCollectionCache.get(cacheKey);
+            continue;
+        }
+
+        const ensureTask = ensureWebDAVCollectionExists(collectionUrl, authHeader, errorPrefix)
+            .catch((error) => {
+                ensuredWebDAVCollectionCache.delete(cacheKey);
+                throw error;
+            });
+
+        if (ensuredWebDAVCollectionCache.size > 256) {
+            ensuredWebDAVCollectionCache.clear();
+        }
+        ensuredWebDAVCollectionCache.set(cacheKey, ensureTask);
+        await ensureTask;
     }
 }
 
@@ -8280,9 +9284,17 @@ async function uploadExportFileToGitHubRepo({ lang, folderKey, fileName, content
             return { success: true, path: result.path || filePath, htmlUrl: result.htmlUrl || null };
         }
 
-        return { success: false, error: result?.error || '上传到 GitHub 仓库失败' };
+        return {
+            success: false,
+            error: result?.error || '上传到 GitHub 仓库失败',
+            path: result?.path || filePath
+        };
     } catch (error) {
-        return { success: false, error: error?.message || '上传到 GitHub 仓库失败' };
+        return {
+            success: false,
+            error: error?.message || '上传到 GitHub 仓库失败',
+            path: filePath
+        };
     }
 }
 
@@ -8347,13 +9359,17 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
     // 仅支持默认下载方式（浏览器下载目录）
     const defaultDownloadEnabled = config.defaultDownloadEnabled === true;
     const forceEnable = options.forceEnable === true;
+    const forceShowDownloadNotification = options.forceShowDownloadNotification === true;
+    const waitForDownloadCompletion = options.waitForDownloadCompletion !== false;
 
     if (!defaultDownloadEnabled && !forceEnable) {
         throw new Error("本地备份未启用或路径未配置");
     }
 
     try {
-        const htmlContent = convertToEdgeHTML(bookmarks);
+        const htmlContent = typeof options.htmlContent === 'string'
+            ? options.htmlContent
+            : convertToEdgeHTML(bookmarks);
 
         // 获取覆盖策略设置
         const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
@@ -8382,7 +9398,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
         // 默认下载方式
         // 根据设置决定是否临时禁用下载通知栏
-        const shouldHideDownloadShelf = config.hideDownloadShelf !== false; // 默认为true
+        const shouldHideDownloadShelf = !forceShowDownloadNotification && config.hideDownloadShelf !== false; // 默认为true
 
         // 检查是否有下载栏权限
         const hasDownloadShelfPermission = await new Promise(resolve => {
@@ -8399,6 +9415,13 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
         // 标记开始书签备份
         isBookmarkBackupInProgress = true;
+
+        if (forceShowDownloadNotification && hasDownloadShelfPermission) {
+            try {
+                await browserAPI.downloads.setShelfEnabled(true);
+                lastVisibleBookmarkDownloadAt = Date.now();
+            } catch (_) { }
+        }
 
         // 临时禁用下载通知栏（如果设置了且有权限）
         if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
@@ -8431,20 +9454,12 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
                 });
             });
 
-            // 监听下载完成事件
-            await new Promise(resolve => {
-                const onDownloadComplete = (delta) => {
-                    if (delta.id === downloadId && (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted'))) {
-                        browserAPI.downloads.onChanged.removeListener(onDownloadComplete);
-                        resolve();
-                    }
-                };
-
-                browserAPI.downloads.onChanged.addListener(onDownloadComplete);
-
-                // 设置安全超时，以防下载事件未触发
-                setTimeout(resolve, 5000);
-            });
+            if (waitForDownloadCompletion) {
+                const downloadTerminalState = await waitForDownloadTerminalState(downloadId, 1800);
+                if (downloadTerminalState === 'interrupted') {
+                    throw new Error('本地下载被中断');
+                }
+            }
 
             // 恢复下载通知栏显示
             if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
@@ -8476,6 +9491,145 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
         return result;
     } catch (error) {
         throw error;
+    }
+}
+
+async function waitForDownloadTerminalState(downloadId, timeoutMs = 5000) {
+    const normalizedId = Number(downloadId);
+    if (!Number.isFinite(normalizedId)) {
+        return 'interrupted';
+    }
+
+    const readCurrentState = async () => {
+        try {
+            const results = await new Promise((resolve) => {
+                browserAPI.downloads.search({ id: normalizedId }, (items) => {
+                    resolve(Array.isArray(items) ? items : []);
+                });
+            });
+            const item = results[0];
+            const state = String(item?.state || '').trim().toLowerCase();
+            return state || '';
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const immediateState = await readCurrentState();
+    if (immediateState === 'complete' || immediateState === 'interrupted') {
+        return immediateState;
+    }
+
+    return await new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = null;
+
+        const cleanup = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            try {
+                browserAPI.downloads.onChanged.removeListener(onDownloadComplete);
+            } catch (_) { }
+        };
+
+        const finish = (state) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(state);
+        };
+
+        const onDownloadComplete = (delta) => {
+            if (delta.id !== normalizedId) return;
+            const state = String(delta?.state?.current || '').trim().toLowerCase();
+            if (state === 'complete' || state === 'interrupted') {
+                finish(state);
+            }
+        };
+
+        try {
+            browserAPI.downloads.onChanged.addListener(onDownloadComplete);
+        } catch (_) { }
+
+        timeoutId = setTimeout(async () => {
+            const currentState = await readCurrentState();
+            finish(currentState === 'complete' || currentState === 'interrupted' ? currentState : 'timeout');
+        }, Math.max(200, Number(timeoutMs) || 5000));
+
+        readCurrentState()
+            .then((state) => {
+                if (state === 'complete' || state === 'interrupted') {
+                    finish(state);
+                }
+            })
+            .catch(() => { });
+    });
+}
+
+async function downloadDataUrlWithShelfControl({
+    url,
+    filename,
+    conflictAction = 'overwrite',
+    suppressShelfNotification = false,
+    waitTimeoutMs = 1800
+} = {}) {
+    const shouldSuppress = suppressShelfNotification === true
+        && !(
+            lastVisibleBookmarkDownloadAt > 0
+            && (Date.now() - lastVisibleBookmarkDownloadAt) < 4000
+        );
+
+    const hasDownloadShelfPermission = shouldSuppress
+        ? await new Promise((resolve) => {
+            try {
+                browserAPI.permissions.contains({
+                    permissions: ['downloads.shelf']
+                }, (result) => {
+                    resolve(result === true);
+                });
+            } catch (_) {
+                resolve(false);
+            }
+        })
+        : false;
+
+    if (shouldSuppress && hasDownloadShelfPermission) {
+        try {
+            await browserAPI.downloads.setShelfEnabled(false);
+        } catch (_) { }
+    }
+
+    try {
+        const downloadId = await new Promise((resolve, reject) => {
+            browserAPI.downloads.download({
+                url,
+                filename,
+                saveAs: false,
+                conflictAction
+            }, (id) => {
+                if (browserAPI.runtime?.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message));
+                } else {
+                    resolve(id);
+                }
+            });
+        });
+
+        if (shouldSuppress && hasDownloadShelfPermission) {
+            await waitForDownloadTerminalState(downloadId, waitTimeoutMs);
+        }
+
+        return { success: true, downloadId };
+    } catch (error) {
+        return { success: false, error: error?.message || '下载失败' };
+    } finally {
+        if (shouldSuppress && hasDownloadShelfPermission) {
+            try {
+                await browserAPI.downloads.setShelfEnabled(true);
+            } catch (_) { }
+        }
     }
 }
 
@@ -9387,9 +10541,7 @@ async function blobToBase64(blob) {
 
 /**
  * 导出备份历史到云端
- * 支持两种打包模式：
- * - zip: 生成 ZIP 归档文件，每条记录作为独立文件
- * - merge: 生成单一合并文件，所有记录合并在一起
+ * 当前仅支持 ZIP 归档模式，每条记录作为独立文件写入归档。
  * @param {Object} options - 配置选项
  * @returns {Promise<Object>} 导出结果
  */
@@ -9401,7 +10553,7 @@ async function exportSyncHistoryToCloud(options = {}) {
             'historyViewSettings',  // 统一存储的视图设置（WYSIWYG）
             'historySyncEnabled', // 备份历史自动同步开关
             'historySyncFormat',
-            'historySyncPackMode', // 打包模式：'zip' 或 'merge'
+            'historySyncPackMode', // 兼容旧设置；当前统一按 ZIP 归档处理
             'serverAddress',
             'username',
             'password',
@@ -9440,7 +10592,10 @@ async function exportSyncHistoryToCloud(options = {}) {
         });
 
         const format = settings.historySyncFormat || 'json'; // 默认 JSON（包含完整恢复信息）
-        const packMode = settings.historySyncPackMode || 'merge'; // 默认 Merge（生成 backup_history.json）
+        const legacyPackMode = String(settings.historySyncPackMode || 'zip').trim().toLowerCase();
+        if (legacyPackMode && legacyPackMode !== 'zip') {
+            console.warn('[exportSyncHistoryToCloud] 旧的 merge 打包模式已移除，自动回退到 ZIP 归档:', legacyPackMode);
+        }
         const lang = await getCurrentLang();
         const isZh = lang === 'zh_CN';
 
@@ -9460,7 +10615,7 @@ async function exportSyncHistoryToCloud(options = {}) {
         const localEnabled = settings.defaultDownloadEnabled;
 
         // ============= ZIP 归档模式 =============
-        if (packMode === 'zip') {
+        {
             console.log('[exportSyncHistoryToCloud] 使用 ZIP 归档模式');
 
             // Split storage：Zip 模式需要从独立 key 加载 bookmarkTree
@@ -9558,102 +10713,6 @@ async function exportSyncHistoryToCloud(options = {}) {
                 if (localEnabled) {
                     tasks.push(downloadHistoryBinaryLocal(zipBlob, zipFileName, exportRootFolder, historyFolder));
                 }
-            }
-        }
-        // ============= 合并历史模式（用于恢复版本选择） =============
-        else if (packMode === 'merge') {
-            console.log('[exportSyncHistoryToCloud] 使用合并历史模式: backup_history.json');
-
-            if (format !== 'json') {
-                console.warn('[exportSyncHistoryToCloud] 合并历史模式仅支持 JSON，已忽略 format:', format);
-            }
-
-            // 按时间倒序排列（新的在前）
-            const sortedHistory = [...syncHistory].sort((a, b) => {
-                const timeA = new Date(a.time).getTime();
-                const timeB = new Date(b.time).getTime();
-                return timeB - timeA;
-            });
-
-            const exportTime = new Date().toISOString();
-
-            // 流式构建 JSON：逐条加载书签树并序列化，避免同时持有所有树对象导致 OOM
-            const jsonParts = ['['];
-            let firstEntry = true;
-
-            for (const record of sortedHistory) {
-                try {
-                    let bookmarkTree = record?.bookmarkTree || null;
-                    if (!bookmarkTree && record?.hasData) {
-                        const key = `backup_data_${record.time}`;
-                        const data = await browserAPI.storage.local.get([key]);
-                        bookmarkTree = data?.[key] || null;
-                    }
-
-                    if (!bookmarkTree) {
-                        continue;
-                    }
-
-                    const restoreStrategy = String(record?.restoreInfo?.strategy || '').trim().toLowerCase();
-                    const normalizedOverwriteMode = normalizeOverwriteMode(
-                        record?.overwriteMode
-                        || (restoreStrategy === 'overwrite' ? 'overwrite' : 'versioned')
-                    );
-                    const snapshotKey = resolveSnapshotKeyForRecord({
-                        ...(record || {}),
-                        overwriteMode: normalizedOverwriteMode
-                    });
-                    const snapshotName = String(
-                        record?.snapshotName
-                        || (normalizedOverwriteMode === 'overwrite'
-                            ? getOverwriteSnapshotFileName()
-                            : (snapshotKey ? `${snapshotKey}.html` : ''))
-                    ).trim() || null;
-                    const snapshotFolderName = String(
-                        record?.snapshotFolderName
-                        || (normalizedOverwriteMode === 'overwrite' ? '__overwrite__' : (snapshotKey || ''))
-                    ).trim() || null;
-
-                    const entry = {
-                        _exportInfo: {
-                            backupTime: record?.time || null,
-                            exportTime: exportTime,
-                            note: record?.note || null,
-                            seqNumber: record?.seqNumber || null,
-                            fingerprint: record?.fingerprint || null,
-                            stats: record?.bookmarkStats || {},
-                            overwriteMode: normalizedOverwriteMode,
-                            snapshotKey: snapshotKey || null,
-                            snapshotName,
-                            snapshotFolderName,
-                            strategy: restoreStrategy || null,
-                            type: record?.type || null
-                        },
-                        _rawBookmarkTree: bookmarkTree
-                    };
-
-                    if (!firstEntry) jsonParts.push(',');
-                    jsonParts.push(JSON.stringify(entry));
-                    firstEntry = false;
-                    // entry 和 bookmarkTree 在下一次迭代时可被 GC 回收
-                } catch (recordError) {
-                    console.error('[exportSyncHistoryToCloud] 合并历史记录处理失败:', record?.time, recordError);
-                }
-            }
-
-            jsonParts.push(']');
-
-            const fileName = 'backup_history.json';
-            const jsonContent = jsonParts.join('');
-
-            if (webDAVConfigured && webDAVEnabled) {
-                tasks.push(uploadHistoryToWebDAV(jsonContent, fileName, exportRootFolder, historyFolder, settings));
-            }
-            if (githubConfigured && githubEnabled) {
-                tasks.push(uploadHistoryToGitHub(jsonContent, fileName, historyFolder, settings, lang));
-            }
-            if (localEnabled) {
-                tasks.push(downloadHistoryLocal(jsonContent, fileName, exportRootFolder, historyFolder, 'overwrite'));
             }
         }
 
@@ -10044,6 +11103,13 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
     }
 
     isSyncing = true;
+    const progressTracker = createBackupProgressTracker(
+        isManual ? 'manual' : (isSwitchToAutoBackup ? 'switch' : ''),
+        {
+        direction: direction || 'upload'
+        }
+    );
+    let progressClearedEarly = false;
     try {
         // 结果对象，用于存储过程中的信息
         const result = {
@@ -10122,6 +11188,20 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             }
         }
 
+        const backupTargetKeys = [];
+        if (localBackupConfigured) backupTargetKeys.push('local');
+        if (githubRepoConfigured && githubRepoEnabled) backupTargetKeys.push('github_repo');
+        if (webDAVConfigured && webDAVEnabled) backupTargetKeys.push('webdav');
+
+        if (progressTracker.enabled) {
+            await progressTracker.start();
+        }
+
+        if (progressTracker.enabled) {
+            await progressTracker.setTargets(backupTargetKeys);
+            await progressTracker.markTargetsRunning(backupTargetKeys);
+        }
+
         // 获取本地书签
         const localBookmarks = await new Promise((resolve) => {
             browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
@@ -10129,6 +11209,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
 
         const syncTime = new Date().toISOString();
         const snapshotNaming = buildSnapshotNamingContext({ syncTime });
+        const sharedSnapshotHtml = convertToEdgeHTML(localBookmarks);
 
         // 执行备份操作 - 修改为并行执行
         let webDAVSuccess = false;
@@ -10143,12 +11224,22 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         if (localBackupConfigured) {
             const localTask = (async () => {
                 try {
-                    const localResult = await uploadBookmarksToLocal(localBookmarks, snapshotNaming);
+                    await progressTracker.markTarget('local', 'running');
+                    const localResult = await uploadBookmarksToLocal(localBookmarks, {
+                        ...snapshotNaming,
+                        forceShowDownloadNotification: isManual === true,
+                        waitForDownloadCompletion: isManual === true ? false : true,
+                        htmlContent: sharedSnapshotHtml
+                    });
                     localSuccess = true;
                     // 记录文件名信息
                     result.localFileName = localResult.fileName;
+                    await progressTracker.markTarget('local', 'success');
                     return { success: true, fileName: localResult.fileName };
                 } catch (error) {
+                    await progressTracker.markTarget('local', 'failed', {
+                        lastError: `本地备份失败: ${error.message}`
+                    });
                     return { success: false, error: `本地备份失败: ${error.message}` };
                 }
             })();
@@ -10159,22 +11250,40 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         if (githubRepoConfigured && githubRepoEnabled) {
             const githubRepoTask = (async () => {
                 try {
+                    await progressTracker.markTarget('github_repo', 'running');
                     // 只处理上传
                     if (direction === 'upload' || !direction) {
-                        const uploadResult = await uploadBookmarksToGitHubRepo(localBookmarks, snapshotNaming);
+                        const uploadResult = await uploadBookmarksToGitHubRepo(localBookmarks, {
+                            ...snapshotNaming,
+                            htmlContent: sharedSnapshotHtml
+                        });
                         if (uploadResult && uploadResult.success) {
                             githubRepoSuccess = true;
+                            await progressTracker.markTarget('github_repo', 'success');
                             return { success: true };
                         } else if (uploadResult && uploadResult.repoNotConfigured) {
+                            await progressTracker.markTarget('github_repo', 'skipped', {
+                                lastError: 'GitHub 仓库未配置'
+                            });
                             return { success: false, error: 'GitHub 仓库未配置' };
                         } else if (uploadResult && uploadResult.repoDisabled) {
+                            await progressTracker.markTarget('github_repo', 'skipped', {
+                                lastError: 'GitHub 仓库已禁用'
+                            });
                             return { success: false, error: 'GitHub 仓库已禁用' };
                         } else {
+                            await progressTracker.markTarget('github_repo', 'failed', {
+                                lastError: uploadResult?.error || 'GitHub 仓库上传失败'
+                            });
                             return { success: false, error: uploadResult?.error || 'GitHub 仓库上传失败' };
                         }
                     }
+                    await progressTracker.markTarget('github_repo', 'success');
                     return { success: true };
                 } catch (error) {
+                    await progressTracker.markTarget('github_repo', 'failed', {
+                        lastError: `GitHub 仓库备份失败: ${error.message}`
+                    });
                     return { success: false, error: `GitHub 仓库备份失败: ${error.message}` };
                 }
             })();
@@ -10185,20 +11294,35 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         if (webDAVConfigured && webDAVEnabled) {
             const webDAVTask = (async () => {
                 try {
+                    await progressTracker.markTarget('webdav', 'running');
                     // 只处理上传
                     if (direction === 'upload' || !direction) {
-                        const uploadResult = await uploadBookmarks(localBookmarks, snapshotNaming);
+                        const uploadResult = await uploadBookmarks(localBookmarks, {
+                            ...snapshotNaming,
+                            htmlContent: sharedSnapshotHtml
+                        });
                         if (uploadResult.success) {
                             webDAVSuccess = true;
+                            await progressTracker.markTarget('webdav', 'success');
                             return { success: true };
                         } else if (uploadResult.webDAVNotConfigured) {
+                            await progressTracker.markTarget('webdav', 'skipped', {
+                                lastError: 'WebDAV未配置'
+                            });
                             return { success: false, error: 'WebDAV未配置' };
                         } else {
+                            await progressTracker.markTarget('webdav', 'failed', {
+                                lastError: uploadResult.error || 'WebDAV上传失败'
+                            });
                             return { success: false, error: uploadResult.error || 'WebDAV上传失败' };
                         }
                     }
+                    await progressTracker.markTarget('webdav', 'success');
                     return { success: true };
                 } catch (error) {
+                    await progressTracker.markTarget('webdav', 'failed', {
+                        lastError: `WebDAV备份失败: ${error.message}`
+                    });
                     return { success: false, error: `WebDAV备份失败: ${error.message}` };
                 }
             })();
@@ -10244,9 +11368,37 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             }
         }
 
+        const successfulBackupTargets = [];
+        if (webDAVSuccess) successfulBackupTargets.push('webdav');
+        if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
+        if (localSuccess) successfulBackupTargets.push('local');
+
+        if (progressTracker.enabled) {
+            await progressTracker.finalize(syncSuccess ? 'success' : 'error', {
+                lastError: errorMessage
+            });
+            if (syncSuccess) {
+                try {
+                    await setBookmarkChangesDirty(false);
+                } catch (_) { }
+            }
+            stopBadgeBlink();
+            try {
+                await setBadge();
+            } catch (_) { }
+            if (syncSuccess) {
+                try {
+                    await progressTracker.clear({
+                        delayMs: BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS
+                    });
+                    progressClearedEarly = true;
+                } catch (_) { }
+            }
+        }
+
         // 更新备份状态
         const shouldDeferAutoArtifacts = (!isManual && !isSwitchToAutoBackup);
-        await updateSyncStatus(
+        const updateSyncResult = await updateSyncStatus(
             syncDirection,
             syncTime,
             syncStatus,
@@ -10256,9 +11408,18 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             snapshotNaming.fingerprint,
             {
                 localBookmarks,
-                deferAutoArtifacts: shouldDeferAutoArtifacts
+                deferAutoArtifacts: shouldDeferAutoArtifacts,
+                successfulBackupTargets
             }
         );
+        const postSyncWarnings = Array.isArray(updateSyncResult?.postSyncWarnings)
+            ? updateSyncResult.postSyncWarnings.filter(Boolean)
+            : [];
+        postSyncWarnings.forEach((text) => {
+            if (text && !errorMessages.includes(text)) {
+                errorMessages.push(text);
+            }
+        });
 
         // 如果备份成功，并且是手动备份或切换到自动模式触发的备份，则清除活动标志
         if (syncSuccess && (isManual || isSwitchToAutoBackup)) {
@@ -10271,10 +11432,10 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         // 备份成功后，更新角标和缓存
         if (syncSuccess) {
             try {
-                // 更新缓存分析数据
-                await updateAndCacheAnalysis();
                 // 更新角标
                 await setBadge();
+                // 更新缓存分析数据
+                await updateAndCacheAnalysis();
                 // 清理移动和修改历史，避免备份后仍然出现蓝色移动标识或错误的数量统计
                 try {
                     await browserAPI.storage.local.set({ recentMovedIds: [], recentModifiedIds: [] });
@@ -10282,9 +11443,15 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                 try {
                     browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
                 } catch (_) { }
+                await setBookmarkChangesDirty(false);
+                await setBadge();
             } catch (updateError) {
                 console.error('[syncBookmarks] 更新角标和缓存失败:', updateError);
             }
+        } else if (progressTracker.enabled) {
+            try {
+                await setBadge();
+            } catch (_) { }
         }
 
         return {
@@ -10297,8 +11464,26 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             // Original did not explicitly return direction and time here, they were part of updateSyncStatus
         };
     } catch (error) {
+        if (progressTracker.enabled) {
+            try {
+                await progressTracker.finalize('error', {
+                    lastError: error.message || '备份失败'
+                });
+            } catch (_) { }
+            stopBadgeBlink();
+            try {
+                await setBadge();
+            } catch (_) { }
+        }
         return { success: false, error: error.message || '备份失败' };
     } finally {
+        if (progressTracker.enabled && !progressClearedEarly) {
+            try {
+                await progressTracker.clear({
+                    delayMs: BACKUP_PROGRESS_FINAL_STATE_LINGER_MS
+                });
+            } catch (_) { }
+        }
         isSyncing = false;
         await releaseSyncLock();
     }
@@ -10324,8 +11509,73 @@ async function searchBookmarks(query) {
     return { success: false, error: '搜索功能已被移除' };
 }
 
+async function clearExtensionStorageArea(storageArea) {
+    if (!storageArea || typeof storageArea.clear !== 'function') {
+        return;
+    }
+
+    try {
+        await storageArea.clear();
+    } catch (_) { }
+}
+
+async function deleteIndexedDbByName(dbName) {
+    const normalizedName = String(dbName || '').trim();
+    if (!normalizedName) {
+        return;
+    }
+
+    await new Promise((resolve) => {
+        try {
+            const request = indexedDB.deleteDatabase(normalizedName);
+            request.onsuccess = () => resolve();
+            request.onerror = () => resolve();
+            request.onblocked = () => resolve();
+        } catch (_) {
+            resolve();
+        }
+    });
+}
+
+async function clearAllExtensionIndexedDbs() {
+    const dbNames = new Set(['BookmarkFaviconCache']);
+
+    try {
+        if (indexedDB && typeof indexedDB.databases === 'function') {
+            const databases = await indexedDB.databases();
+            if (Array.isArray(databases)) {
+                databases.forEach((info) => {
+                    const name = String(info?.name || '').trim();
+                    if (name) {
+                        dbNames.add(name);
+                    }
+                });
+            }
+        }
+    } catch (_) { }
+
+    for (const dbName of dbNames) {
+        await deleteIndexedDbByName(dbName);
+    }
+}
+
+async function clearAllExtensionCacheStorage() {
+    try {
+        if (!globalThis.caches || typeof globalThis.caches.keys !== 'function') {
+            return;
+        }
+
+        const cacheKeys = await globalThis.caches.keys();
+        if (!Array.isArray(cacheKeys) || cacheKeys.length === 0) {
+            return;
+        }
+
+        await Promise.all(cacheKeys.map((cacheKey) => globalThis.caches.delete(cacheKey).catch(() => false)));
+    } catch (_) { }
+}
+
 // 添加重置所有数据的函数
-// 简化版：清除所有持久化存储 + chrome.runtime.reload()
+// 完整版：清除扩展持久化存储、页面本地存储、IndexedDB、CacheStorage，并重载扩展
 async function resetAllData() {
     try {
         console.log('[resetAllData] 开始完全重置扩展...');
@@ -10341,24 +11591,22 @@ async function resetAllData() {
             }
         } catch (e) { /* 忽略 */ }
 
-        // 2. 删除 IndexedDB 数据库
-        ['BookmarkFaviconCache'].forEach(dbName => {
-            try { indexedDB.deleteDatabase(dbName); } catch (e) { /* 忽略 */ }
-        });
+        // 2. 删除 IndexedDB / CacheStorage
+        await clearAllExtensionIndexedDbs();
+        await clearAllExtensionCacheStorage();
 
-        // 3. 清除 chrome.storage.local
-        await browserAPI.storage.local.clear();
+        // 3. 清除三类扩展存储
+        await clearExtensionStorageArea(browserAPI.storage.local);
+        await clearExtensionStorageArea(browserAPI.storage.session);
+        await clearExtensionStorageArea(browserAPI.storage.sync);
 
-        // 4. 设置标志让将来打开的页面清除 localStorage
-        await browserAPI.storage.local.set({ needClearLocalStorage: true });
-
-        // 5. 清除所有闹钟
+        // 4. 清除所有闹钟
         await browserAPI.alarms.clearAll();
 
         console.log('[resetAllData] 存储已清除，重新加载扩展...');
 
-        // 6. 重新加载扩展（这会自动重置所有内存变量）
-        setTimeout(() => { browserAPI.runtime.reload(); }, 200);
+        // 5. 重新加载扩展，内存态由新的 service worker / 页面上下文自然重建
+        setTimeout(() => { browserAPI.runtime.reload(); }, 350);
 
         return true;
     } catch (error) {
@@ -11781,6 +13029,9 @@ async function continueRestoreRecoveryTransaction() {
             restoreRecordError: restoreRecordResult && restoreRecordResult.success !== true
                 ? String(restoreRecordResult.error || '')
                 : '',
+            restoreRecordWarning: restoreRecordResult && restoreRecordResult.success === true
+                ? String(restoreRecordResult.warning || '')
+                : '',
             ...(executionResult || {})
         }
     } catch (error) {
@@ -13056,34 +14307,34 @@ function convertToEdgeHTML(bookmarks) {
         ? JSON.stringify(htmlMeta, null, 2).replace(/<\/script/gi, '<\\/script')
         : '';
 
-    let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+    const htmlParts = [`<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
 <TITLE>Bookmarks</TITLE>
 <H1>Bookmarks</H1>
-`;
+`];
 
     if (hasHtmlMeta) {
-        html += `<script type="application/json" id="bookmarkBackupMeta">${scriptSafeMetaJson}</script>\n`;
+        htmlParts.push(`<script type="application/json" id="bookmarkBackupMeta">${scriptSafeMetaJson}</script>\n`);
     }
 
-    html += '<DL><p>';
+    htmlParts.push('<DL><p>');
 
     function processBookmarks(bookmarks, level = 0) {
         bookmarks.forEach(bookmark => {
             if (bookmark.children) {
-                html += `${'    '.repeat(level)}<DT><H3>${bookmark.title}</H3>\n`;
-                html += `${'    '.repeat(level)}<DL><p>\n`;
+                htmlParts.push(`${'    '.repeat(level)}<DT><H3>${bookmark.title}</H3>\n`);
+                htmlParts.push(`${'    '.repeat(level)}<DL><p>\n`);
                 processBookmarks(bookmark.children, level + 1);
-                html += `${'    '.repeat(level)}</DL><p>\n`;
+                htmlParts.push(`${'    '.repeat(level)}</DL><p>\n`);
             } else {
-                html += `${'    '.repeat(level)}<DT><A HREF="${bookmark.url}">${bookmark.title}</A>\n`;
+                htmlParts.push(`${'    '.repeat(level)}<DT><A HREF="${bookmark.url}">${bookmark.title}</A>\n`);
             }
         });
     }
 
     processBookmarks(bookmarks);
-    html += '</DL><p>';
-    return html;
+    htmlParts.push('</DL><p>');
+    return htmlParts.join('');
 }
 
 
@@ -13135,6 +14386,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
     console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason, snapshotFingerprint, overwriteMode: options?.overwriteMode });
 
     try {
+        const postSyncWarnings = [];
         const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned' } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
@@ -13515,54 +14767,112 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         const skipAutoArtifacts = options && options.skipAutoArtifacts === true;
         const deferAutoArtifacts = options && options.deferAutoArtifacts === true;
         if (status === 'success' && !skipAutoArtifacts) {
+            const handleArchiveResult = (result) => {
+                if (result && result.success === true && result.skipped !== true) {
+                    console.log('[updateSyncStatus] 当前变化自动归档完成');
+                }
+            };
+
+            const handleVersionedLogResult = (result) => {
+                if (result && result.success === true && result.skipped !== true) {
+                    console.log('[updateSyncStatus] 备份历史log已更新');
+                }
+            };
+
+            const hasExplicitSuccessfulTargets = options
+                && Object.prototype.hasOwnProperty.call(options, 'successfulBackupTargets');
+            const successfulBackupTargets = hasExplicitSuccessfulTargets
+                ? normalizeAllowedBackupTargets(options?.successfulBackupTargets || [])
+                : null;
             const runAutoArtifactsSync = async () => {
                 try {
                     const overwriteStrategy = effectiveOverwriteMode === 'overwrite' ? 'overwrite' : 'versioned';
+                    const archiveResult = await exportCurrentChangesArchiveToCloud({
+                        syncTime: time,
+                        fingerprint,
+                        localBookmarks,
+                        previousBookmarks: lastBookmarkData?.bookmarkTree || null,
+                        explicitMovedIds: explicitMovedIdListForRecord,
+                        overwriteMode: overwriteStrategy,
+                        suppressLocalDownloadNotification: true,
+                        allowedTargets: successfulBackupTargets
+                    });
+                    handleArchiveResult(archiveResult);
+                    collectBackupTargetWarningsFromSummary(
+                        archiveResult?.targetSummary || null,
+                        'changes',
+                        activeLang
+                    ).forEach((text) => appendUniqueWarning(postSyncWarnings, text));
 
-                    const [archiveResult, versionedLogResult] = await Promise.allSettled([
-                        exportCurrentChangesArchiveToCloud({
-                            syncTime: time,
-                            fingerprint,
-                            localBookmarks,
-                            previousBookmarks: lastBookmarkData?.bookmarkTree || null,
-                            explicitMovedIds: explicitMovedIdListForRecord,
-                            overwriteMode: overwriteStrategy
-                        }),
-                        syncVersionedInfoLogIfNeeded({
-                            lang: activeLang,
-                            overwriteMode: overwriteStrategy,
-                            syncHistory: historyToStore
-                        })
-                    ]);
-
-                    if (archiveResult.status === 'fulfilled') {
-                        const result = archiveResult.value;
-                        if (result && result.success === true && result.skipped !== true) {
-                            console.log('[updateSyncStatus] 当前变化自动归档完成');
+                    const infoLogAllowedTargets = deriveInfoLogAllowedTargets(
+                        successfulBackupTargets,
+                        archiveResult?.targetSummary || null,
+                        archiveResult
+                    );
+                    if (successfulBackupTargets instanceof Set && infoLogAllowedTargets instanceof Set) {
+                        const blockedTargets = Array.from(successfulBackupTargets).filter((targetKey) => !infoLogAllowedTargets.has(targetKey));
+                        if (blockedTargets.length > 0) {
+                            console.warn(`[updateSyncStatus] 跳过这些目标的备份历史log写入，因为该目标的变化归档未完整成功: ${blockedTargets.join(', ')}`);
+                            blockedTargets.forEach((targetKey) => {
+                                appendUniqueWarning(
+                                    postSyncWarnings,
+                                    buildBackupTargetWarningMessage(targetKey, 'info_log_skipped', activeLang)
+                                );
+                            });
                         }
-                    } else {
-                        console.warn('[updateSyncStatus] 当前变化自动归档失败:', archiveResult.reason);
                     }
-
-                    if (versionedLogResult.status === 'fulfilled') {
-                        const result = versionedLogResult.value;
-                        if (result && result.success === true && result.skipped !== true) {
-                            console.log('[updateSyncStatus] 备份历史log已更新');
-                        }
-                    } else {
-                        console.warn('[updateSyncStatus] 备份历史log更新失败:', versionedLogResult.reason);
-                    }
+                    const versionedLogResult = await syncVersionedInfoLogIfNeeded({
+                        lang: activeLang,
+                        overwriteMode: overwriteStrategy,
+                        syncHistory: historyToStore,
+                        suppressLocalDownloadNotification: true,
+                        allowedTargets: infoLogAllowedTargets
+                    });
+                    handleVersionedLogResult(versionedLogResult);
+                    collectBackupTargetWarningsFromSummary(
+                        versionedLogResult?.targetSummary || null,
+                        'info_log',
+                        activeLang
+                    ).forEach((text) => appendUniqueWarning(postSyncWarnings, text));
                 } catch (e) {
                     console.warn('[updateSyncStatus] 触发当前变化自动归档失败:', e);
+                    appendUniqueWarning(postSyncWarnings, activeLang === 'en'
+                        ? 'Post-backup archive update failed. Check network or remote service status.'
+                        : '备份后的归档更新失败，请检查网络或远端服务状态。');
                 }
             };
 
             if (deferAutoArtifacts) {
-                enqueueDeferredPostSyncArtifacts(runAutoArtifactsSync);
+                enqueueDeferredPostSyncArtifacts(async () => {
+                    try {
+                        await runAutoArtifactsSync();
+                    } catch (e) {
+                        console.warn('[updateSyncStatus] 延迟执行自动归档失败:', e);
+                    }
+                });
             } else {
                 await runAutoArtifactsSync();
             }
         }
+
+        if (postSyncWarnings.length > 0 && Array.isArray(currentSyncHistory) && currentSyncHistory.length > 0) {
+            const lastRecord = currentSyncHistory[currentSyncHistory.length - 1];
+            if (lastRecord && typeof lastRecord === 'object') {
+                const existingError = String(lastRecord.errorMessage || '').trim();
+                const warningText = postSyncWarnings.join(' | ');
+                lastRecord.errorMessage = existingError
+                    ? `${existingError} | ${warningText}`
+                    : warningText;
+                try {
+                    await browserAPI.storage.local.set({ syncHistory: currentSyncHistory });
+                } catch (_) { }
+            }
+        }
+
+        return {
+            success: true,
+            postSyncWarnings
+        };
 
     } catch (error) {
         throw error;
@@ -13747,13 +15057,22 @@ async function setBadge() { // 不再接收 status 参数
             autoSync = true,
             preferredLang = 'zh_CN',
             autoBackupTimerSettings,
-            [BOOKMARK_CHANGES_DIRTY_KEY]: bookmarkChangesDirty = false
+            [BOOKMARK_CHANGES_DIRTY_KEY]: bookmarkChangesDirty = false,
+            [ACTIVE_BACKUP_PROGRESS_KEY]: activeBackupProgress = null
         } = await browserAPI.storage.local.get({
             autoSync: true,
             preferredLang: 'zh_CN',
             autoBackupTimerSettings: null,
-            [BOOKMARK_CHANGES_DIRTY_KEY]: false
+            [BOOKMARK_CHANGES_DIRTY_KEY]: false,
+            [ACTIVE_BACKUP_PROGRESS_KEY]: null
         });
+
+        if (isTrackedBackupProgressActive(activeBackupProgress)) {
+            startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
+            return;
+        }
+
+        stopBadgeBlink();
 
         let badgeText = '';
         let badgeColor = '';
@@ -14589,6 +15908,11 @@ async function getBackupStatsInternal() {
             stats = await updateAndCacheAnalysis();
         }
 
+        await clearDirtyStateIfAnalysisIsClean(stats, {
+            expectedLastBookmarkChangeTime: lastChangeTime,
+            expectedLastBookmarkDataTimestamp: baselineTs
+        });
+
         const response = {
             lastSyncTime,
             stats: stats,
@@ -14612,11 +15936,29 @@ async function checkBookmarkChangesForAutoBackup() {
         const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
 
         if (backupMode !== 'realtime') {
-            const hasChanges = await getBookmarkChangesDirty();
+            const dirty = await getBookmarkChangesDirty();
+            if (!dirty) {
+                return {
+                    success: true,
+                    hasChanges: false,
+                    changeDescription: ''
+                };
+            }
+
+            const statsResponse = await getBackupStatsInternal();
+            if (!statsResponse || !statsResponse.success || !statsResponse.stats) {
+                return {
+                    success: true,
+                    hasChanges: true,
+                    changeDescription: buildDirtyChangeDescription(preferredLang)
+                };
+            }
+
+            const hasChanges = analysisHasNetChanges(statsResponse.stats);
             return {
                 success: true,
                 hasChanges,
-                changeDescription: hasChanges ? buildDirtyChangeDescription(preferredLang) : ''
+                changeDescription: hasChanges ? buildAnalysisChangeDescription(statsResponse.stats, preferredLang) : ''
             };
         }
 
@@ -14631,73 +15973,10 @@ async function checkBookmarkChangesForAutoBackup() {
             };
         }
 
-        // 检查是否有任何变化（支持“+/-同时存在但净差为0”的场景）
-        const hasChanges = (
-            stats.stats.bookmarkDiff !== 0 ||
-            stats.stats.folderDiff !== 0 ||
-            (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
-            (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
-            (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
-            (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
-            (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
-            (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
-            stats.stats.bookmarkMoved ||
-            stats.stats.bookmarkModified ||
-            stats.stats.folderMoved ||
-            stats.stats.folderModified
-        );
-
-        // 构建变化描述
-        let changeDescription = '';
-        if (hasChanges) {
-            const changes = [];
-            // 数量变化：优先用新增/删除分开显示；否则回退到净差
-            const bmAdded = typeof stats.stats.bookmarkAdded === 'number' ? stats.stats.bookmarkAdded : 0;
-            const bmDeleted = typeof stats.stats.bookmarkDeleted === 'number' ? stats.stats.bookmarkDeleted : 0;
-            const fdAdded = typeof stats.stats.folderAdded === 'number' ? stats.stats.folderAdded : 0;
-            const fdDeleted = typeof stats.stats.folderDeleted === 'number' ? stats.stats.folderDeleted : 0;
-
-            if (bmAdded > 0) {
-                changes.push(`+${bmAdded} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
-            }
-            if (bmDeleted > 0) {
-                changes.push(`-${bmDeleted} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
-            }
-            if (fdAdded > 0) {
-                changes.push(`+${fdAdded} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
-            }
-            if (fdDeleted > 0) {
-                changes.push(`-${fdDeleted} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
-            }
-
-            // 回退：如果没有新增/删除数据，再使用净差
-            if (bmAdded === 0 && bmDeleted === 0 && stats.stats.bookmarkDiff !== 0) {
-                changes.push(`${stats.stats.bookmarkDiff > 0 ? '+' : ''}${stats.stats.bookmarkDiff} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
-            }
-            if (fdAdded === 0 && fdDeleted === 0 && stats.stats.folderDiff !== 0) {
-                changes.push(`${stats.stats.folderDiff > 0 ? '+' : ''}${stats.stats.folderDiff} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
-            }
-
-            // 结构变化：优先用计数；否则回退到布尔标记
-            const movedCount = typeof stats.stats.movedCount === 'number' ? stats.stats.movedCount : 0;
-            const modifiedCount = typeof stats.stats.modifiedCount === 'number' ? stats.stats.modifiedCount : 0;
-
-            if (movedCount > 0 || stats.stats.bookmarkMoved || stats.stats.folderMoved) {
-                if (movedCount > 0) {
-                    changes.push(preferredLang === 'zh_CN' ? `${movedCount}个移动` : `${movedCount} moved`);
-                } else {
-                    changes.push(preferredLang === 'zh_CN' ? '移动' : 'moved');
-                }
-            }
-            if (modifiedCount > 0 || stats.stats.bookmarkModified || stats.stats.folderModified) {
-                if (modifiedCount > 0) {
-                    changes.push(preferredLang === 'zh_CN' ? `${modifiedCount}个修改` : `${modifiedCount} modified`);
-                } else {
-                    changes.push(preferredLang === 'zh_CN' ? '修改' : 'modified');
-                }
-            }
-            changeDescription = `(${changes.join('，')})`;
-        }
+        const hasChanges = analysisHasNetChanges(stats.stats);
+        const changeDescription = hasChanges
+            ? buildAnalysisChangeDescription(stats.stats, preferredLang)
+            : '';
 
         return {
             success: true,
@@ -14837,6 +16116,14 @@ function areSetsEqual(setA, setB) {
 async function updateAndCacheAnalysis() {
     try {
         console.log('[updateAndCacheAnalysis] 开始分析书签变化...');
+        const preAnalysisStore = await browserAPI.storage.local.get([
+            'lastBookmarkData',
+            'lastBookmarkChangeTime'
+        ]);
+        const expectedBaselineTs = preAnalysisStore?.lastBookmarkData?.timestamp || null;
+        const expectedLastChangeTime = typeof preAnalysisStore?.lastBookmarkChangeTime === 'number'
+            ? preAnalysisStore.lastBookmarkChangeTime
+            : 0;
         const analysis = await analyzeBookmarkChanges();
         cachedBookmarkAnalysis = analysis;
         console.log('[updateAndCacheAnalysis] 分析完成:', {
@@ -14862,6 +16149,13 @@ async function updateAndCacheAnalysis() {
                 cachedBookmarkAnalysisSnapshot: analysis,
                 cachedBookmarkAnalysisSnapshotTime: Date.now(),
                 cachedBookmarkAnalysisSnapshotMeta: snapshotMeta
+            });
+        } catch (_) { }
+
+        try {
+            await clearDirtyStateIfAnalysisIsClean(analysis, {
+                expectedLastBookmarkChangeTime: expectedLastChangeTime,
+                expectedLastBookmarkDataTimestamp: expectedBaselineTs
             });
         } catch (_) { }
 
@@ -15042,7 +16336,7 @@ async function listRemoteFiles(source, options = {}) {
                 const serverAddress = String(settings.serverAddress || '').trim();
                 const username = String(settings.username || '').trim();
                 if (!serverAddress || !username) return '';
-                const scanMode = useIndexOptimizedScan ? 'idx' : 'full';
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v1`;
                 return `webdav|${serverAddress}|${username}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
@@ -15053,7 +16347,7 @@ async function listRemoteFiles(source, options = {}) {
                 const basePath = String(settings.githubRepoBasePath || '').trim();
                 const tokenPreview = String(settings.githubRepoToken || '').slice(0, 8);
                 if (!owner || !repo || !branch) return '';
-                const scanMode = useIndexOptimizedScan ? 'idx' : 'full';
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v1`;
                 return `github|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
@@ -15089,26 +16383,14 @@ async function listRemoteFiles(source, options = {}) {
         ].map(s => String(s || '').trim()).filter(Boolean)));
         const overwriteFolderCandidates = Array.from(new Set(getOverwriteFolderCandidates()));
         const versionedFolderCandidates = Array.from(new Set(getVersionedFolderCandidates()));
-        const manualExportParentFolderCandidates = Array.from(new Set([
-            getManualExportParentFolderByLang('zh_CN'),
-            getManualExportParentFolderByLang('en'),
-            'manual export',
-            'manual_export',
-            'manual-export'
-        ].map(s => String(s || '').trim()).filter(Boolean)));
         const snapshotFolderNameReg = /^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?$/i;
-        const MANUAL_EXPORT_FOLDER_SEGMENTS = new Set(['手动导出', 'manual export', 'manual_export', 'manual-export']);
-        const MANUAL_HISTORY_FOLDER_SEGMENTS = new Set([
-            '备份历史',
-            'backup history',
-            'backup_history',
-            'backup-history',
-            'bookmarks history',
-            'bookmarks_history',
-            'bookmarks-history'
-        ]);
         const versionedFolderNameSet = new Set(
             getVersionedFolderCandidates()
+                .map((name) => String(name || '').trim().toLowerCase())
+                .filter(Boolean)
+        );
+        const overwriteFolderNameSet = new Set(
+            getOverwriteFolderCandidates()
                 .map((name) => String(name || '').trim().toLowerCase())
                 .filter(Boolean)
         );
@@ -15150,6 +16432,16 @@ async function listRemoteFiles(source, options = {}) {
                 .filter(Boolean);
         }
 
+        function isInManualExportFolderPath(pathText) {
+            const folderSegments = splitPathSegments(pathText).map((part) => String(part || '').trim().toLowerCase());
+            return folderSegments.some((part) => (
+                part === '手动导出'
+                || part === 'manual export'
+                || part === 'manual_export'
+                || part === 'manual-export'
+            ));
+        }
+
         function isOverwriteFolderName(name) {
             const text = String(name || '').trim().toLowerCase();
             if (!text) return false;
@@ -15163,9 +16455,152 @@ async function listRemoteFiles(source, options = {}) {
             return parts.some(part => snapshotFolderNameReg.test(part) || isOverwriteFolderName(part));
         }
 
+        const parseRestoreRemoteLastModifiedMs = (value) => {
+            const parsedMs = Date.parse(String(value || '').trim());
+            return Number.isFinite(parsedMs) ? parsedMs : null;
+        };
+
+        const buildCandidateRelativePath = (candidate) => {
+            const folderPath = String(candidate?.folderPath || '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+            const name = String(candidate?.name || '').trim();
+            if (!folderPath) return name;
+            if (!name) return folderPath;
+            return `${folderPath}/${name}`.replace(/\/{2,}/g, '/');
+        };
+
+        const isOverwriteRestoreCandidate = (candidate) => {
+            if (!candidate) return false;
+            if (candidate.type !== 'html_backup' && candidate.type !== 'changes_artifact') return false;
+            if (isOverwriteFolderName(candidate.snapshotFolder || '')) return true;
+            const folderSegments = splitPathSegments(candidate.folderPath || '');
+            return folderSegments.some((part) => isOverwriteFolderName(part));
+        };
+
+        const remoteLastModifiedCache = new Map();
+
+        const resolveWebDavCandidateLastModifiedMs = async (candidate) => {
+            const requestUrl = normalizeWebDAVFetchUrl(candidate?.url || '');
+            if (!requestUrl) return null;
+            const cacheKey = `webdav|${requestUrl}`;
+            if (remoteLastModifiedCache.has(cacheKey)) {
+                return remoteLastModifiedCache.get(cacheKey);
+            }
+
+            const authHeader = 'Basic ' + safeBase64(`${settings.username || ''}:${settings.password || ''}`);
+            let resolvedMs = null;
+
+            try {
+                const propfindResponse = await fetch(requestUrl, {
+                    method: 'PROPFIND',
+                    headers: {
+                        'Authorization': authHeader,
+                        'Depth': '0',
+                        'Content-Type': 'application/xml'
+                    },
+                    body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><getlastmodified/></prop></propfind>'
+                });
+
+                if (propfindResponse.ok) {
+                    const text = await propfindResponse.text();
+                    const match = /<(?:d:)?getlastmodified>([\s\S]*?)<\/(?:d:)?getlastmodified>/i.exec(text);
+                    resolvedMs = parseRestoreRemoteLastModifiedMs(match ? match[1] : '');
+                }
+            } catch (_) { }
+
+            if (!Number.isFinite(resolvedMs)) {
+                try {
+                    const headResponse = await fetch(requestUrl, {
+                        method: 'HEAD',
+                        headers: {
+                            'Authorization': authHeader
+                        }
+                    });
+                    if (headResponse.ok) {
+                        resolvedMs = parseRestoreRemoteLastModifiedMs(headResponse.headers.get('Last-Modified'));
+                    }
+                } catch (_) { }
+            }
+
+            remoteLastModifiedCache.set(cacheKey, resolvedMs);
+            return resolvedMs;
+        };
+
+        const resolveGitHubCandidateLastModifiedMs = async (candidate) => {
+            const owner = String(settings.githubRepoOwner || '').trim();
+            const repo = String(settings.githubRepoName || '').trim();
+            const branch = String(settings.githubRepoBranch || '').trim();
+            const token = String(settings.githubRepoToken || '').trim();
+            if (!owner || !repo || !branch || !token) return null;
+
+            const relativePath = buildCandidateRelativePath(candidate);
+            if (!relativePath) return null;
+            const basePath = normalizeGitHubBasePath(settings.githubRepoBasePath || '');
+            const repoPath = basePath ? `${basePath}/${relativePath}` : relativePath;
+            const normalizedRepoPath = String(repoPath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+            if (!normalizedRepoPath) return null;
+
+            const cacheKey = `github|${owner}|${repo}|${branch}|${normalizedRepoPath}`;
+            if (remoteLastModifiedCache.has(cacheKey)) {
+                return remoteLastModifiedCache.get(cacheKey);
+            }
+
+            let resolvedMs = null;
+            try {
+                const commitsApiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?path=${encodeURIComponent(normalizedRepoPath)}&sha=${encodeURIComponent(branch)}&per_page=1`;
+                const response = await fetch(commitsApiUrl, {
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github+json'
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const latestCommit = Array.isArray(data) ? data[0] : null;
+                    const committedAt = latestCommit?.commit?.committer?.date
+                        || latestCommit?.commit?.author?.date
+                        || '';
+                    resolvedMs = parseRestoreRemoteLastModifiedMs(committedAt);
+                }
+            } catch (_) { }
+
+            remoteLastModifiedCache.set(cacheKey, resolvedMs);
+            return resolvedMs;
+        };
+
+        const hydrateOverwriteCandidateLastModified = async (list) => {
+            const cloned = cloneRestoreFiles(list);
+            const targets = cloned.filter((candidate) => {
+                if (!isOverwriteRestoreCandidate(candidate)) return false;
+                return !Number.isFinite(Number(candidate?.lastModified));
+            });
+
+            if (!targets.length) return cloned;
+
+            await runBatchedTasks(targets, async (candidate) => {
+                const resolvedMs = source === 'webdav'
+                    ? await resolveWebDavCandidateLastModifiedMs(candidate)
+                    : (source === 'github'
+                        ? await resolveGitHubCandidateLastModifiedMs(candidate)
+                        : null);
+                if (Number.isFinite(resolvedMs)) {
+                    candidate.lastModified = Number(resolvedMs);
+                }
+            }, source === 'github' ? 2 : 4);
+
+            return cloned;
+        };
+
+        const finalizeRemoteRestoreFiles = async (list) => {
+            const hydrated = await hydrateOverwriteCandidateLastModified(list);
+            commitRemoteScanCache(hydrated);
+            return hydrated;
+        };
+
         function shouldTreatAsCurrentChangesArtifact({ fileName, folderPath = '', snapshotFolder = '' }) {
             const name = String(fileName || '').trim();
             if (!name) return false;
+            if (isInManualExportFolderPath(folderPath)) return false;
+            if (isManualExportInfoLogFileNameLike(name)) return false;
             if (isBackupHtmlName(name)) return false;
             if (!/\.(json|html?|xhtml)$/i.test(name)) return false;
 
@@ -15185,6 +16620,7 @@ async function listRemoteFiles(source, options = {}) {
         function shouldTreatAsSnapshotHtml({ fileName, folderPath = '', snapshotFolder = '' }) {
             const name = String(fileName || '').trim();
             if (!name) return false;
+            if (isInManualExportFolderPath(folderPath)) return false;
             if (!/\.(html?|xhtml)$/i.test(name)) return false;
 
             if (shouldTreatAsCurrentChangesArtifact({
@@ -15199,28 +16635,19 @@ async function listRemoteFiles(source, options = {}) {
             return isInSnapshotOrOverwriteFolder(folderPath, snapshotFolder);
         }
 
-        function shouldTreatAsManualHistoryArtifact({ fileName, folderPath = '' }) {
-            const name = String(fileName || '').trim();
-            if (!name) return false;
-            if (!/\.(json|html|xhtml)$/i.test(name)) return false;
-
-            const folderSegments = splitPathSegments(folderPath).map(part => String(part || '').trim().toLowerCase());
-            const inManualExportFolder = folderSegments.some((part) => MANUAL_EXPORT_FOLDER_SEGMENTS.has(part));
-            const inManualHistoryFolder = folderSegments.some((part) => MANUAL_HISTORY_FOLDER_SEGMENTS.has(part));
-
-            return inManualExportFolder && inManualHistoryFolder;
-        }
-
         function pushIndexMarkdownCandidateIfMatched({ fileName, fileUrl, sourceType, folderPath = '', manifestMode = '' }) {
             const normalizedName = String(fileName || '').trim();
             if (!normalizedName) return;
-            if (!isVersionedInfoLogFileNameLike(normalizedName)) return;
+            const isVersionedLog = isVersionedInfoLogFileNameLike(normalizedName);
+            const isOverwriteLog = isOverwriteInfoLogFileNameLike(normalizedName);
+            if (!isVersionedLog && !isOverwriteLog) return;
 
-            // 统一规则：索引仅位于“版本化/Versioned”目录。
-            // 旧位置（根目录/覆盖等）不再纳入索引候选。
             const pathSegmentsLower = splitPathSegments(folderPath).map((part) => String(part || '').trim().toLowerCase());
             const inVersionedFolder = pathSegmentsLower.some((part) => versionedFolderNameSet.has(part));
-            if (!inVersionedFolder) return;
+            const inOverwriteFolder = pathSegmentsLower.some((part) => overwriteFolderNameSet.has(part));
+
+            if (isVersionedLog && !inVersionedFolder) return;
+            if (isOverwriteLog && !inOverwriteFolder) return;
 
             files.push({
                 name: normalizedName,
@@ -15457,7 +16884,6 @@ async function listRemoteFiles(source, options = {}) {
                             folderPath,
                             manifestMode: 'tree'
                         });
-
                         if (shouldTreatAsSnapshotHtml({
                             fileName,
                             folderPath,
@@ -15479,9 +16905,6 @@ async function listRemoteFiles(source, options = {}) {
                             fileName,
                             folderPath,
                             snapshotFolder: snapshotFolder || ''
-                        }) || shouldTreatAsManualHistoryArtifact({
-                            fileName,
-                            folderPath
                         })) {
                             files.push({
                                 name: fileName,
@@ -15499,16 +16922,24 @@ async function listRemoteFiles(source, options = {}) {
                         && item.source === 'webdav'
                         && (item.type === 'html_backup' || item.type === 'changes_artifact')
                         && String(item.manifestMode || '').trim().toLowerCase() === 'tree').length;
+                    const treeIndexCandidateCount = files.filter((item) => item
+                        && item.source === 'webdav'
+                        && item.type === 'index_markdown'
+                        && String(item.manifestMode || '').trim().toLowerCase() === 'tree').length;
 
                     // 部分 WebDAV 服务对 Depth: infinity 响应不完整（仅返回根层 log 文件）。
-                    // 快速索引模式下允许“仅索引文件”结果，避免重型目录回退导致扫描变慢。
+                    // 这里不能在“零快照结果”时直接返回；否则会跳过后面的覆盖目录/版本化目录兜底扫描，
+                    // 导致英文路径或覆盖模式在某些 WebDAV 服务上被误判为空。
                     if (!useIndexOptimizedScan && treeSnapshotCandidateCount === 0) {
                         throw new Error('WebDAV tree manifest missing snapshot candidates; fallback to directory scan');
                     }
 
-                    const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
-                    commitRemoteScanCache(deduped);
-                    return deduped;
+                    const shouldReturnTreeOnly = treeSnapshotCandidateCount > 0
+                        || (!useIndexOptimizedScan && treeIndexCandidateCount > 0);
+                    if (shouldReturnTreeOnly) {
+                        const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+                        return await finalizeRemoteRestoreFiles(deduped);
+                    }
                 }
             } catch (treeScanError) {
                 console.warn('[listRemoteFiles] WebDAV tree scan fallback to directory scan:', treeScanError);
@@ -15850,108 +17281,9 @@ async function listRemoteFiles(source, options = {}) {
                 }, 10);
             }
 
-            // 4.3) 手动导出（新结构）：导出根目录/手动导出/当前变化/
-            const normalizeRemoteFolderPath = (value) => String(value || '')
-                .replace(/^\/+/, '')
-                .replace(/\/+$/, '')
-                .replace(/\/{2,}/g, '/');
-
-            const pushManualExportArtifactIfMatched = ({ fileName, folderPath, fileUrl }) => {
-                const normalizedFolderPath = normalizeRemoteFolderPath(folderPath);
-                if (!normalizedFolderPath) return;
-
-                if (shouldTreatAsCurrentChangesArtifact({
-                    fileName,
-                    folderPath: normalizedFolderPath,
-                    snapshotFolder: ''
-                }) || shouldTreatAsManualHistoryArtifact({
-                    fileName,
-                    folderPath: normalizedFolderPath
-                })) {
-                    files.push({
-                        name: fileName,
-                        url: fileUrl,
-                        source: 'webdav',
-                        type: 'changes_artifact',
-                        snapshotFolder: '',
-                        folderPath: normalizedFolderPath
-                    });
-                }
-            };
-
-            const scanManualExportTreeWebdav = async (rootFolderPath, maxDepth = 3) => {
-                const normalizedRoot = normalizeRemoteFolderPath(rootFolderPath);
-                if (!normalizedRoot) return;
-
-                const visited = new Set();
-                const queue = [{ folderPath: normalizedRoot, depth: 0 }];
-
-                while (queue.length > 0) {
-                    const current = queue.shift();
-                    const currentPath = normalizeRemoteFolderPath(current?.folderPath || '');
-                    if (!currentPath || visited.has(currentPath)) continue;
-                    visited.add(currentPath);
-
-                    const currentUrl = `${serverAddress}${currentPath}/`;
-
-                    let childNames = [];
-                    try {
-                        childNames = await webdavPropfindCached(currentUrl, authHeader);
-                    } catch (_) {
-                        childNames = [];
-                    }
-
-                    for (const childNameRaw of childNames) {
-                        const childName = splitPathSegments(String(childNameRaw || '')).pop() || String(childNameRaw || '').trim();
-                        if (!childName) continue;
-                        const fileUrl = `${currentUrl}${childName}`;
-                        pushManualExportArtifactIfMatched({
-                            fileName: childName,
-                            folderPath: currentPath,
-                            fileUrl
-                        });
-                    }
-
-                    if (current.depth >= maxDepth) continue;
-
-                    let childFolders = [];
-                    try {
-                        childFolders = await webdavPropfindCached(currentUrl, authHeader, { onlyCollections: true });
-                    } catch (_) {
-                        childFolders = [];
-                    }
-
-                    const currentLeaf = String(currentPath.split('/').filter(Boolean).pop() || '').trim().toLowerCase();
-                    for (const childFolderRaw of childFolders) {
-                        const childFolderRawText = String(childFolderRaw || '').trim();
-                        const childFolder = splitPathSegments(childFolderRawText).pop() || childFolderRawText;
-                        const childFolderLower = String(childFolder || '').trim().toLowerCase();
-                        if (!childFolderLower || childFolderLower === '.' || childFolderLower === '..') continue;
-                        if (childFolderLower === currentLeaf) continue;
-
-                        const nextPath = normalizeRemoteFolderPath(`${currentPath}/${childFolder}`);
-                        if (!nextPath || visited.has(nextPath)) continue;
-                        queue.push({ folderPath: nextPath, depth: current.depth + 1 });
-                    }
-                }
-            };
-
-            const manualScanRootsWebdav = [];
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const manualParentFolder of manualExportParentFolderCandidates) {
-                    manualScanRootsWebdav.push(`${exportRootFolder}/${manualParentFolder}`);
-                }
-            }
-            await runBatchedTasks(manualScanRootsWebdav, async (rootFolderPath) => {
-                try {
-                    await scanManualExportTreeWebdav(rootFolderPath, useIndexOptimizedScan ? 0 : 3);
-                } catch (_) { }
-                return 1;
-            }, 6);
             // 去重（同一个文件可能在不同语言路径被重复扫描到）
             const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
-            commitRemoteScanCache(deduped);
-            return deduped;
+            return await finalizeRemoteRestoreFiles(deduped);
         }
 
         // GitHub
@@ -16092,7 +17424,6 @@ async function listRemoteFiles(source, options = {}) {
                             folderPath,
                             manifestMode: 'tree'
                         });
-
                         if (shouldTreatAsSnapshotHtml({
                             fileName,
                             folderPath,
@@ -16114,9 +17445,6 @@ async function listRemoteFiles(source, options = {}) {
                             fileName,
                             folderPath,
                             snapshotFolder: snapshotFolder || ''
-                        }) || shouldTreatAsManualHistoryArtifact({
-                            fileName,
-                            folderPath
                         })) {
                             files.push({
                                 name: fileName,
@@ -16131,8 +17459,7 @@ async function listRemoteFiles(source, options = {}) {
                     }
 
                     const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
-                    commitRemoteScanCache(deduped);
-                    return deduped;
+                    return await finalizeRemoteRestoreFiles(deduped);
                 }
             } catch (treeScanError) {
                 console.warn('[listRemoteFiles] GitHub tree scan fallback to directory scan:', treeScanError);
@@ -16501,91 +17828,8 @@ async function listRemoteFiles(source, options = {}) {
                 }
             }
 
-            // 4.3) 手动导出（新结构）：导出根目录/手动导出/当前变化/
-            const normalizeRemoteFolderPath = (value) => String(value || '')
-                .replace(/^\/+/, '')
-                .replace(/\/+$/, '')
-                .replace(/\/{2,}/g, '/');
-
-            const pushManualExportArtifactIfMatched = ({ fileName, folderPath, fileUrl }) => {
-                const normalizedFolderPath = normalizeRemoteFolderPath(folderPath);
-                if (!normalizedFolderPath) return;
-
-                if (shouldTreatAsCurrentChangesArtifact({
-                    fileName,
-                    folderPath: normalizedFolderPath,
-                    snapshotFolder: ''
-                }) || shouldTreatAsManualHistoryArtifact({
-                    fileName,
-                    folderPath: normalizedFolderPath
-                })) {
-                    files.push({
-                        name: fileName,
-                        url: fileUrl,
-                        source: 'github',
-                        type: 'changes_artifact',
-                        snapshotFolder: '',
-                        folderPath: normalizedFolderPath
-                    });
-                }
-            };
-
-            const scanManualExportTreeGitHub = async (rootFolderPath, maxDepth = 3) => {
-                const normalizedRoot = normalizeRemoteFolderPath(rootFolderPath);
-                if (!normalizedRoot) return;
-
-                const visited = new Set();
-                const queue = [{ folderPath: normalizedRoot, depth: 0 }];
-
-                while (queue.length > 0) {
-                    const current = queue.shift();
-                    const currentPath = normalizeRemoteFolderPath(current?.folderPath || '');
-                    if (!currentPath || visited.has(currentPath)) continue;
-                    visited.add(currentPath);
-
-                    let items = [];
-                    try {
-                        items = await listGitHubDirCached(currentPath);
-                    } catch (_) {
-                        items = [];
-                    }
-
-                    for (const item of items) {
-                        if (!item || !item.name) continue;
-                        if (item.type === 'file') {
-                            pushManualExportArtifactIfMatched({
-                                fileName: item.name,
-                                folderPath: currentPath,
-                                fileUrl: item.download_url || item.url
-                            });
-                            continue;
-                        }
-
-                        if (item.type === 'dir' && current.depth < maxDepth) {
-                            const nextPath = normalizeRemoteFolderPath(item.path || `${currentPath}/${item.name}`);
-                            if (!nextPath || visited.has(nextPath)) continue;
-                            queue.push({ folderPath: nextPath, depth: current.depth + 1 });
-                        }
-                    }
-                }
-            };
-
-            const manualScanRootsGitHub = [];
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const manualParentFolder of manualExportParentFolderCandidates) {
-                    manualScanRootsGitHub.push(`${prefix}${exportRootFolder}/${manualParentFolder}`);
-                }
-            }
-            await runBatchedTasks(manualScanRootsGitHub, async (rootFolderPath) => {
-                try {
-                    await scanManualExportTreeGitHub(rootFolderPath, 3);
-                } catch (_) { }
-                return 1;
-            }, 4);
-
             const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
-            commitRemoteScanCache(deduped);
-            return deduped;
+            return await finalizeRemoteRestoreFiles(deduped);
         }
 
         return [];
@@ -17086,6 +18330,7 @@ function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode 
             name: String(entry.name || artifact.name || '').trim(),
             fileUrl: entry.fileUrl || artifact.fileUrl || null,
             localFileKey: entry.localFileKey || artifact.localFileKey || null,
+            zipEntryName: entry.zipEntryName || artifact.zipEntryName || null,
             source: entry.source || artifact.source || restoreRef?.source || ''
         };
     }
@@ -17096,6 +18341,7 @@ function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode 
         name: String(artifact.name || '').trim(),
         fileUrl: artifact.fileUrl || null,
         localFileKey: artifact.localFileKey || null,
+        zipEntryName: artifact.zipEntryName || null,
         source: artifact.source || restoreRef?.source || ''
     };
 }
@@ -17201,13 +18447,13 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
 function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '' }) {
     const name = fileName || originalFile;
 
+    const inOverwriteFolder = isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath);
     const snapshotKeyFromName = parseSnapshotKeyFromText(name);
     const snapshotKeyFromFolder = parseSnapshotKeyFromText(snapshotFolder);
     const snapshotKeyFromFolderPath = parseSnapshotKeyFromText(folderPath);
-    let snapshotKey = snapshotKeyFromName || snapshotKeyFromFolder || snapshotKeyFromFolderPath || '';
-    if (!snapshotKey && (isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath))) {
-        snapshotKey = '__overwrite__';
-    }
+    let snapshotKey = inOverwriteFolder
+        ? '__overwrite__'
+        : (snapshotKeyFromName || snapshotKeyFromFolder || snapshotKeyFromFolderPath || '');
 
     let timeMs = parseSnapshotTimeMsFromKey(snapshotKey);
     if (!timeMs) {
@@ -17234,6 +18480,7 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         originalFile,
         fileUrl: fileUrl || null,
         localFileKey: localFileKey || null,
+        lastModifiedMs: typeof lastModifiedMs === 'number' ? lastModifiedMs : null,
         recordIndex: null,
         recordTime: null,
         fingerprint: fingerprint || null,
@@ -17264,6 +18511,754 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         originalFile,
         restoreRef,
         canRestore: true
+    });
+}
+
+function normalizeBookmarkTreeCandidateForJsonRestore(candidate) {
+    if (!candidate) return null;
+
+    if (Array.isArray(candidate)) {
+        const nodes = candidate.filter((node) => !!node && typeof node === 'object' && (Array.isArray(node.children) || typeof node.url === 'string'));
+        if (!nodes.length) return null;
+        if (nodes.length === 1 && Array.isArray(nodes[0]?.children)) {
+            return nodes[0];
+        }
+        return {
+            title: 'root',
+            children: nodes
+        };
+    }
+
+    if (typeof candidate === 'object' && (Array.isArray(candidate.children) || typeof candidate.url === 'string')) {
+        return candidate;
+    }
+
+    return null;
+}
+
+function extractBookmarkTreeFromJsonPayloadForRestore(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const candidates = [
+        payload?._rawBookmarkTree,
+        payload?.bookmarkTree,
+        payload?.tree,
+        payload?.roots,
+        payload
+    ];
+
+    for (const candidate of candidates) {
+        const normalized = normalizeBookmarkTreeCandidateForJsonRestore(candidate);
+        if (normalized && isBookmarkTreeShapeValid(normalized)) {
+            return normalized;
+        }
+    }
+
+    return null;
+}
+
+function parseBookmarkTreeFromJsonTextForRestore(text) {
+    const parsed = safeParseJson(text || '');
+    return extractBookmarkTreeFromJsonPayloadForRestore(parsed);
+}
+
+function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '' }) {
+    const name = fileName || originalFile;
+
+    const inOverwriteFolder = isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath);
+    const snapshotKeyFromName = parseSnapshotKeyFromText(name);
+    const snapshotKeyFromFolder = parseSnapshotKeyFromText(snapshotFolder);
+    const snapshotKeyFromFolderPath = parseSnapshotKeyFromText(folderPath);
+    let snapshotKey = inOverwriteFolder
+        ? '__overwrite__'
+        : (snapshotKeyFromName || snapshotKeyFromFolder || snapshotKeyFromFolderPath || '');
+
+    let timeMs = parseSnapshotTimeMsFromKey(snapshotKey);
+    if (!timeMs && typeof lastModifiedMs === 'number') {
+        timeMs = lastModifiedMs;
+    }
+
+    const fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
+
+    const restoreRef = {
+        source,
+        sourceType: 'json',
+        jsonKind: 'tree',
+        originalFile,
+        sourceFile: originalFile,
+        fileUrl: fileUrl || null,
+        localFileKey: localFileKey || null,
+        lastModifiedMs: typeof lastModifiedMs === 'number' ? lastModifiedMs : null,
+        recordIndex: null,
+        recordTime: null,
+        fingerprint: fingerprint || null,
+        snapshotKey: snapshotKey || null,
+        snapshotFolder: snapshotFolder || null,
+        folderPath: folderPath || null
+    };
+
+    return normalizeRestoreVersionMeta({
+        id: `${source}:${originalFile}:json_tree:${snapshotKey || timeMs || ''}`,
+        time: timeMs,
+        displayTime: timeMs ? formatDateTime(timeMs) : name,
+        seqNumber: null,
+        note: 'JSON Snapshot',
+        fingerprint,
+        stats: {
+            bookmarkAdded: 0,
+            bookmarkDeleted: 0,
+            folderAdded: 0,
+            folderDeleted: 0,
+            movedCount: 0,
+            modifiedCount: 0,
+            bookmarkCount: null,
+            folderCount: null
+        },
+        source,
+        sourceType: 'json',
+        originalFile,
+        restoreRef,
+        canRestore: true
+    });
+}
+
+function normalizeManualExportIndexPath(value) {
+    return String(value || '')
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+        .replace(/\/{2,}/g, '/')
+        .replace(/\/+$/, '')
+        .trim();
+}
+
+function getManualExportLeafName(value) {
+    const normalized = normalizeManualExportIndexPath(value);
+    if (!normalized) return '';
+    const parts = normalized.split('/').filter(Boolean);
+    return String(parts[parts.length - 1] || '').trim();
+}
+
+function getManualExportPathFormat(value) {
+    const lower = getManualExportLeafName(value).toLowerCase();
+    if (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.xhtml')) return 'html';
+    if (lower.endsWith('.json')) return 'json';
+    return '';
+}
+
+function resolveManualExportModeFromPath(pathText = '', fallbackMode = '') {
+    const direct = normalizeCurrentChangesArtifactMode(fallbackMode);
+    if (direct) return direct;
+
+    // fallbackMode 可能是 "详细/HTML+JSON"、"Detailed/HTML" 这类展示文本，
+    // 需要先做一次“包含匹配”提取，再归一化到 simple/detailed/collection。
+    const fromFallbackText = normalizeCurrentChangesArtifactMode(
+        parseCurrentChangesArtifactModeFromName(String(fallbackMode || '').trim())
+    );
+    if (fromFallbackText) return fromFallbackText;
+
+    const fromLeafName = normalizeCurrentChangesArtifactMode(
+        parseCurrentChangesArtifactModeFromName(getManualExportLeafName(pathText))
+    );
+    if (fromLeafName) return fromLeafName;
+
+    return 'simple';
+}
+
+function normalizeManualExportPathFormats(value, fallbackMode = '') {
+    const normalized = {};
+    if (!value) return normalized;
+
+    if (typeof value === 'string') {
+        const pathText = normalizeManualExportIndexPath(value);
+        const format = getManualExportPathFormat(pathText);
+        if (pathText && format) {
+            normalized[format] = pathText;
+        }
+        return normalized;
+    }
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        ['html', 'json'].forEach((format) => {
+            const pathText = normalizeManualExportIndexPath(value[format]);
+            if (pathText) normalized[format] = pathText;
+        });
+        if (Object.keys(normalized).length === 0) {
+            const fallbackPath = normalizeManualExportIndexPath(value.path || value.file || value.relativePath || '');
+            const format = getManualExportPathFormat(fallbackPath);
+            if (fallbackPath && format) normalized[format] = fallbackPath;
+        }
+    }
+
+    return normalized;
+}
+
+function normalizeManualExportChangesPathsByMode(record = {}) {
+    const result = {};
+    const modeCandidates = record?.changesPathsByMode && typeof record.changesPathsByMode === 'object'
+        ? record.changesPathsByMode
+        : null;
+
+    if (modeCandidates) {
+        Object.entries(modeCandidates).forEach(([rawMode, rawValue]) => {
+            const mode = resolveManualExportModeFromPath('', rawMode);
+            if (!mode) return;
+            const formats = normalizeManualExportPathFormats(rawValue, mode);
+            if (Object.keys(formats).length > 0) {
+                result[mode] = formats;
+            }
+        });
+    }
+
+    const fallbackChangesPath = record?.changesPath || record?.changesFile || '';
+    if (Object.keys(result).length === 0 && fallbackChangesPath) {
+        const mode = resolveManualExportModeFromPath(fallbackChangesPath, record?.changesViewMode || record?.viewMode || '');
+        const formats = normalizeManualExportPathFormats(fallbackChangesPath, mode);
+        if (Object.keys(formats).length > 0) {
+            result[mode] = formats;
+        }
+    }
+
+    return result;
+}
+
+function normalizeManualExportInfoLogRecord(record, index = 0) {
+    if (!record || typeof record !== 'object') return null;
+
+    const timeRaw = String(record.time || record.exportTime || record.recordTime || '').trim();
+    const parsedTimeMs = parseVersionedInfoLogTimeToMs(timeRaw) ?? parseTimeToMs(timeRaw);
+    const seqNumberRaw = record.seqNumber ?? record.seq;
+    const seqNumber = Number.isFinite(Number(seqNumberRaw)) ? Number(seqNumberRaw) : null;
+    const note = String(record.note || '').trim();
+    const sourceKind = String(record.sourceKind || record.source_kind || '').trim().toLowerCase() === 'current_changes'
+        ? 'current_changes'
+        : 'history_record';
+
+    const snapshotFormats = normalizeManualExportPathFormats(
+        record.snapshotPaths || record.snapshotPath || record.snapshot || null
+    );
+    const changesPathsByMode = normalizeManualExportChangesPathsByMode(record);
+    const changesModes = Object.keys(changesPathsByMode);
+
+    let snapshotKey = parseSnapshotKeyFromText(
+        record.snapshotKey
+        || record.snapshotFolder
+        || record.snapshotFolderName
+        || Object.values(snapshotFormats)[0]
+        || Object.values(changesPathsByMode).flatMap((formats) => Object.values(formats))[0]
+        || ''
+    );
+
+    let fingerprint = normalizeSyncFingerprint(String(record.fingerprint || record.hash || '').replace(/^#/, '').trim());
+    if (!fingerprint && snapshotKey) {
+        fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
+    }
+
+    if (!snapshotKey && Number.isFinite(parsedTimeMs) && fingerprint) {
+        snapshotKey = buildSnapshotKeyByTimeAndFingerprint(parsedTimeMs, fingerprint);
+    }
+
+    const changesViewMode = resolveManualExportModeFromPath('', record.changesViewMode || record.viewMode || changesModes[0] || '');
+    const stats = buildRestoreStats(record.stats || record.bookmarkStats || null);
+    const hasSnapshot = !!String(snapshotFormats?.html || '').trim();
+    const hasChanges = record.hasChanges === true || changesModes.length > 0;
+
+    return {
+        index,
+        snapshotKey: snapshotKey || '',
+        seqNumber,
+        note,
+        timeRaw,
+        timeMs: Number.isFinite(parsedTimeMs) ? parsedTimeMs : null,
+        fingerprint,
+        sourceKind,
+        changesViewMode: changesViewMode || 'simple',
+        stats,
+        hasSnapshot,
+        hasChanges,
+        snapshotFormats,
+        changesPathsByMode
+    };
+}
+
+function parseManualExportInfoLogJson(text) {
+    let parsed = null;
+    try {
+        parsed = safeParseJson(text || '');
+    } catch (_) {
+        parsed = null;
+    }
+    const records = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed?.records) ? parsed.records : []);
+
+    return records
+        .map((record, index) => normalizeManualExportInfoLogRecord(record, index))
+        .filter(Boolean)
+        .filter((record) => record.hasSnapshot || record.hasChanges);
+}
+
+function parseManualExportInfoLogStatusCell(value) {
+    const raw = String(value || '').trim();
+    const lower = raw.toLowerCase().replace(/\s+/g, '');
+    const hasSnapshot = raw.includes('快照') || lower.includes('snapshot');
+    const hasChanges = raw.includes('变化') || lower.includes('changes') || lower.includes('change');
+    return { hasSnapshot, hasChanges };
+}
+
+function isManualExportInfoLogStrategyText(value) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!normalized) return false;
+    return normalized.includes('手动导出')
+        || normalized.includes('manualexport')
+        || normalized.includes('全局导出')
+        || normalized.includes('globalexport')
+        || normalized.includes('多版本')
+        || normalized.includes('versioned')
+        || normalized.includes('覆盖')
+        || normalized.includes('overwrite');
+}
+
+function parseManualExportInfoLogSourceKindCell(value) {
+    const raw = String(value || '').trim();
+    const lower = raw.toLowerCase();
+    return raw.includes('当前变化') || lower.includes('current')
+        ? 'current_changes'
+        : 'history_record';
+}
+
+function parseManualExportInfoLogChangeFormatKeys(value) {
+    const lower = String(value || '').trim().toLowerCase();
+    const hasHtml = lower.includes('html');
+    const hasJson = lower.includes('json');
+    if (hasHtml && hasJson) return ['html', 'json'];
+    if (hasJson) return ['json'];
+    if (hasHtml) return ['html'];
+    return ['html', 'json'];
+}
+
+function buildManualExportDeterministicSnapshotPaths(snapshotKey, hasSnapshot) {
+    const key = String(snapshotKey || '').trim();
+    if (!key || hasSnapshot !== true) return {};
+    return {
+        html: `${key}/${key}.html`
+    };
+}
+
+function buildManualExportDeterministicChangesPaths(snapshotKey, mode, formatKeys, lang = 'zh_CN') {
+    const key = String(snapshotKey || '').trim();
+    const resolvedMode = resolveManualExportModeFromPath('', mode || 'simple') || 'simple';
+    if (!key) return {};
+
+    const fingerprint = parseSnapshotFingerprintFromKey(key);
+    const naming = {
+        timePart: key.replace(/_[0-9a-f]{6,12}$/i, ''),
+        fingerprint
+    };
+    const formats = Array.isArray(formatKeys) && formatKeys.length ? formatKeys : ['html', 'json'];
+    const paths = {};
+    formats.forEach((format) => {
+        const normalizedFormat = String(format || '').trim().toLowerCase() === 'json' ? 'json' : 'html';
+        paths[normalizedFormat] = `${key}/${buildCurrentChangesArtifactLeafName({
+            naming,
+            mode: resolvedMode,
+            format: normalizedFormat,
+            lang
+        })}`;
+    });
+    return {
+        [resolvedMode]: paths
+    };
+}
+
+function parseManualExportInfoLogChangesCell(value, snapshotKey, hasChanges, lang = 'zh_CN') {
+    const raw = String(value || '').trim();
+    if (!hasChanges || !raw || raw === '-') {
+        return {
+            changesViewMode: 'simple',
+            stats: buildRestoreStats(null),
+            changesPathsByMode: {}
+        };
+    }
+
+    const separatorIndex = raw.indexOf('·');
+    const head = separatorIndex >= 0 ? raw.slice(0, separatorIndex).trim() : raw;
+    const statsText = separatorIndex >= 0 ? raw.slice(separatorIndex + 1).trim() : raw;
+    const changesViewMode = resolveManualExportModeFromPath('', head) || 'simple';
+    const formatKeys = parseManualExportInfoLogChangeFormatKeys(head);
+    return {
+        changesViewMode,
+        stats: parseVersionedInfoLogChangesToStats(statsText),
+        changesPathsByMode: buildManualExportDeterministicChangesPaths(snapshotKey, changesViewMode, formatKeys, lang)
+    };
+}
+
+function parseManualExportInfoLogLedgerMarkerRecords(text) {
+    const markerMatch = /<!--\s*BB_MANUAL_EXPORT_LEDGER\s*([A-Za-z0-9+/=]+)\s*-->/.exec(String(text || ''));
+    if (!markerMatch) return [];
+
+    let decodedText = '';
+    try {
+        decodedText = decodeURIComponent(escape(atob(String(markerMatch[1] || '').trim())));
+    } catch (_) {
+        decodedText = '';
+    }
+    if (!decodedText) return [];
+    return parseManualExportInfoLogJson(decodedText);
+}
+
+function parseManualExportInfoLogMarkdown(text) {
+    const markerRecords = parseManualExportInfoLogLedgerMarkerRecords(text);
+    const normalizedText = String(text || '').replace(/^\uFEFF/, '');
+    const lines = normalizedText.split(/\r?\n/);
+    let headerKeys = null;
+    const parsedRecords = [];
+
+    for (const line of lines) {
+        const trimmed = String(line || '').trim();
+        if (!trimmed.startsWith('|')) continue;
+
+        const cells = splitVersionedInfoLogRowCells(trimmed);
+        if (!cells.length) continue;
+
+        const isDivider = cells.every(cell => /^:?-{3,}:?$/.test(String(cell || '').trim()));
+        if (isDivider) continue;
+
+        if (isVersionedInfoLogHeaderCells(cells)) {
+            headerKeys = cells.map(normalizeVersionedInfoLogHeaderKey);
+            continue;
+        }
+
+        if (!headerKeys) continue;
+
+        const row = {};
+        headerKeys.forEach((key, index) => {
+            row[key] = String(cells[index] || '').trim();
+        });
+
+        const strategyText = String(row.strategy || '').trim();
+        if (!isManualExportInfoLogStrategyText(strategyText)) {
+            continue;
+        }
+
+        const snapshotKey = parseSnapshotKeyFromText(row.snapshotKey || '')
+            || buildSnapshotKeyByTimeAndFingerprint(row.time || '', row.hash || '');
+        if (!snapshotKey) continue;
+
+        const rowLang = /[\u4e00-\u9fa5]/.test(`${row.status || ''}${row.type || ''}${row.strategy || ''}${row.changes || ''}`)
+            ? 'zh_CN'
+            : 'en';
+        const status = parseManualExportInfoLogStatusCell(row.status || '');
+        const sourceKind = parseManualExportInfoLogSourceKindCell(row.type || '');
+        const changesCellRaw = String(row.changes || '').trim();
+        const hasChangesHint = status.hasChanges || (changesCellRaw.length > 0 && changesCellRaw !== '-');
+        const parsedChanges = parseManualExportInfoLogChangesCell(row.changes || '', snapshotKey, hasChangesHint, rowLang);
+        const hasChanges = hasChangesHint || Object.keys(parsedChanges.changesPathsByMode || {}).length > 0;
+        const hasSnapshot = status.hasSnapshot || sourceKind === 'history_record';
+
+        parsedRecords.push({
+            seqNumber: row.seq,
+            note: row.note || '',
+            time: row.time || '',
+            fingerprint: row.hash || '',
+            sourceKind,
+            snapshotKey,
+            hasSnapshot,
+            hasChanges,
+            changesViewMode: parsedChanges.changesViewMode,
+            snapshotPaths: buildManualExportDeterministicSnapshotPaths(snapshotKey, hasSnapshot),
+            changesPathsByMode: parsedChanges.changesPathsByMode,
+            stats: parsedChanges.stats
+        });
+    }
+
+    if (parsedRecords.length > 0) {
+        const normalizedParsedRecords = parsedRecords
+            .map((record, index) => normalizeManualExportInfoLogRecord(record, index))
+            .filter(Boolean)
+            .filter((record) => record.hasSnapshot || record.hasChanges);
+        if (Array.isArray(markerRecords) && markerRecords.length > 0) {
+            return markerRecords;
+        }
+        return normalizedParsedRecords;
+    }
+
+    if (Array.isArray(markerRecords) && markerRecords.length > 0) {
+        return markerRecords;
+    }
+    return [];
+}
+
+function buildManualExportIndexChangesText(stats) {
+    const normalizedStats = buildRestoreStats(stats || null);
+    const magnitude = getRestoreStatsMagnitude(normalizedStats);
+    if (magnitude <= 0) return '无变化';
+    return formatVersionedInfoLogChanges({ bookmarkStats: normalizedStats }, 'zh_CN');
+}
+
+function buildManualExportChangesArtifactMeta({ source, normalizedRecord, pathResolver }) {
+    const modeEntries = {};
+    const resolvePathReference = (pathText, context = {}) => {
+        if (typeof pathResolver !== 'function') return null;
+        try {
+            return pathResolver(pathText, context) || null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    Object.entries(normalizedRecord?.changesPathsByMode || {}).forEach(([modeKey, formats]) => {
+        const mode = resolveManualExportModeFromPath('', modeKey);
+        if (!mode) return;
+
+        const rawFormats = formats && typeof formats === 'object' ? formats : {};
+        const formatPathByKey = {
+            html: normalizeManualExportIndexPath(rawFormats?.html || ''),
+            json: normalizeManualExportIndexPath(rawFormats?.json || '')
+        };
+        if (!formatPathByKey.html && !formatPathByKey.json) {
+            const fallbackPath = normalizeManualExportIndexPath(rawFormats?.path || rawFormats?.file || rawFormats?.relativePath || '');
+            const fallbackFormat = getManualExportPathFormat(fallbackPath);
+            if (fallbackPath && fallbackFormat) {
+                formatPathByKey[fallbackFormat] = fallbackPath;
+            }
+        }
+
+        const formatOrder = [];
+        if (formatPathByKey.html) formatOrder.push('html');
+        if (formatPathByKey.json) formatOrder.push('json');
+        if (formatOrder.length === 0) return;
+
+        let resolved = null;
+        let resolvedPath = '';
+        let resolvedFormat = '';
+
+        for (const formatKey of formatOrder) {
+            const candidatePath = formatPathByKey[formatKey];
+            if (!candidatePath) continue;
+
+            const candidateResolved = resolvePathReference(candidatePath, {
+                mode,
+                format: formatKey,
+                snapshotKey: normalizedRecord?.snapshotKey || '',
+                normalizedRecord
+            });
+            const candidateExists = !!(candidateResolved?.candidate
+                || candidateResolved?.localFileKey
+                || candidateResolved?.fileUrl
+                || candidateResolved?.zipEntryName);
+
+            if (!resolved) {
+                resolved = candidateResolved;
+                resolvedPath = candidatePath;
+                resolvedFormat = formatKey;
+            }
+            if (candidateExists) {
+                resolved = candidateResolved;
+                resolvedPath = candidatePath;
+                resolvedFormat = formatKey;
+                break;
+            }
+        }
+
+        const preferredPath = String(resolvedPath || formatPathByKey.html || formatPathByKey.json || '').trim();
+        if (!preferredPath) return;
+
+        const resolvedExists = !!(resolved?.candidate
+            || resolved?.localFileKey
+            || resolved?.fileUrl
+            || resolved?.zipEntryName);
+        if (!resolvedExists) {
+            const fallbackResolved = resolvePathReference(preferredPath, {
+                mode,
+                format: resolvedFormat || getManualExportPathFormat(preferredPath) || 'html',
+                snapshotKey: normalizedRecord?.snapshotKey || '',
+                normalizedRecord,
+                fallbackOnly: true
+            });
+            if (fallbackResolved) {
+                resolved = fallbackResolved;
+            }
+        }
+
+        const format = String(
+            resolvedFormat
+            || (formatPathByKey.html ? 'html' : '')
+            || (formatPathByKey.json ? 'json' : '')
+            || getManualExportPathFormat(preferredPath)
+        ).trim().toLowerCase();
+        const name = resolved?.name || getManualExportLeafName(preferredPath);
+
+        modeEntries[mode] = {
+            mode,
+            format,
+            name,
+            source,
+            fileUrl: resolved?.fileUrl || null,
+            localFileKey: resolved?.localFileKey || null,
+            zipEntryName: resolved?.zipEntryName || null,
+            exists: !!(resolved?.candidate || resolved?.localFileKey || resolved?.fileUrl),
+            snapshotFolder: normalizedRecord?.snapshotKey || resolved?.snapshotFolder || '',
+            folderPath: resolved?.folderPath || '',
+            folderType: 'manual_export'
+        };
+    });
+
+    const availableModes = Object.keys(modeEntries);
+    if (availableModes.length === 0) return null;
+
+    const preferredMode = availableModes.includes(normalizedRecord?.changesViewMode)
+        ? normalizedRecord.changesViewMode
+        : availableModes[0];
+    const preferredEntry = modeEntries[preferredMode] || modeEntries[availableModes[0]];
+
+    return {
+        name: preferredEntry?.name || '',
+        mode: preferredMode,
+        preferredMode,
+        format: preferredEntry?.format || '',
+        source,
+        fileUrl: preferredEntry?.fileUrl || null,
+        localFileKey: preferredEntry?.localFileKey || null,
+        zipEntryName: preferredEntry?.zipEntryName || null,
+        exists: preferredEntry?.exists === true,
+        snapshotFolder: preferredEntry?.snapshotFolder || '',
+        folderPath: preferredEntry?.folderPath || '',
+        folderType: 'manual_export',
+        availableModes,
+        modes: modeEntries
+    };
+}
+
+function buildManualExportRestoreVersionFromIndexRecord({
+    source,
+    normalizedRecord,
+    pathResolver,
+    containerSourceType = '',
+    containerOriginalFile = '',
+    containerFileUrl = null,
+    containerLocalFileKey = null
+}) {
+    const snapshotPath = String(normalizedRecord?.snapshotFormats?.html || '').trim();
+    const snapshotResolved = snapshotPath && typeof pathResolver === 'function'
+        ? pathResolver(snapshotPath)
+        : null;
+    const snapshotFormat = getManualExportPathFormat(snapshotPath);
+    const changesArtifact = buildManualExportChangesArtifactMeta({ source, normalizedRecord, pathResolver });
+    const stats = buildRestoreStats(normalizedRecord?.stats || null);
+    const displayTime = Number.isFinite(Number(normalizedRecord?.timeMs))
+        ? formatDateTime(Number(normalizedRecord.timeMs))
+        : String(normalizedRecord?.timeRaw || '');
+    const recordTime = Number.isFinite(Number(normalizedRecord?.timeMs))
+        ? new Date(Number(normalizedRecord.timeMs)).toISOString()
+        : (String(normalizedRecord?.timeRaw || '').trim() || null);
+    const indexChangesText = buildManualExportIndexChangesText(stats);
+    const normalizedContainerSourceType = String(containerSourceType || '').trim().toLowerCase();
+
+    if (snapshotPath) {
+        const originalFile = snapshotResolved?.name || getManualExportLeafName(snapshotPath) || `${normalizedRecord?.snapshotKey || 'snapshot'}.${snapshotFormat || 'html'}`;
+        const folderPath = snapshotResolved?.folderPath
+            || normalizeManualExportIndexPath(snapshotPath).split('/').slice(0, -1).join('/');
+        const isZipContainer = normalizedContainerSourceType === 'zip' && !!snapshotResolved?.zipEntryName;
+        const effectiveSourceType = isZipContainer ? 'zip' : 'html';
+        const effectiveLocalFileKey = isZipContainer
+            ? (containerLocalFileKey || null)
+            : (snapshotResolved?.localFileKey || null);
+        const effectiveFileUrl = isZipContainer
+            ? (containerFileUrl || null)
+            : (snapshotResolved?.fileUrl || null);
+        const canRestore = snapshotResolved
+            ? (isZipContainer
+                ? !!(snapshotResolved?.candidate && (effectiveLocalFileKey || effectiveFileUrl))
+                : !!(effectiveLocalFileKey || effectiveFileUrl))
+            : false;
+
+        return normalizeRestoreVersionMeta({
+            id: `manual_index:${source}:snapshot:${normalizedRecord?.snapshotKey || normalizedRecord?.index || ''}`,
+            time: Number.isFinite(Number(normalizedRecord?.timeMs)) ? Number(normalizedRecord.timeMs) : null,
+            displayTime,
+            seqNumber: normalizedRecord?.seqNumber ?? null,
+            note: normalizedRecord?.note || '',
+            fingerprint: normalizedRecord?.fingerprint || '',
+            stats,
+            source,
+            sourceType: effectiveSourceType,
+            originalFile,
+            restoreRef: {
+                source,
+                sourceType: effectiveSourceType,
+                originalFile,
+                sourceFile: isZipContainer ? (containerOriginalFile || originalFile) : originalFile,
+                fileUrl: effectiveFileUrl,
+                localFileKey: effectiveLocalFileKey,
+                zipEntryName: isZipContainer ? (snapshotResolved?.zipEntryName || null) : null,
+                recordIndex: null,
+                recordTime,
+                fingerprint: normalizedRecord?.fingerprint || null,
+                snapshotKey: normalizedRecord?.snapshotKey || null,
+                snapshotName: originalFile,
+                snapshotFolder: normalizedRecord?.snapshotKey || null,
+                snapshotFolderName: normalizedRecord?.snapshotKey || null,
+                folderPath: folderPath || null,
+                folderType: 'manual_export',
+                overwriteMode: 'versioned',
+                indexChanges: indexChangesText,
+                indexStats: stats,
+                indexMatched: true,
+                manualExportSourceKind: normalizedRecord?.sourceKind || 'history_record',
+                ...(changesArtifact ? { changesArtifact } : {})
+            },
+            canRestore
+        });
+    }
+
+    if (!changesArtifact) return null;
+
+    const preferredEntry = changesArtifact.modes?.[changesArtifact.preferredMode] || null;
+    const originalFile = preferredEntry?.name || `changes-${changesArtifact.preferredMode || 'simple'}.html`;
+    const isZipContainer = normalizedContainerSourceType === 'zip' && !!preferredEntry?.zipEntryName;
+    const effectiveSourceType = isZipContainer ? 'zip' : 'changes_artifact';
+    const effectiveLocalFileKey = isZipContainer
+        ? (containerLocalFileKey || null)
+        : (preferredEntry?.localFileKey || null);
+    const effectiveFileUrl = isZipContainer
+        ? (containerFileUrl || null)
+        : (preferredEntry?.fileUrl || null);
+    const canRestore = isZipContainer
+        ? !!(preferredEntry?.exists && (effectiveLocalFileKey || effectiveFileUrl))
+        : !!(effectiveLocalFileKey || effectiveFileUrl);
+
+    return normalizeRestoreVersionMeta({
+        id: `manual_index:${source}:changes:${normalizedRecord?.snapshotKey || normalizedRecord?.index || ''}`,
+        time: Number.isFinite(Number(normalizedRecord?.timeMs)) ? Number(normalizedRecord.timeMs) : null,
+        displayTime,
+        seqNumber: normalizedRecord?.seqNumber ?? null,
+        note: normalizedRecord?.note || '',
+        fingerprint: normalizedRecord?.fingerprint || '',
+        stats,
+        source,
+        sourceType: effectiveSourceType,
+        originalFile,
+        restoreRef: {
+            source,
+            sourceType: effectiveSourceType,
+            originalFile,
+            fileUrl: effectiveFileUrl,
+            localFileKey: effectiveLocalFileKey,
+            zipEntryName: null,
+            recordIndex: null,
+            recordTime,
+            fingerprint: normalizedRecord?.fingerprint || null,
+            snapshotKey: normalizedRecord?.snapshotKey || null,
+            snapshotFolder: normalizedRecord?.snapshotKey || null,
+            folderPath: preferredEntry?.folderPath || '',
+            folderType: 'manual_export',
+            indexChanges: indexChangesText,
+            indexStats: stats,
+            indexMatched: true,
+            manualExportSourceKind: normalizedRecord?.sourceKind || 'current_changes',
+            changesArtifact
+        },
+        canRestore
     });
 }
 
@@ -17333,6 +19328,205 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
     return versions;
 }
 
+function parseRestoreVersionsFromManualExportZipFiles(files, { source, originalFile, fileUrl, localFileKey }) {
+    const normalizedFiles = Array.isArray(files) ? files : [];
+    if (normalizedFiles.length === 0) return [];
+
+    const manualExportPathMap = new Map();
+    normalizedFiles.forEach((file) => {
+        const normalizedPath = normalizeManualExportIndexPath(file?.name || '');
+        if (!normalizedPath || manualExportPathMap.has(normalizedPath)) return;
+        manualExportPathMap.set(normalizedPath, file);
+    });
+
+    const manualExportIndexFiles = normalizedFiles
+        .filter((file) => {
+            const normalizedPath = normalizeManualExportIndexPath(file?.name || '');
+            if (!normalizedPath) return false;
+            return isManualExportInfoLogFileNameLike(getManualExportLeafName(normalizedPath));
+        })
+        .slice()
+        .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+
+    if (manualExportIndexFiles.length === 0) return [];
+
+    const manualExportChangeZipFiles = normalizedFiles.filter((file) => {
+        const normalizedPath = normalizeManualExportIndexPath(file?.name || '');
+        if (!normalizedPath) return false;
+        return isCurrentChangesArtifactFileName(getManualExportLeafName(normalizedPath));
+    });
+    const manualExportChangeZipByFolderPath = new Map();
+    const manualExportChangeZipBySnapshotKey = new Map();
+
+    const pushManualExportZipFileToMap = (map, key, file) => {
+        const normalizedKey = normalizeManualExportIndexPath(key || '');
+        if (!normalizedKey || !file) return;
+        if (!map.has(normalizedKey)) {
+            map.set(normalizedKey, []);
+        }
+        const list = map.get(normalizedKey);
+        if (!list.includes(file)) {
+            list.push(file);
+        }
+    };
+
+    manualExportChangeZipFiles.forEach((file) => {
+        const normalizedPath = normalizeManualExportIndexPath(file?.name || '');
+        const folderPath = normalizeManualExportIndexPath(normalizedPath.split('/').slice(0, -1).join('/'));
+        pushManualExportZipFileToMap(manualExportChangeZipByFolderPath, folderPath, file);
+
+        const snapshotKey = String(parseSnapshotKeyFromText(normalizedPath || '') || '').trim().toLowerCase();
+        if (snapshotKey) {
+            pushManualExportZipFileToMap(manualExportChangeZipBySnapshotKey, snapshotKey, file);
+        }
+    });
+
+    const findBestManualExportZipChangeFile = ({
+        fullRelativePath = '',
+        mode = '',
+        format = '',
+        snapshotKey = ''
+    } = {}) => {
+        const normalizedPath = normalizeManualExportIndexPath(fullRelativePath || '');
+        const normalizedMode = normalizeCurrentChangesArtifactMode(mode);
+        const normalizedFormatRaw = String(format || '').trim().toLowerCase();
+        const normalizedFormat = normalizedFormatRaw === 'json'
+            ? 'json'
+            : (normalizedFormatRaw === 'html' ? 'html' : '');
+        const folderPath = normalizeManualExportIndexPath(normalizedPath.split('/').slice(0, -1).join('/'));
+        const leafName = getManualExportLeafName(normalizedPath);
+        const snapshotKeyHint = String(snapshotKey || parseSnapshotKeyFromText(normalizedPath || '') || '')
+            .trim()
+            .toLowerCase();
+
+        const pool = [];
+        const seen = new Set();
+        const appendPool = (list) => {
+            for (const item of list || []) {
+                if (!item || seen.has(item)) continue;
+                seen.add(item);
+                pool.push(item);
+            }
+        };
+
+        if (folderPath && manualExportChangeZipByFolderPath.has(folderPath)) {
+            appendPool(manualExportChangeZipByFolderPath.get(folderPath));
+        }
+        if (snapshotKeyHint && manualExportChangeZipBySnapshotKey.has(snapshotKeyHint)) {
+            appendPool(manualExportChangeZipBySnapshotKey.get(snapshotKeyHint));
+        }
+        if (pool.length === 0) {
+            appendPool(manualExportChangeZipFiles);
+        }
+
+        let bestFile = null;
+        let bestScore = -1;
+        for (const file of pool) {
+            const candidatePath = normalizeManualExportIndexPath(file?.name || '');
+            const candidateFolderPath = normalizeManualExportIndexPath(candidatePath.split('/').slice(0, -1).join('/'));
+            const candidateLeafName = getManualExportLeafName(candidatePath);
+            const candidateSnapshotKey = String(parseSnapshotKeyFromText(candidatePath || '') || '').trim().toLowerCase();
+            const candidateMode = normalizeCurrentChangesArtifactMode(
+                parseCurrentChangesArtifactModeFromName(candidatePath || '')
+            );
+            const candidateFormat = getManualExportPathFormat(candidatePath || '');
+
+            let score = 0;
+            if (folderPath && candidateFolderPath === folderPath) score += 40;
+            if (leafName && candidateLeafName && leafName === candidateLeafName) score += 30;
+            if (snapshotKeyHint && candidateSnapshotKey && candidateSnapshotKey === snapshotKeyHint) score += 80;
+            if (normalizedMode && candidateMode && candidateMode === normalizedMode) score += 20;
+            if (normalizedFormat && candidateFormat && candidateFormat === normalizedFormat) score += 8;
+
+            if (score > bestScore) {
+                bestFile = file;
+                bestScore = score;
+            }
+        }
+
+        if (!bestFile || bestScore <= 0) return null;
+        return bestFile;
+    };
+
+    const parsedFolders = new Set();
+    const versions = [];
+
+    manualExportIndexFiles.forEach((indexFile) => {
+        const indexPath = normalizeManualExportIndexPath(indexFile?.name || '');
+        const indexFolderPath = indexPath.split('/').slice(0, -1).join('/');
+        const parsedFolderKey = indexFolderPath || '__root__';
+        if (parsedFolders.has(parsedFolderKey)) return;
+
+        const leafName = getManualExportLeafName(indexPath);
+        const records = isManualExportInfoLogMarkdownFileNameLike(leafName)
+            ? parseManualExportInfoLogMarkdown(indexFile?.content || '')
+            : parseManualExportInfoLogJson(indexFile?.content || '');
+        if (!Array.isArray(records) || records.length === 0) return;
+
+        parsedFolders.add(parsedFolderKey);
+
+        records.forEach((normalizedRecord) => {
+            const version = buildManualExportRestoreVersionFromIndexRecord({
+                source,
+                normalizedRecord,
+                pathResolver: (relativePath, context = {}) => {
+                    const normalizedRelativePath = normalizeManualExportIndexPath(relativePath || '');
+                    const fallbackSnapshotKey = String(context?.snapshotKey || '').trim().toLowerCase();
+                    const fallbackMode = resolveManualExportModeFromPath(
+                        normalizedRelativePath,
+                        context?.mode || ''
+                    );
+                    const fallbackFormat = String(context?.format || getManualExportPathFormat(normalizedRelativePath || '') || '')
+                        .trim()
+                        .toLowerCase();
+
+                    const fullRelativePath = normalizeManualExportIndexPath(
+                        indexFolderPath ? `${indexFolderPath}/${normalizedRelativePath}` : normalizedRelativePath
+                    );
+                    let matched = fullRelativePath
+                        ? (manualExportPathMap.get(fullRelativePath) || null)
+                        : null;
+                    if (!matched) {
+                        matched = findBestManualExportZipChangeFile({
+                            fullRelativePath,
+                            mode: fallbackMode,
+                            format: fallbackFormat,
+                            snapshotKey: fallbackSnapshotKey
+                        });
+                    }
+                    const resolvedPath = normalizeManualExportIndexPath(matched?.name || fullRelativePath);
+                    const leafName = matched?.name
+                        ? getManualExportLeafName(matched.name)
+                        : getManualExportLeafName(resolvedPath || normalizedRelativePath);
+                    const folderPath = matched?.name
+                        ? normalizeManualExportIndexPath(matched.name).split('/').slice(0, -1).join('/')
+                        : resolvedPath.split('/').slice(0, -1).join('/');
+
+                    return {
+                        name: leafName,
+                        zipEntryName: matched?.name || resolvedPath || fullRelativePath,
+                        fileUrl: null,
+                        localFileKey: null,
+                        folderPath,
+                        snapshotFolder: matched?.snapshotFolder || parseSnapshotKeyFromText(resolvedPath || fullRelativePath || ''),
+                        relativePath: resolvedPath || fullRelativePath,
+                        candidate: matched
+                    };
+                },
+                containerSourceType: 'zip',
+                containerOriginalFile: originalFile,
+                containerFileUrl: fileUrl || null,
+                containerLocalFileKey: localFileKey || null
+            });
+            if (version) {
+                versions.push(version);
+            }
+        });
+    });
+
+    return versions;
+}
+
 async function parseRestoreVersionsFromZipBlob(zipBlob, { source, originalFile, fileUrl, localFileKey }) {
     const files = await unzipStore(zipBlob);
 
@@ -17347,10 +19541,21 @@ async function parseRestoreVersionsFromZipBlob(zipBlob, { source, originalFile, 
         });
         restoreCacheSet(restoreSourceCache.zipFiles, cacheKey, { files });
     } catch (_) { }
+    const manualExportVersions = parseRestoreVersionsFromManualExportZipFiles(files, {
+        source,
+        originalFile,
+        fileUrl,
+        localFileKey
+    });
+    if (manualExportVersions.length > 0) {
+        return manualExportVersions;
+    }
+
     const versions = [];
 
     for (const file of files) {
         if (!file?.name || !file.name.endsWith('.json')) continue;
+        if (isManualExportInfoLogFileNameLike(getManualExportLeafName(file.name || ''))) continue;
         try {
             const data = JSON.parse(file.content);
             if (data && (data._exportInfo || data.time)) {
@@ -17376,6 +19581,45 @@ function getVersionedInfoLogFileNameCandidates() {
         '备份历史log.md',
         'backup-history-log.md'
     ];
+}
+
+function getInfoLogFileNameCandidates(targetMode = 'versioned') {
+    return normalizeOverwriteMode(targetMode || 'versioned') === 'overwrite'
+        ? getOverwriteInfoLogFileNameCandidates()
+        : getVersionedInfoLogFileNameCandidates();
+}
+
+function getManualExportInfoLogFileNameCandidates(format = '') {
+    const normalizedFormat = String(format || '').trim().toLowerCase();
+    const markdownNames = [
+        '备份历史log.md',
+        'backup-history-log.md'
+    ];
+    const jsonNames = [
+        '备份历史log.json',
+        'backup-history-log.json'
+    ];
+
+    if (normalizedFormat === 'md' || normalizedFormat === 'markdown') return markdownNames;
+    if (normalizedFormat === 'json') return jsonNames;
+    return [...markdownNames, ...jsonNames];
+}
+
+function isManualExportInfoLogMarkdownFileNameLike(name) {
+    return isVersionedInfoLogFileNameLike(name);
+}
+
+function isManualExportInfoLogJsonFileNameLike(name) {
+    const lower = String(name || '').trim().toLowerCase();
+    if (!lower) return false;
+    if (/^备份历史log(?:[_-].+)?\.json$/i.test(lower)) return true;
+    if (/^backup-history-log(?:[_-].+)?\.json$/i.test(lower)) return true;
+    return getManualExportInfoLogFileNameCandidates('json')
+        .some((candidate) => String(candidate || '').trim().toLowerCase() === lower);
+}
+
+function isManualExportInfoLogFileNameLike(name) {
+    return isManualExportInfoLogMarkdownFileNameLike(name) || isManualExportInfoLogJsonFileNameLike(name);
 }
 
 function splitVersionedInfoLogRowCells(line) {
@@ -17481,6 +19725,101 @@ function parseVersionedInfoLogChangesToStats(changesText) {
         modifiedCount: 0
     };
 
+    const parseEntityPairCounts = (text) => {
+        const segment = String(text || '').trim();
+        if (!segment) return { bookmarks: 0, folders: 0, matched: false };
+
+        const bookmarkMatch = /(\d+)\s*(?:书签|bookmarks?|bookmark|bkm)/i.exec(segment);
+        const folderMatch = /(\d+)\s*(?:文件夹|folders?|folder|fld)/i.exec(segment);
+        let bookmarks = bookmarkMatch ? Number(bookmarkMatch[1] || 0) : null;
+        let folders = folderMatch ? Number(folderMatch[1] || 0) : null;
+        let matchedByPair = !!bookmarkMatch || !!folderMatch;
+
+        const numericPair = /(\d+)\s*\/\s*(\d+)/.exec(segment);
+        if (numericPair) {
+            if (bookmarks === null) bookmarks = Number(numericPair[1] || 0);
+            if (folders === null) folders = Number(numericPair[2] || 0);
+            matchedByPair = true;
+        }
+
+        const firstNumber = /(\d+)/.exec(segment);
+        if (firstNumber && bookmarks === null && folders === null) {
+            bookmarks = Number(firstNumber[1] || 0);
+            folders = 0;
+            matchedByPair = true;
+        }
+
+        return {
+            bookmarks: Number.isFinite(bookmarks) ? bookmarks : 0,
+            folders: Number.isFinite(folders) ? folders : 0,
+            matched: matchedByPair
+        };
+    };
+
+    const parseSingleOrSumCount = (text) => {
+        const numbers = Array.from(String(text || '').matchAll(/\d+/g))
+            .map((m) => Number(m[0] || 0))
+            .filter((n) => Number.isFinite(n));
+        if (!numbers.length) return 0;
+        return numbers.reduce((sum, value) => sum + value, 0);
+    };
+
+    const sectionHeaderReg = /(新增|删除|修改|移动|added|deleted|modified|moved?)\s*[:：]/ig;
+    const sections = [];
+    let sectionMatch = null;
+    while ((sectionMatch = sectionHeaderReg.exec(raw)) !== null) {
+        sections.push({
+            label: String(sectionMatch[1] || ''),
+            start: sectionMatch.index,
+            contentStart: sectionHeaderReg.lastIndex
+        });
+    }
+
+    if (sections.length > 0) {
+        let sectionParsed = false;
+        for (let index = 0; index < sections.length; index += 1) {
+            const section = sections[index];
+            const next = sections[index + 1];
+            const contentEnd = next ? next.start : raw.length;
+            const content = raw
+                .slice(section.contentStart, contentEnd)
+                .replace(/^[·•|,;/\s]+|[·•|,;/\s]+$/g, '')
+                .trim();
+            const labelLower = section.label.toLowerCase();
+
+            if (section.label.includes('新增') || labelLower.startsWith('added')) {
+                const parsed = parseEntityPairCounts(content);
+                stats.bookmarkAdded += parsed.bookmarks;
+                stats.folderAdded += parsed.folders;
+                sectionParsed = true;
+                continue;
+            }
+            if (section.label.includes('删除') || labelLower.startsWith('deleted')) {
+                const parsed = parseEntityPairCounts(content);
+                stats.bookmarkDeleted += parsed.bookmarks;
+                stats.folderDeleted += parsed.folders;
+                sectionParsed = true;
+                continue;
+            }
+            if (section.label.includes('移动') || labelLower.startsWith('move')) {
+                const value = parseSingleOrSumCount(content);
+                stats.movedCount += value;
+                sectionParsed = true;
+                continue;
+            }
+            if (section.label.includes('修改') || labelLower.startsWith('modif')) {
+                const value = parseSingleOrSumCount(content);
+                stats.modifiedCount += value;
+                sectionParsed = true;
+                continue;
+            }
+        }
+
+        if (sectionParsed) {
+            return buildRestoreStats(stats);
+        }
+    }
+
     let matched = false;
     const normalized = raw
         .replace(/[，；;]/g, '/')
@@ -17532,8 +19871,8 @@ function parseVersionedInfoLogChangesToStats(changesText) {
         }
     };
 
-    parseAddDeleteFromLabel('(?:书签|bookmark|bkm)', 'bookmarkAdded', 'bookmarkDeleted');
-    parseAddDeleteFromLabel('(?:文件夹|folder|fld)', 'folderAdded', 'folderDeleted');
+    parseAddDeleteFromLabel('(?:书签|bookmarks?|bookmark|bkm|\\bb\\b)', 'bookmarkAdded', 'bookmarkDeleted');
+    parseAddDeleteFromLabel('(?:文件夹|folders?|folder|fld|\\bf\\b)', 'folderAdded', 'folderDeleted');
 
     const parseSingleCount = (labelPattern, key) => {
         const reg = new RegExp(`${labelPattern}[^\d]*(\\d+)`, 'i');
@@ -17747,16 +20086,21 @@ function buildRemoteFileUrlCandidatesForIndexEntry({ source, settings, relativeP
     return [];
 }
 
-async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
+async function fetchRemoteInfoLog(source, settings, options = {}) {
+    const targetMode = normalizeOverwriteMode(options?.targetMode || 'versioned');
     const exportRoots = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
-    const fileNames = getVersionedInfoLogFileNameCandidates();
-    const versionedFolders = Array.from(new Set(getVersionedFolderCandidates().map((name) => String(name || '').trim()).filter(Boolean)));
+    const fileNames = getInfoLogFileNameCandidates(targetMode);
+    const versionedFolders = Array.from(new Set(
+        (targetMode === 'overwrite' ? getOverwriteFolderCandidates() : getVersionedFolderCandidates())
+            .map((name) => String(name || '').trim())
+            .filter(Boolean)
+    ));
     const folderSuffixes = Array.from(new Set([
         ...versionedFolders,
         ''
     ]));
 
-    const emptyResult = { indexFound: false, text: '', fileName: '', url: '', source, files: [] };
+    const emptyResult = { indexFound: false, text: '', fileName: '', url: '', source, files: [], targetMode };
     const cloneResult = (result) => {
         const normalized = result && typeof result === 'object' ? result : emptyResult;
         return {
@@ -17765,6 +20109,7 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
             fileName: String(normalized.fileName || ''),
             url: String(normalized.url || ''),
             source,
+            targetMode: normalizeOverwriteMode(normalized.targetMode || targetMode),
             files: Array.isArray(normalized.files)
                 ? normalized.files.map((item) => ({
                     fileName: String(item?.fileName || ''),
@@ -17779,7 +20124,7 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
             const serverAddress = String(settings?.serverAddress || '').trim();
             const username = String(settings?.username || '').trim();
             if (!serverAddress || !username) return '';
-            return `idxlog|webdav|${serverAddress}|${username}`;
+            return `idxlog|webdav|${targetMode}|${serverAddress}|${username}`;
         }
 
         if (source === 'github') {
@@ -17789,7 +20134,7 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
             const branch = String(settings?.githubRepoBranch || '').trim();
             const basePath = normalizeGitHubBasePath(settings?.githubRepoBasePath || '');
             if (!owner || !repo || !branch) return '';
-            return `idxlog|github|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}`;
+            return `idxlog|github|${targetMode}|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}`;
         }
 
         return '';
@@ -17816,7 +20161,10 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
         const normalized = String(inputText || '').replace(/^﻿/, '');
         if (!normalized.trim()) return '';
         const entries = parseVersionedInfoLogMarkdown(normalized);
-        return entries.length > 0 ? normalized : '';
+        const hasTargetEntries = entries.some((entry) => (
+            normalizeOverwriteMode(resolveOverwriteModeFromVersionedInfoLogEntry(entry)) === targetMode
+        ));
+        return hasTargetEntries ? normalized : '';
     };
 
     const decodeBase64Utf8 = (base64Text) => {
@@ -17882,15 +20230,28 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
             return cloneResult(emptyResult);
         }
 
-        const mergedLedger = buildVersionedInfoLogLedgerFromSources({
-            importedCandidates: collectedMatches,
-            baselineMarkers: []
-        });
-        const mergedText = buildVersionedInfoLogMarkdown(mergedLedger.records, 'zh_CN', {
-            targetMode: 'versioned',
-            baselineMarkers: mergedLedger.baselineMarkers,
-            segmentByBaseline: true
-        });
+        let mergedText = '';
+        if (targetMode === 'versioned') {
+            const mergedLedger = buildVersionedInfoLogLedgerFromSources({
+                importedCandidates: collectedMatches,
+                baselineMarkers: []
+            });
+            mergedText = buildVersionedInfoLogMarkdown(mergedLedger.records, 'zh_CN', {
+                targetMode: 'versioned',
+                baselineMarkers: mergedLedger.baselineMarkers,
+                segmentByBaseline: true
+            });
+        } else {
+            const mergedRecords = buildInfoLogRecordsFromSources({
+                importedCandidates: collectedMatches,
+                targetMode
+            });
+            mergedText = buildVersionedInfoLogMarkdown(mergedRecords, 'zh_CN', {
+                targetMode,
+                baselineMarkers: [],
+                segmentByBaseline: false
+            });
+        }
         const first = collectedMatches[0] || {};
         const result = {
             indexFound: true,
@@ -17898,6 +20259,7 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
             fileName: String(first.fileName || ''),
             url: String(first.url || ''),
             source,
+            targetMode,
             files: collectedMatches.map((item) => ({
                 fileName: item.fileName,
                 url: item.url
@@ -17908,7 +20270,13 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
     };
 
     const preloadedIndexCandidates = Array.isArray(options?.preloadedIndexCandidates)
-        ? options.preloadedIndexCandidates.filter((item) => item && item.type === 'index_markdown' && item.source === source)
+        ? options.preloadedIndexCandidates.filter((item) => item
+            && item.type === 'index_markdown'
+            && item.source === source
+            && getInfoLogFileNameCandidates(targetMode).some((name) => String(item?.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase()
+                || (targetMode === 'versioned'
+                    ? isVersionedInfoLogFileNameLike(item?.name || '')
+                    : isOverwriteInfoLogFileNameLike(item?.name || ''))))
         : [];
     const directoryManifestProvided = options?.directoryManifestProvided === true;
 
@@ -18016,6 +20384,13 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
     return finalizeResult();
 }
 
+async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
+    return fetchRemoteInfoLog(source, settings, {
+        ...options,
+        targetMode: 'versioned'
+    });
+}
+
 async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {}) {
     const settings = await browserAPI.storage.local.get([
         'serverAddress',
@@ -18028,13 +20403,20 @@ async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {
         'githubRepoBasePath'
     ]);
 
-    const logResult = await fetchRemoteVersionedInfoLog(source, settings, {
+    const versionedLogResult = await fetchRemoteInfoLog(source, settings, {
         preloadedIndexCandidates: options?.preloadedIndexCandidates,
-        directoryManifestProvided: options?.directoryManifestProvided
+        directoryManifestProvided: options?.directoryManifestProvided,
+        targetMode: 'versioned'
     });
-    const hasVersionedIndex = !!logResult?.indexFound;
+    const overwriteLogResult = await fetchRemoteInfoLog(source, settings, {
+        preloadedIndexCandidates: options?.preloadedIndexCandidates,
+        directoryManifestProvided: options?.directoryManifestProvided,
+        targetMode: 'overwrite'
+    });
+    const hasVersionedIndex = !!versionedLogResult?.indexFound;
+    const hasOverwriteIndex = !!overwriteLogResult?.indexFound;
 
-    if (!hasVersionedIndex) {
+    if (!hasVersionedIndex && !hasOverwriteIndex) {
         return {
             success: true,
             indexFound: false,
@@ -18046,21 +20428,30 @@ async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {
 
     const versions = [];
 
-    if (hasVersionedIndex) {
+    const appendVersionsFromLogResult = (logResult, targetMode) => {
+        if (!logResult?.indexFound) return;
+
+        const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
         const entries = parseVersionedInfoLogMarkdown(logResult.text || '');
-        const sourceEntries = entries.filter((entry) => shouldUseVersionedInfoLogEntryForSource(entry, source));
-        const baselineMarkers = parseVersionedInfoLogBaselineMarkersFromMarkdown(logResult.text || '');
-        const groupMetaBySnapshotKey = buildRestoreVersionGroupMetaIndex(
-            sourceEntries
-                .map((entry) => buildVersionedInfoLogRecordFromEntry(entry))
-                .filter(Boolean),
-            baselineMarkers,
-            { source }
-        );
+        const sourceEntries = entries.filter((entry) => (
+            shouldUseVersionedInfoLogEntryForSource(entry, source)
+            && normalizeOverwriteMode(resolveOverwriteModeFromVersionedInfoLogEntry(entry)) === normalizedTargetMode
+        ));
+        const baselineMarkers = normalizedTargetMode === 'versioned'
+            ? parseVersionedInfoLogBaselineMarkersFromMarkdown(logResult.text || '')
+            : [];
+        const groupMetaBySnapshotKey = normalizedTargetMode === 'versioned'
+            ? buildRestoreVersionGroupMetaIndex(
+                sourceEntries
+                    .map((entry) => buildVersionedInfoLogRecordFromEntry(entry))
+                    .filter(Boolean),
+                baselineMarkers,
+                { source }
+            )
+            : new Map();
 
         for (const entry of sourceEntries) {
             const overwriteMode = resolveOverwriteModeFromVersionedInfoLogEntry(entry);
-            if (overwriteMode === 'overwrite') continue;
             const snapshotKey = resolveSnapshotKeyFromVersionedInfoLogEntry(entry, overwriteMode);
             if (!snapshotKey) continue;
 
@@ -18125,20 +20516,25 @@ async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {
                 canRestore: urlCandidates.length > 0
             }));
         }
-    }
+    };
+
+    appendVersionsFromLogResult(versionedLogResult, 'versioned');
+    appendVersionsFromLogResult(overwriteLogResult, 'overwrite');
 
     if (versions.length === 0) {
         return {
             success: true,
-            indexFound: true,
+            indexFound: hasVersionedIndex || hasOverwriteIndex,
             sourceType: 'html',
             versions: [],
             artifacts: { currentChangesCount: 0, fromIndex: true },
             indexMeta: {
-                fileName: logResult?.fileName || '',
-                url: logResult?.url || '',
-                versionedLogFileName: logResult?.fileName || '',
-                versionedLogUrl: logResult?.url || ''
+                fileName: versionedLogResult?.fileName || overwriteLogResult?.fileName || '',
+                url: versionedLogResult?.url || overwriteLogResult?.url || '',
+                versionedLogFileName: versionedLogResult?.fileName || '',
+                versionedLogUrl: versionedLogResult?.url || '',
+                overwriteLogFileName: overwriteLogResult?.fileName || '',
+                overwriteLogUrl: overwriteLogResult?.url || ''
             }
         };
     }
@@ -18172,10 +20568,12 @@ async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {
             fromIndex: true
         },
         indexMeta: {
-            fileName: logResult?.fileName || '',
-            url: logResult?.url || '',
-            versionedLogFileName: logResult?.fileName || '',
-            versionedLogUrl: logResult?.url || ''
+            fileName: versionedLogResult?.fileName || overwriteLogResult?.fileName || '',
+            url: versionedLogResult?.url || overwriteLogResult?.url || '',
+            versionedLogFileName: versionedLogResult?.fileName || '',
+            versionedLogUrl: versionedLogResult?.url || '',
+            overwriteLogFileName: overwriteLogResult?.fileName || '',
+            overwriteLogUrl: overwriteLogResult?.url || ''
         }
     };
 }
@@ -18283,11 +20681,11 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 groupMeta
             } = {}) => {
                 const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
-                if (normalizedOverwriteMode === 'overwrite') return;
-
-                const normalizedKey = String(snapshotKey || '')
-                    .trim()
-                    .toLowerCase();
+                const normalizedKey = normalizedOverwriteMode === 'overwrite'
+                    ? '__overwrite__'
+                    : String(snapshotKey || '')
+                        .trim()
+                        .toLowerCase();
                 if (!normalizedKey) return;
 
                 if (!seenKeys.has(normalizedKey)) {
@@ -18320,7 +20718,9 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     fingerprint: normalizedFingerprint,
                     stats: buildRestoreStats(stats || null),
                     changesRaw: String(changesRaw || '').trim(),
-                    groupMeta: groupMeta && typeof groupMeta === 'object' ? groupMeta : null
+                    groupMeta: normalizedOverwriteMode === 'versioned' && groupMeta && typeof groupMeta === 'object'
+                        ? groupMeta
+                        : null
                 };
 
                 localIndexEntryBySnapshotKey.set(normalizedKey, normalizedEntry);
@@ -18441,6 +20841,262 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             }
         }
 
+        const zipVersions = [];
+        if (source === 'local') {
+            const zipCandidates = candidates.filter((candidate) => candidate && candidate.type === 'zip');
+            for (const zipCandidate of zipCandidates) {
+                try {
+                    const zipArrayBuffer = extractArrayBufferFromSerializedRestorePayload(zipCandidate);
+                    if (!(zipArrayBuffer instanceof ArrayBuffer) || zipArrayBuffer.byteLength === 0) {
+                        continue;
+                    }
+                    const zipBlob = new Blob([zipArrayBuffer], { type: 'application/zip' });
+                    const versions = await parseRestoreVersionsFromZipBlob(zipBlob, {
+                        source,
+                        originalFile: String(zipCandidate.name || zipCandidate.localFileKey || 'restore.zip').trim(),
+                        fileUrl: null,
+                        localFileKey: zipCandidate.localFileKey || null
+                    });
+                    if (Array.isArray(versions) && versions.length > 0) {
+                        zipVersions.push(...versions);
+                    }
+                } catch (error) {
+                    console.warn('[scanAndParseRestoreSource] Failed to parse local ZIP restore source:', zipCandidate?.name, error);
+                }
+            }
+        }
+
+        const getCandidateRelativePathForRestoreScan = (candidate) => {
+            if (!candidate || typeof candidate !== 'object') return '';
+            if (source === 'local') {
+                return normalizeManualExportIndexPath(candidate.localFileKey || '');
+            }
+            const folderPath = normalizeManualExportIndexPath(candidate.folderPath || '');
+            const name = String(candidate.name || '').trim();
+            return normalizeManualExportIndexPath(folderPath ? `${folderPath}/${name}` : name);
+        };
+
+        const candidateByRelativePath = new Map();
+        for (const candidate of candidates || []) {
+            const relativePath = getCandidateRelativePathForRestoreScan(candidate);
+            if (!relativePath || candidateByRelativePath.has(relativePath)) continue;
+            candidateByRelativePath.set(relativePath, candidate);
+        }
+
+        const manualExportIndexCandidates = (candidates || [])
+            .filter((candidate) => candidate
+                && (candidate.type === 'index_json' || candidate.type === 'index_markdown')
+                && isManualExportInfoLogFileNameLike(candidate.name || ''))
+            .slice()
+            .sort((a, b) => {
+                const aJson = a.type === 'index_json' ? 0 : 1;
+                const bJson = b.type === 'index_json' ? 0 : 1;
+                if (aJson !== bJson) return aJson - bJson;
+                const aModified = Number.isFinite(Number(a?.lastModified)) ? Number(a.lastModified) : 0;
+                const bModified = Number.isFinite(Number(b?.lastModified)) ? Number(b.lastModified) : 0;
+                return bModified - aModified;
+            });
+
+        const manualExportChangesCandidates = (candidates || [])
+            .filter((candidate) => candidate && candidate.type === 'changes_artifact');
+        const manualExportChangesByFolderPath = new Map();
+        const manualExportChangesBySnapshotKey = new Map();
+
+        const pushManualExportCandidateToMap = (map, key, candidate) => {
+            const normalizedKey = normalizeManualExportIndexPath(key || '');
+            if (!normalizedKey || !candidate) return;
+            if (!map.has(normalizedKey)) {
+                map.set(normalizedKey, []);
+            }
+            const list = map.get(normalizedKey);
+            if (!list.includes(candidate)) {
+                list.push(candidate);
+            }
+        };
+
+        manualExportChangesCandidates.forEach((candidate) => {
+            const relativePath = getCandidateRelativePathForRestoreScan(candidate);
+            const folderPath = normalizeManualExportIndexPath(relativePath.split('/').slice(0, -1).join('/'));
+            pushManualExportCandidateToMap(manualExportChangesByFolderPath, folderPath, candidate);
+
+            const snapshotKey = String(parseSnapshotKeyFromText(
+                candidate?.snapshotFolder
+                || candidate?.folderPath
+                || relativePath
+                || candidate?.name
+                || ''
+            ) || '').trim().toLowerCase();
+            if (snapshotKey) {
+                pushManualExportCandidateToMap(manualExportChangesBySnapshotKey, snapshotKey, candidate);
+            }
+        });
+
+        const findBestManualExportChangesCandidate = ({
+            fullRelativePath = '',
+            mode = '',
+            format = '',
+            snapshotKey = ''
+        } = {}) => {
+            const normalizedFullPath = normalizeManualExportIndexPath(fullRelativePath || '');
+            const normalizedMode = normalizeCurrentChangesArtifactMode(mode);
+            const normalizedFormatRaw = String(format || '').trim().toLowerCase();
+            const normalizedFormat = normalizedFormatRaw === 'json'
+                ? 'json'
+                : (normalizedFormatRaw === 'html' ? 'html' : '');
+            const folderPath = normalizeManualExportIndexPath(normalizedFullPath.split('/').slice(0, -1).join('/'));
+            const leafName = getManualExportLeafName(normalizedFullPath);
+            const snapshotKeyHint = String(snapshotKey || parseSnapshotKeyFromText(normalizedFullPath || '') || '')
+                .trim()
+                .toLowerCase();
+
+            const pool = [];
+            const seen = new Set();
+            const appendPool = (list) => {
+                for (const item of list || []) {
+                    if (!item || seen.has(item)) continue;
+                    seen.add(item);
+                    pool.push(item);
+                }
+            };
+
+            if (folderPath && manualExportChangesByFolderPath.has(folderPath)) {
+                appendPool(manualExportChangesByFolderPath.get(folderPath));
+            }
+            if (snapshotKeyHint && manualExportChangesBySnapshotKey.has(snapshotKeyHint)) {
+                appendPool(manualExportChangesBySnapshotKey.get(snapshotKeyHint));
+            }
+            if (pool.length === 0) {
+                appendPool(manualExportChangesCandidates);
+            }
+
+            let bestCandidate = null;
+            let bestScore = -1;
+            let bestModified = -1;
+
+            for (const candidate of pool) {
+                const candidateRelativePath = getCandidateRelativePathForRestoreScan(candidate);
+                const candidateFolderPath = normalizeManualExportIndexPath(candidateRelativePath.split('/').slice(0, -1).join('/'));
+                const candidateLeafName = getManualExportLeafName(candidateRelativePath || candidate?.name || '');
+                const candidateSnapshotKey = String(parseSnapshotKeyFromText(
+                    candidate?.snapshotFolder
+                    || candidate?.folderPath
+                    || candidateRelativePath
+                    || candidate?.name
+                    || ''
+                ) || '').trim().toLowerCase();
+                const candidateMode = normalizeCurrentChangesArtifactMode(
+                    parseCurrentChangesArtifactModeFromName(candidate?.name || candidateRelativePath || '')
+                );
+                const candidateFormat = getManualExportPathFormat(candidateRelativePath || candidate?.name || '');
+
+                let score = 0;
+                if (folderPath && candidateFolderPath === folderPath) score += 40;
+                if (leafName && candidateLeafName && leafName === candidateLeafName) score += 30;
+                if (snapshotKeyHint && candidateSnapshotKey && candidateSnapshotKey === snapshotKeyHint) score += 80;
+                if (normalizedMode && candidateMode && candidateMode === normalizedMode) score += 20;
+                if (normalizedFormat && candidateFormat && candidateFormat === normalizedFormat) score += 8;
+
+                const modified = Number.isFinite(Number(candidate?.lastModified))
+                    ? Number(candidate.lastModified)
+                    : 0;
+                if (score > bestScore || (score === bestScore && modified > bestModified)) {
+                    bestCandidate = candidate;
+                    bestScore = score;
+                    bestModified = modified;
+                }
+            }
+
+            if (!bestCandidate || bestScore <= 0) return null;
+            return bestCandidate;
+        };
+
+        const parsedManualExportIndexFolders = new Set();
+        const manualExportIndexVersions = [];
+        let hasManualExportIndex = false;
+
+        const resolveManualExportIndexPathRef = (indexCandidate, relativePath, context = {}) => {
+            const baseFolderPath = normalizeManualExportIndexPath(indexCandidate?.folderPath || '');
+            const normalizedRelativePath = normalizeManualExportIndexPath(relativePath || '');
+            const fallbackSnapshotKey = String(context?.snapshotKey || '').trim().toLowerCase();
+            const fallbackMode = resolveManualExportModeFromPath(
+                normalizedRelativePath,
+                context?.mode || ''
+            );
+            const fallbackFormat = String(context?.format || getManualExportPathFormat(normalizedRelativePath || '') || '')
+                .trim()
+                .toLowerCase();
+
+            const fullRelativePath = normalizeManualExportIndexPath(
+                baseFolderPath ? `${baseFolderPath}/${normalizedRelativePath}` : normalizedRelativePath
+            );
+            let matchedCandidate = fullRelativePath
+                ? (candidateByRelativePath.get(fullRelativePath) || null)
+                : null;
+            if (!matchedCandidate) {
+                matchedCandidate = findBestManualExportChangesCandidate({
+                    fullRelativePath,
+                    mode: fallbackMode,
+                    format: fallbackFormat,
+                    snapshotKey: fallbackSnapshotKey
+                });
+            }
+
+            const resolvedRelativePath = normalizeManualExportIndexPath(
+                matchedCandidate ? getCandidateRelativePathForRestoreScan(matchedCandidate) : fullRelativePath
+            );
+            const folderPath = matchedCandidate?.folderPath
+                || resolvedRelativePath.split('/').slice(0, -1).join('/');
+
+            return {
+                name: matchedCandidate?.name || getManualExportLeafName(resolvedRelativePath || normalizedRelativePath),
+                localFileKey: matchedCandidate?.localFileKey || null,
+                fileUrl: matchedCandidate?.url || matchedCandidate?.fileUrl || null,
+                folderPath,
+                snapshotFolder: matchedCandidate?.snapshotFolder || parseSnapshotKeyFromText(resolvedRelativePath || fullRelativePath || ''),
+                relativePath: resolvedRelativePath || fullRelativePath,
+                candidate: matchedCandidate
+            };
+        };
+
+        for (const indexCandidate of manualExportIndexCandidates) {
+            const indexFolderPath = normalizeManualExportIndexPath(indexCandidate?.folderPath || '');
+            if (!indexFolderPath) continue;
+            if (parsedManualExportIndexFolders.has(indexFolderPath)) continue;
+
+            let text = '';
+            try {
+                if (source === 'local') {
+                    text = String(indexCandidate.text || '');
+                } else if (indexCandidate.url) {
+                    const blob = await downloadRemoteFile({ url: indexCandidate.url, source });
+                    text = await blob.text();
+                }
+            } catch (_) {
+                text = '';
+            }
+
+            if (!text) continue;
+
+            const records = indexCandidate.type === 'index_markdown'
+                ? parseManualExportInfoLogMarkdown(text)
+                : (indexCandidate.type === 'index_json' ? parseManualExportInfoLogJson(text) : []);
+            if (!Array.isArray(records) || records.length === 0) continue;
+
+            parsedManualExportIndexFolders.add(indexFolderPath);
+            hasManualExportIndex = true;
+
+            records.forEach((normalizedRecord) => {
+                const version = buildManualExportRestoreVersionFromIndexRecord({
+                    source,
+                    normalizedRecord,
+                    pathResolver: (relativePath, context = {}) => resolveManualExportIndexPathRef(indexCandidate, relativePath, context)
+                });
+                if (version) {
+                    manualExportIndexVersions.push(version);
+                }
+            });
+        }
+
         const applyLocalIndexMetadataToVersion = (version, snapshotKey = '') => {
             if (source !== 'local' || !version) return version;
 
@@ -18475,6 +21131,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             const indexChangesRaw = String(indexEntry.changesRaw || '').trim();
             const indexHasExplicitChanges = indexChangesRaw.length > 0;
             const currentStatsMagnitude = getRestoreStatsMagnitude(version?.stats || null);
+            const shouldPreferIndexTime = indexEntry.overwriteMode === 'overwrite';
 
             if (indexHasExplicitChanges || currentStatsMagnitude <= 0) {
                 version.stats = indexStats;
@@ -18493,7 +21150,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 version.note = indexNote;
             }
 
-            if (!Number.isFinite(Number(version.time)) && Number.isFinite(Number(indexEntry.timeMs))) {
+            if ((shouldPreferIndexTime || !Number.isFinite(Number(version.time))) && Number.isFinite(Number(indexEntry.timeMs))) {
                 version.time = Number(indexEntry.timeMs);
                 version.displayTime = formatDateTime(Number(indexEntry.timeMs));
             } else if (!String(version.displayTime || '').trim() && String(indexEntry.timeRaw || '').trim()) {
@@ -18507,7 +21164,9 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             version.restoreRef = {
                 ...(version.restoreRef || {}),
                 snapshotKey: version?.restoreRef?.snapshotKey || indexEntry.snapshotKey || null,
-                snapshotFolder: version?.restoreRef?.snapshotFolder || indexEntry.snapshotKey || null,
+                snapshotFolder: version?.restoreRef?.snapshotFolder
+                    || (indexEntry.overwriteMode === 'overwrite' ? '__overwrite__' : indexEntry.snapshotKey)
+                    || null,
                 overwriteMode: version?.restoreRef?.overwriteMode || indexEntry.overwriteMode || 'versioned',
                 recordTime: version?.restoreRef?.recordTime || indexEntry.recordTime,
                 indexChanges: indexChangesRaw || String(version?.restoreRef?.indexChanges || '').trim(),
@@ -18603,10 +21262,20 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         };
 
         const allVersions = [];
+        if (zipVersions.length > 0) {
+            allVersions.push(...zipVersions.map((item) => normalizeRestoreVersionMeta(item)));
+        }
+        if (manualExportIndexVersions.length > 0) {
+            allVersions.push(...manualExportIndexVersions.map((item) => normalizeRestoreVersionMeta(item)));
+        }
         const htmlVersionBySnapshotKey = new Map();
         const scannedHtmlVersions = [];
 
-        const htmlCandidates = candidates.filter(f => f && f.type === 'html_backup');
+        const htmlCandidates = candidates.filter((f) => {
+            if (!f || f.type !== 'html_backup') return false;
+            if (!hasManualExportIndex) return true;
+            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+        });
         for (const f of htmlCandidates) {
             try {
                 const version = buildRestoreVersionFromHtmlFile({
@@ -18641,7 +21310,46 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             }
         }
 
-        const changesArtifactCandidates = candidates.filter(f => f && f.type === 'changes_artifact');
+        const jsonSnapshotCandidates = candidates.filter((f) => {
+            if (!f || f.type !== 'json_backup') return false;
+            if (!hasManualExportIndex) return true;
+            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+        });
+        for (const f of jsonSnapshotCandidates) {
+            try {
+                const jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
+                if (!jsonText) continue;
+
+                const extractedTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
+                if (!isBookmarkTreeShapeValid(extractedTree)) continue;
+
+                const version = buildRestoreVersionFromJsonTreeFile({
+                    source,
+                    originalFile: f.name,
+                    fileUrl: f.url || null,
+                    localFileKey: f.localFileKey || null,
+                    fileName: f.name,
+                    lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null,
+                    snapshotFolder: f.snapshotFolder || '',
+                    folderPath: f.folderPath || ''
+                });
+                const snapshotKey = String(
+                    version?.restoreRef?.snapshotKey
+                    || parseSnapshotKeyFromText(f.snapshotFolder || f.folderPath || f.name || '')
+                    || ''
+                ).trim().toLowerCase();
+                applyLocalIndexMetadataToVersion(version, snapshotKey);
+                allVersions.push(version);
+            } catch (e) {
+                console.warn('[scanAndParseRestoreSource] Failed to parse JSON snapshot:', f.name, e);
+            }
+        }
+
+        const changesArtifactCandidates = candidates.filter((f) => {
+            if (!f || f.type !== 'changes_artifact') return false;
+            if (!hasManualExportIndex) return true;
+            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+        });
         const artifactBundleBySnapshotKey = new Map();
 
         for (const file of changesArtifactCandidates) {
@@ -18681,6 +21389,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     source,
                     fileUrl: file.url || null,
                     localFileKey: file.localFileKey || null,
+                    lastModifiedMs: Number.isFinite(Number(file.lastModified)) ? Number(file.lastModified) : null,
                     snapshotFolder: file.snapshotFolder || '',
                     folderPath: file.folderPath || '',
                     folderType: inferredFolderType,
@@ -18725,6 +21434,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     source: modeEntry.source,
                     fileUrl: modeEntry.fileUrl || null,
                     localFileKey: modeEntry.localFileKey || null,
+                    lastModifiedMs: Number.isFinite(Number(modeEntry.lastModifiedMs)) ? Number(modeEntry.lastModifiedMs) : null,
                     snapshotFolder: modeEntry.snapshotFolder || '',
                     folderPath: modeEntry.folderPath || '',
                     folderType: modeEntry.folderType || ''
@@ -18747,9 +21457,16 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
             if (version && canMergeByFolderType) {
                 version.stats = artifact.stats || version.stats;
+                if (!Number.isFinite(Number(version.time)) && Number.isFinite(Number(artifact.lastModifiedMs))) {
+                    version.time = Number(artifact.lastModifiedMs);
+                    version.displayTime = formatDateTime(Number(artifact.lastModifiedMs));
+                }
                 version.restoreRef = {
                     ...(version.restoreRef || {}),
                     snapshotKey,
+                    lastModifiedMs: Number.isFinite(Number(version?.restoreRef?.lastModifiedMs))
+                        ? Number(version.restoreRef.lastModifiedMs)
+                        : (Number.isFinite(Number(artifact.lastModifiedMs)) ? Number(artifact.lastModifiedMs) : null),
                     changesArtifact: {
                         name: artifact.name,
                         mode: artifact.mode,
@@ -18771,9 +21488,15 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             }
 
             const snapshotTimeMs = parseSnapshotTimeMsFromKey(snapshotKey);
+            const artifactLastModifiedMs = Number.isFinite(Number(artifact.lastModifiedMs))
+                ? Number(artifact.lastModifiedMs)
+                : null;
+            const effectiveArtifactTimeMs = Number.isFinite(snapshotTimeMs)
+                ? snapshotTimeMs
+                : artifactLastModifiedMs;
             const fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
-            const recordTime = Number.isFinite(snapshotTimeMs)
-                ? new Date(snapshotTimeMs).toISOString()
+            const recordTime = Number.isFinite(effectiveArtifactTimeMs)
+                ? new Date(effectiveArtifactTimeMs).toISOString()
                 : null;
             const canRestore = source === 'local'
                 ? !!artifact.localFileKey
@@ -18781,8 +21504,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
             const standaloneVersion = normalizeRestoreVersionMeta({
                 id: `${source}:changes:${snapshotKey}:${artifact.localFileKey || artifact.fileUrl || artifact.name || ''}`,
-                time: Number.isFinite(snapshotTimeMs) ? snapshotTimeMs : null,
-                displayTime: Number.isFinite(snapshotTimeMs) ? formatDateTime(snapshotTimeMs) : (artifact.name || ''),
+                time: Number.isFinite(effectiveArtifactTimeMs) ? effectiveArtifactTimeMs : null,
+                displayTime: Number.isFinite(effectiveArtifactTimeMs) ? formatDateTime(effectiveArtifactTimeMs) : (artifact.name || ''),
                 seqNumber: null,
                 note: notePrefix,
                 fingerprint,
@@ -18796,6 +21519,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     originalFile: artifact.name || '',
                     fileUrl: artifact.fileUrl || null,
                     localFileKey: artifact.localFileKey || null,
+                    lastModifiedMs: artifactLastModifiedMs,
                     recordIndex: null,
                     recordTime,
                     fingerprint: fingerprint || null,
@@ -18938,6 +21662,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 const scannedStats = buildRestoreStats(scannedVersion?.stats || null);
                 const indexChangesText = String(indexVersion?.restoreRef?.indexChanges || '').trim();
                 const indexHasExplicitChanges = indexChangesText.length > 0;
+                const shouldPreferIndexTime = normalizeOverwriteMode(indexVersion?.restoreRef?.overwriteMode || indexVersion?.overwriteMode || '') === 'overwrite';
 
                 if (indexHasExplicitChanges || getRestoreStatsMagnitude(scannedStats) <= 0) {
                     scannedVersion.stats = indexStats;
@@ -18957,7 +21682,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     scannedVersion.note = indexNote;
                 }
 
-                if (!Number.isFinite(Number(scannedVersion.time)) && Number.isFinite(Number(indexVersion.time))) {
+                if ((shouldPreferIndexTime || !Number.isFinite(Number(scannedVersion.time))) && Number.isFinite(Number(indexVersion.time))) {
                     scannedVersion.time = Number(indexVersion.time);
                     scannedVersion.displayTime = formatDateTime(Number(indexVersion.time));
                 } else if (!String(scannedVersion.displayTime || '').trim() && String(indexVersion.displayTime || '').trim()) {
@@ -18976,7 +21701,9 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 scannedVersion.restoreRef = {
                     ...(scannedVersion.restoreRef || {}),
                     snapshotKey: scannedVersion?.restoreRef?.snapshotKey || indexVersion?.restoreRef?.snapshotKey || null,
-                    snapshotFolder: scannedVersion?.restoreRef?.snapshotFolder || indexVersion?.restoreRef?.snapshotFolder || null,
+                    snapshotFolder: scannedVersion?.restoreRef?.snapshotFolder
+                        || indexVersion?.restoreRef?.snapshotFolder
+                        || (shouldPreferIndexTime ? '__overwrite__' : null),
                     overwriteMode: scannedVersion?.restoreRef?.overwriteMode || indexVersion?.restoreRef?.overwriteMode || 'versioned',
                     recordTime: scannedVersion?.restoreRef?.recordTime
                         || indexVersion?.restoreRef?.recordTime
@@ -20692,7 +23419,7 @@ function parseNetscapeBookmarkHtmlToTree(htmlText) {
 }
 
 // Restore source caches
-const RESTORE_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
+const RESTORE_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESTORE_SOURCE_CACHE_MAX = 8;
 
 const restoreSourceCache = {
@@ -20927,12 +23654,22 @@ async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, req
         throw new Error('No current changes artifact metadata found');
     }
 
+    const isZipArtifactSource = String(restoreRef?.sourceType || '').trim().toLowerCase() === 'zip'
+        && !!String(entry?.zipEntryName || '').trim();
+
     const artifactRef = {
-        sourceType: 'changes_artifact',
+        sourceType: isZipArtifactSource ? 'zip' : 'changes_artifact',
         source: entry.source || restoreRef?.source || '',
         fileUrl: entry.fileUrl || null,
-        localFileKey: entry.localFileKey || null,
-        originalFile: entry.name || ''
+        localFileKey: isZipArtifactSource
+            ? (restoreRef?.source === 'local'
+                ? `${String(restoreRef?.localFileKey || restoreRef?.sourceFile || restoreRef?.originalFile || '').trim()}::${String(entry?.zipEntryName || '').trim()}`
+                : null)
+            : (entry.localFileKey || null),
+        originalFile: isZipArtifactSource
+            ? `${String(restoreRef?.sourceFile || restoreRef?.originalFile || '').trim()}::${String(entry?.zipEntryName || '').trim()}`
+            : (entry.name || ''),
+        zipEntryName: isZipArtifactSource ? String(entry.zipEntryName || '').trim() : null
     };
 
     const cacheKey = getRestoreSourceCacheKey(artifactRef);
@@ -20959,7 +23696,21 @@ async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, req
         let text = '';
         const source = artifactRef.source || restoreRef?.source || '';
 
-        if (source === 'local') {
+        if (isZipArtifactSource) {
+            const files = await getZipFilesCached(restoreRef, localPayload);
+            if (!Array.isArray(files)) {
+                throw new Error('Failed to read ZIP content');
+            }
+
+            const targetName = String(entry?.zipEntryName || '').trim();
+            const matched = targetName
+                ? (files.find((file) => String(file?.name || '').trim() === targetName) || null)
+                : null;
+            if (!matched || typeof matched.content !== 'string') {
+                throw new Error('Target current changes artifact not found in ZIP');
+            }
+            text = matched.content;
+        } else if (source === 'local') {
             const byMode = localPayload?.changesArtifactTextByMode;
             if (entry.mode && byMode && typeof byMode[entry.mode] === 'string') {
                 text = String(byMode[entry.mode] || '');
@@ -21160,32 +23911,87 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
 
         if (!matched) throw new Error('Target version not found in ZIP');
 
-        const data = JSON.parse(matched.content);
-        return data?._rawBookmarkTree || data?.bookmarkTree || null;
+        const matchedName = String(matched?.name || targetName || restoreRef?.originalFile || '').trim();
+        const matchedText = typeof matched?.content === 'string'
+            ? matched.content
+            : String(matched?.content || '');
+        const matchedFormat = getManualExportPathFormat(matchedName);
+
+        if (matchedFormat === 'html') {
+            const tree = parseNetscapeBookmarkHtmlToTree(matchedText);
+            if (!tree || !Array.isArray(tree.children) || tree.children.length === 0) {
+                throw new Error('Failed to parse HTML bookmark file in ZIP');
+            }
+            return tree;
+        }
+
+        try {
+            const data = JSON.parse(matchedText);
+            return data?._rawBookmarkTree || data?.bookmarkTree || null;
+        } catch (jsonError) {
+            const tree = parseNetscapeBookmarkHtmlToTree(matchedText);
+            if (!tree || !Array.isArray(tree.children) || tree.children.length === 0) {
+                throw jsonError;
+            }
+            return tree;
+        }
     }
 
     if (restoreRef.sourceType === 'json') {
-        const records = await getMergedHistoryRecordsCached(restoreRef, localPayload);
-        if (!Array.isArray(records)) {
-            throw new Error('Merged history format not supported');
+        const jsonKind = String(restoreRef?.jsonKind || '').trim().toLowerCase();
+        if (jsonKind === 'tree') {
+            let text = '';
+            if (restoreRef.source === 'local') {
+                text = String(localPayload?.text || '');
+            } else if (restoreRef.fileUrl) {
+                const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+                text = await blob.text();
+            }
+
+            const tree = parseBookmarkTreeFromJsonTextForRestore(text);
+            if (!isBookmarkTreeShapeValid(tree)) {
+                throw new Error('JSON bookmark tree format not supported');
+            }
+            return tree;
         }
 
-        const idx = typeof restoreRef.recordIndex === 'number' ? restoreRef.recordIndex : null;
-        let record = null;
-        if (idx !== null && records[idx]) {
-            record = records[idx];
+        try {
+            const records = await getMergedHistoryRecordsCached(restoreRef, localPayload);
+            if (!Array.isArray(records)) {
+                throw new Error('Merged history format not supported');
+            }
+
+            const idx = typeof restoreRef.recordIndex === 'number' ? restoreRef.recordIndex : null;
+            let record = null;
+            if (idx !== null && records[idx]) {
+                record = records[idx];
+            }
+
+            if (!record && restoreRef.recordTime) {
+                record = records.find(r => {
+                    const t = r?._exportInfo?.backupTime || r?.exportInfo?.backupTime || r?.export_info?.backupTime || r?.time || null;
+                    return t && String(t) === String(restoreRef.recordTime);
+                }) || null;
+            }
+
+            if (!record) throw new Error('Target version not found in merged history');
+
+            return record?._rawBookmarkTree || record?.bookmarkTree || record?.bookmarkTree || null;
+        } catch (error) {
+            let text = '';
+            if (restoreRef.source === 'local') {
+                text = String(localPayload?.text || '');
+            } else if (restoreRef.fileUrl) {
+                const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+                text = await blob.text();
+            }
+
+            const tree = parseBookmarkTreeFromJsonTextForRestore(text);
+            if (isBookmarkTreeShapeValid(tree)) {
+                return tree;
+            }
+            throw error;
         }
-
-        if (!record && restoreRef.recordTime) {
-            record = records.find(r => {
-                const t = r?._exportInfo?.backupTime || r?.exportInfo?.backupTime || r?.export_info?.backupTime || r?.time || null;
-                return t && String(t) === String(restoreRef.recordTime);
-            }) || null;
-        }
-
-        if (!record) throw new Error('Target version not found in merged history');
-
-        return record?._rawBookmarkTree || record?.bookmarkTree || record?.bookmarkTree || null;
     }
 
     throw new Error(`Unsupported sourceType: ${restoreRef.sourceType}`);
@@ -21367,6 +24173,11 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         } catch (_) { }
 
         const sourceType = String(restoreRef?.sourceType || '').toLowerCase();
+        const hasSnapshotRestoreSource = sourceType === 'html'
+            || sourceType === 'json'
+            || (sourceType === 'zip' && !!String(restoreRef?.zipEntryName || '').trim());
+        const forceChangesArtifactMode = forceChangesArtifact === true
+            || (!!restoreRef?.changesArtifact && !hasSnapshotRestoreSource);
         const rawStrategy = String(strategy || 'overwrite').toLowerCase();
         const requestedStrategy = rawStrategy === 'merge'
             ? 'merge'
@@ -21376,7 +24187,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             ? 'merge'
             : requestedStrategy;
 
-        if (sourceType === 'changes_artifact' && normalizedStrategy !== 'merge') {
+        if ((sourceType === 'changes_artifact' || forceChangesArtifactMode) && normalizedStrategy !== 'merge') {
             normalizedStrategy = 'merge';
         }
 
@@ -21436,7 +24247,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         // Merge（导入合并）：
         // - 普通模式：有变化产物则导入变化，否则回退快照。
         // - 变化模式(forceChangesArtifact)：必须导入变化，禁止静默回退快照。
-        const forceChangesViewForMerge = normalizedStrategy === 'merge' && forceChangesArtifact === true;
+        const forceChangesViewForMerge = normalizedStrategy === 'merge' && forceChangesArtifactMode === true;
         const canUseChangesViewForMerge = normalizedStrategy === 'merge'
             && (forceChangesViewForMerge || !!restoreRef?.changesArtifact);
         const preflightPayload = preflight && typeof preflight === 'object'
@@ -21535,7 +24346,8 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 restoreRecordFields = {
                     restoreRecordSuccess,
                     restoreRecordError: restoreRecordSuccess ? '' : String(restoreRecordResult?.error || 'Unknown error'),
-                    restoreRecordSyncTime: restoreRecordSuccess ? String(restoreRecordResult?.syncTime || '') : ''
+                    restoreRecordSyncTime: restoreRecordSuccess ? String(restoreRecordResult?.syncTime || '') : '',
+                    restoreRecordWarning: restoreRecordSuccess ? String(restoreRecordResult?.warning || '') : ''
                 };
             } else {
                 try {

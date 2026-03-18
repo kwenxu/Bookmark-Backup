@@ -149,12 +149,10 @@
             <div id="historyView" class="view">
                 <div class="view-header">
                     <div class="view-header-left">
-                        <h2 id="historyViewTitle">备份历史</h2>
-                    </div>
-                    <div class="view-header-right">
                         <!-- 分页控件 -->
-                        <div id="historyPagination"
-                            style="display: flex; align-items: center; gap: 8px; margin-right: 12px;">
+                        <div class="history-header-title-group">
+                            <h2 id="historyViewTitle">备份历史</h2>
+                            <div id="historyPagination" class="history-pagination-inline">
                             <button id="historyPrevPage" class="action-btn compact no-tooltip">
                                 <i class="fas fa-chevron-left"></i>
                             </button>
@@ -168,7 +166,10 @@
                             <button id="historyNextPage" class="action-btn compact no-tooltip">
                                 <i class="fas fa-chevron-right"></i>
                             </button>
+                            </div>
                         </div>
+                    </div>
+                    <div class="view-header-right">
 
                         <!-- 清除备份历史记录（与主UI一致） -->
                         <button id="clearBackupHistoryBtn" class="action-btn compact" title="清除记录">
@@ -1113,7 +1114,7 @@
     <!-- 全局导出弹窗 -->
     <div id="globalExportModal" class="modal">
         <div class="modal-content"
-            style="max-width: 680px; display: flex; flex-direction: column; max-height: 90vh; position: relative;">
+            style="max-width: 760px; display: flex; flex-direction: column; max-height: 90vh; position: relative;">
             <div class="modal-header">
                 <div>
                     <h3 id="globalExportModalTitle" style="font-size: 18px;">全局备份导出</h3>
@@ -1127,59 +1128,61 @@
                 <!-- 简化后的导出选项区域 -->
                 <div class="export-section"
                     style="margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
-                    <div style="display: flex; gap: 40px; align-items: flex-start;">
+                    <div style="display: flex; gap: 24px; align-items: stretch; flex-wrap: nowrap;">
                         <!-- 格式选择 -->
-                        <div style="flex: 1;">
+                        <div style="flex: 1; min-width: 0;">
                             <h4
                                 style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
                                 <i class="fas fa-file-alt" style="margin-right: 6px;"></i><span
-                                    id="globalExportFormatTitle">导出格式</span>
+                                    id="globalExportFormatTitle">变化记录格式</span>
                             </h4>
                             <div style="display: flex; gap: 16px;">
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <label id="globalExportFormatHtmlLabelWrap"
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="checkbox" id="globalExportFormatHtml" checked>
                                     <span style="font-size: 13px;">HTML</span>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <label id="globalExportFormatJsonLabelWrap"
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="checkbox" id="globalExportFormatJson">
                                     <span style="font-size: 13px;">JSON</span>
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="checkbox" id="globalExportFormatMd">
-                                    <span style="font-size: 13px;">Markdown</span>
                                 </label>
                             </div>
                             <div id="globalExportFormatHint"
                                 style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
-                                勾选即可导出对应格式文件
+                                HTML / JSON 二选一，仅作用于变化记录；快照固定导出为 HTML；导出结果统一为 ZIP 归档
                             </div>
                         </div>
 
-                        <!-- 分隔线 -->
                         <div style="width: 1px; background: var(--border-color); align-self: stretch;"></div>
 
-                        <!-- 打包结构 -->
-                        <div style="flex: 1;">
+                        <div style="flex: 1; min-width: 0;">
                             <h4
                                 style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
-                                <i class="fas fa-box-open" style="margin-right: 6px;"></i><span
-                                    id="globalExportPackTitle">打包结构</span>
+                                <i class="fas fa-layer-group" style="margin-right: 6px;"></i><span
+                                    id="globalExportContentTitle">导出内容</span>
                             </h4>
-                            <div style="display: flex; gap: 16px;">
+                            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="radio" name="globalExportPackMode" id="globalExportPackZip" value="zip"
-                                        checked>
-                                    <span id="globalExportPackZipText" style="font-size: 13px;">ZIP 归档</span>
+                                    <input type="checkbox" id="globalExportContentSnapshot">
+                                    <span id="globalExportContentSnapshotText" style="font-size: 13px;">快照</span>
                                 </label>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="radio" name="globalExportPackMode" id="globalExportPackMerge"
-                                        value="merge">
-                                    <span id="globalExportPackMergeText" style="font-size: 13px;">单一文件合并</span>
+                                    <input type="checkbox" id="globalExportContentChanges" checked>
+                                    <span id="globalExportContentChangesText" style="font-size: 13px;">变化记录</span>
+                                </label>
+                                <div id="globalExportContentIndexDivider" aria-hidden="true"
+                                    style="width: 1px; min-height: 16px; background: var(--border-color); opacity: 0.78; align-self: center;">
+                                </div>
+                                <label id="globalExportContentIndexLabelWrap"
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportContentIndex" checked>
+                                    <span id="globalExportContentIndexText" style="font-size: 13px;">索引文件</span>
                                 </label>
                             </div>
-                            <div id="globalExportPackHint"
+                            <div id="globalExportContentHint"
                                 style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
-                                ZIP归档将包含多个独立文件；单一文件合并将生成一个汇总文件
+                                选择快照或变化记录时会自动附带备份历史log.md。
                             </div>
                         </div>
                     </div>
@@ -1263,11 +1266,11 @@
                                     </th>
                                     <th style="text-align: center; width: 54px;"><span id="globalExportThSeq">序号</span>
                                     </th>
-                                    <th style="text-align: left;"><span id="globalExportThNote">备注</span></th>
-                                    <th style="text-align: left; width: 110px;"><span id="globalExportThHash">哈希值</span>
+                                    <th style="text-align: left; width: 204px; padding-right: 6px;"><span id="globalExportThNote">备注</span></th>
+                                    <th style="text-align: left; width: 92px; padding-left: 4px;"><span id="globalExportThHash">哈希值</span>
                                     </th>
                                     <th style="text-align: left; width: 170px;"><span
-                                            id="globalExportThViewMode">视图模式</span></th>
+                                            id="globalExportThViewMode">变化记录视图</span></th>
                                     <th style="text-align: left; width: 160px;"><span id="globalExportThTime">时间</span>
                                     </th>
                                 </tr>

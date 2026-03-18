@@ -128,7 +128,9 @@ const statusStrings = {
     detectingChangesBackingUp: { 'zh_CN': "检测到修改，正在为您备份...", 'en': "Changes detected, backing up..." },
     requestBackupFailed: { 'zh_CN': "请求备份失败", 'en': "Backup request failed" },
     manualBackupCompleted: { 'zh_CN': "手动备份已完成", 'en': "Manual backup completed" },
-    switchToAutoBackupSuccess: { 'zh_CN': "切换备份成功", 'en': "Switch backup successful" }
+    switchToAutoBackupSuccess: { 'zh_CN': "切换备份成功", 'en': "Switch backup successful" },
+    noChangesSwitchToAuto: { 'zh_CN': "未检测到变化，已切换到自动备份", 'en': "No changes detected, switched to auto backup" },
+    noChangesManualBackup: { 'zh_CN': "未检测到变化，无需手动备份", 'en': "No changes detected, no manual backup needed" }
 };
 
 // =======================================================
@@ -1008,38 +1010,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         manualBackupBtn.disabled = true;
         operationStatusElement.style.display = 'none';
 
-        // 显示"正在备份"的状态信息
-        showOperationStatus(statusStrings.detectingChangesBackingUp[currentLang] || statusStrings.detectingChangesBackingUp['zh_CN'], 'info');
+        try {
+            const checkResponse = await sendMessagePromise({ action: 'checkBookmarkChanges' });
 
-        // 1. 发送 `syncBookmarks` 消息，执行"切换备份"
-        // 这是从主UI复刻的关键逻辑
-        browserAPI.runtime.sendMessage({
-            action: 'syncBookmarks',
-            isSwitchToAutoBackup: true,
-            direction: 'upload'
-        }, (syncResponse) => {
+            if (checkResponse && checkResponse.success === true && checkResponse.hasChanges !== true) {
+                const toggleResponse = await sendMessagePromise({ action: "toggleAutoSync", enabled: true });
+                if (toggleResponse && toggleResponse.success) {
+                    showOperationStatus(statusStrings.noChangesSwitchToAuto[currentLang] || statusStrings.noChangesSwitchToAuto['zh_CN'], 'success');
+                } else {
+                    showOperationStatus(statusStrings.autoBackupFailed[currentLang] || statusStrings.autoBackupFailed['zh_CN'], 'error');
+                }
+                prepareToClose();
+                return;
+            }
+
+            showOperationStatus(statusStrings.detectingChangesBackingUp[currentLang] || statusStrings.detectingChangesBackingUp['zh_CN'], 'info');
+
+            const syncResponse = await sendMessagePromise({
+                action: 'syncBookmarks',
+                isSwitchToAutoBackup: true,
+                direction: 'upload'
+            });
+
             if (syncResponse && syncResponse.success) {
-                // 备份成功
-                showOperationStatus(statusStrings.switchToAutoBackupSuccess[currentLang] || statusStrings.switchToAutoBackupSuccess['zh_CN'], 'success');
+                const toggleResponse = await sendMessagePromise({
+                    action: "toggleAutoSync",
+                    enabled: true
+                });
+                if (toggleResponse && toggleResponse.success) {
+                    showOperationStatus(statusStrings.switchToAutoBackupSuccess[currentLang] || statusStrings.switchToAutoBackupSuccess['zh_CN'], 'success');
+                } else {
+                    showOperationStatus(statusStrings.autoBackupFailed[currentLang] || statusStrings.autoBackupFailed['zh_CN'], 'error');
+                }
             } else {
-                // 备份失败
                 showOperationStatus(statusStrings.requestBackupFailed[currentLang] || statusStrings.requestBackupFailed['zh_CN'], 'error');
             }
+        } catch (_) {
+            showOperationStatus(statusStrings.requestBackupFailed[currentLang] || statusStrings.requestBackupFailed['zh_CN'], 'error');
+        }
 
-            // 无论备份成功与否，都准备关闭窗口
-            prepareToClose();
-        });
-
-        // 2. 发送 `toggleAutoSync` 消息，将模式切换为自动
-        // 这个消息与上面的 `syncBookmarks` 并行或紧随其后发送
-        browserAPI.runtime.sendMessage({
-            action: "toggleAutoSync",
-            enabled: true
-        }, (toggleResponse) => {
-            if (!toggleResponse || !toggleResponse.success) {
-                // 可以在这里添加一个不影响主流程的警告
-            }
-        });
+        prepareToClose();
 
         // 准备关闭窗口的辅助函数
         function prepareToClose() {
@@ -1063,47 +1073,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleAutoBackupBtn.disabled = true;
         manualBackupBtn.disabled = true;
 
-        showOperationStatus(statusStrings.manualBackupCompleted[currentLang] || statusStrings.manualBackupCompleted['zh_CN'], 'success');
         let operationCompleted = false;
-        const forceCloseTimeoutId = setTimeout(() => {
-            window.isClosing = true;
-            window.close();
-        }, 5000);
+        const finishAndClose = () => {
+            if (operationCompleted) return;
+            operationCompleted = true;
+            setTimeout(() => {
+                window.isClosing = true;
+                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => { console.log('发送readyToClose消息失败，直接关闭窗口:', error); });
+                setTimeout(() => window.close(), 200);
+            }, 500);
+        };
 
-        const closeTimeoutId = setTimeout(() => {
-            if (!operationCompleted) {
-                operationCompleted = true;
-                clearTimeout(closeTimeoutId);
-                clearTimeout(forceCloseTimeoutId);
-
-                try {
-                    browserAPI.runtime.sendMessage({ action: "notificationAction", buttonIndex: 1 });
-                    // 备份完成后直接设置角标为蓝色
-                    const badgeColor = '#0000FF'; // 蓝色，与自动备份模式相同
-                    if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
-                        browserAPI.action.setBadgeBackgroundColor({ color: badgeColor })
-                            .then(() => console.log('直接在通知窗口设置角标颜色为蓝色成功'))
-                            .catch(err => console.error('直接设置角标颜色失败:', err));
-                    } else if (typeof browserAPI.browserAction !== 'undefined' && typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
-                        browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
-                    }
-
-                    browserAPI.runtime.sendMessage({
-                        action: "syncBookmarks", direction: "upload", isManual: true,
-                        bookmarkStats: { bookmarkMoved: false, folderMoved: false, bookmarkModified: false, folderModified: false },
-                        fromNotification: true
-                    }).then(() => {
-                        browserAPI.runtime.sendMessage({ action: "manualBackupCompleted" });
-                    }).catch(error => { console.log('发送syncBookmarks消息失败:', error); });
-                } catch (e) { console.log('发送备份完成消息失败，但继续关闭窗口:', e); }
-
-                setTimeout(() => {
-                    window.isClosing = true;
-                    browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => { console.log('发送readyToClose消息失败，直接关闭窗口:', error); });
-                    setTimeout(() => window.close(), 200);
-                }, 500);
+        try {
+            const checkResponse = await sendMessagePromise({ action: 'checkBookmarkChanges' });
+            if (checkResponse && checkResponse.success === true && checkResponse.hasChanges !== true) {
+                showOperationStatus(statusStrings.noChangesManualBackup[currentLang] || statusStrings.noChangesManualBackup['zh_CN'], 'success');
+                await sendMessagePromise({ action: "manualBackupCompleted" });
+                finishAndClose();
+                return;
             }
-        }, 500);
+        } catch (_) { }
+
+        showOperationStatus(statusStrings.manualBackupCompleted[currentLang] || statusStrings.manualBackupCompleted['zh_CN'], 'success');
+
+        try {
+            browserAPI.runtime.sendMessage({ action: "notificationAction", buttonIndex: 1 });
+            const badgeColor = '#0000FF';
+            if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
+                browserAPI.action.setBadgeBackgroundColor({ color: badgeColor })
+                    .then(() => console.log('直接在通知窗口设置角标颜色为蓝色成功'))
+                    .catch(err => console.error('直接设置角标颜色失败:', err));
+            } else if (typeof browserAPI.browserAction !== 'undefined' && typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
+                browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
+            }
+
+            await sendMessagePromise({
+                action: "syncBookmarks", direction: "upload", isManual: true,
+                bookmarkStats: { bookmarkMoved: false, folderMoved: false, bookmarkModified: false, folderModified: false },
+                fromNotification: true
+            });
+            await sendMessagePromise({ action: "manualBackupCompleted" });
+        } catch (e) {
+            console.log('发送备份完成消息失败，但继续关闭窗口:', e);
+        }
+
+        finishAndClose();
     });
 
     // 设置按钮点击事件

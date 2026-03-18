@@ -476,6 +476,37 @@ async function calculateChanges() {
     let currentChangeDescription = "无变化";
     let currentHasChanges = false;
 
+    // 优先走 background 的正式检查链路：
+    // - 非实时：dirty 仅作为轻量触发标记，真正结果由目标快照 vs 当前树决定
+    // - 实时：直接走统一净变化分析
+    // 这样提醒触发时也能顺手纠正“角标已黄但正式对比无变化”的状态。
+    try {
+        const preferredLang = await new Promise((resolve) => {
+            browserAPI.storage.local.get(['preferredLang'], (result) => {
+                resolve(result?.preferredLang || 'zh_CN');
+            });
+        });
+        const noChangesText = preferredLang === 'en' ? 'No changes' : '无变化';
+
+        const checkResult = await new Promise((resolve, reject) => {
+            browserAPI.runtime.sendMessage({ action: 'checkBookmarkChanges' }, (response) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message));
+                    return;
+                }
+                resolve(response || null);
+            });
+        });
+
+        if (checkResult && checkResult.success === true) {
+            currentHasChanges = checkResult.hasChanges === true;
+            currentChangeDescription = currentHasChanges
+                ? (checkResult.changeDescription || noChangesText)
+                : noChangesText;
+            return { currentChangeDescription, currentHasChanges };
+        }
+    } catch (_) { }
+
     // 优先使用 background 预热/缓存的“净变化摘要”（Git 风格：对比上次备份的最终状态）
     // 这样可避免：移动/修改后又改回去仍被算作变更；以及“加减相同数量但内容不同”被漏检。
     try {
@@ -823,7 +854,8 @@ async function startReminderTimer(skipInitialReminder = false) {
                 } catch (calcError) {
                     changeDescriptionToShow = "";
                 }
-                await showBackupReminder(reminderState.currentPhase, changeDescriptionToShow);
+                const reminderWindowId = await showBackupReminder(reminderState.currentPhase, changeDescriptionToShow);
+                shouldShowReminder = !!reminderWindowId;
             } else { addLog(`不满足显示条件，跳过初始提醒`); }
         } else { addLog(`已指定跳过初始提醒，仅设置计时器`); }
 
@@ -946,7 +978,10 @@ async function timerTriggered() {
                 const timeAllows = await checkReminderStatus();
                 if (timeAllows) {
                     await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
-                    await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
+                    const reminderWindowId = await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
+                    if (!reminderWindowId) {
+                        startReminderTimer(true);
+                    }
                 } else {
                     startReminderTimer(true);
                 }
@@ -960,7 +995,10 @@ async function timerTriggered() {
                     const timeAllows = await checkReminderStatus();
                     if (timeAllows) {
                         await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
-                        await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
+                        const reminderWindowId = await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
+                        if (!reminderWindowId) {
+                            startReminderTimer(true);
+                        }
                     } else {
                         startReminderTimer(true);
                     }
@@ -1076,7 +1114,11 @@ async function handleFixedTimeAlarm(alarmName) {
             const timeLabel = alarmName === FIXED_TIME_ALARM_1 ?
                 `准点定时1 (${settings.fixedTime1 || '未设置'})` :
                 `准点定时2 (${settings.fixedTime2 || '未设置'})`;
-            await showBackupReminder(alarmName, changeDescriptionToShow);
+            const reminderWindowId = await showBackupReminder(alarmName, changeDescriptionToShow);
+            if (!reminderWindowId) {
+                await browserAPI.storage.local.remove(descriptionKey);
+                await resetFixedTimeAlarm(alarmName, 0);
+            }
         } else {
             await resetFixedTimeAlarm(alarmName, 0);
         }

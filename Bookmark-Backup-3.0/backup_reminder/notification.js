@@ -31,6 +31,52 @@ let activeNotificationInfo = null; // 存储活动通知信息 { windowId: numbe
 // 辅助函数
 // =======================================================
 
+function sendRuntimeMessage(message) {
+    return new Promise((resolve, reject) => {
+        try {
+            browserAPI.runtime.sendMessage(message, (response) => {
+                const runtimeError = browserAPI.runtime?.lastError;
+                if (runtimeError) {
+                    reject(new Error(runtimeError.message || 'Runtime message failed'));
+                    return;
+                }
+                resolve(response || null);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+async function getFreshReminderDisplayState(alarmName, fallbackDescription = '') {
+    const normalizedAlarmName = typeof alarmName === 'string' ? alarmName.trim() : '';
+    const fallback = typeof fallbackDescription === 'string' ? fallbackDescription.trim() : '';
+
+    if (!normalizedAlarmName) {
+        return { shouldShow: true, changeDescription: fallback };
+    }
+
+    try {
+        const response = await sendRuntimeMessage({ action: 'checkBookmarkChanges' });
+        if (response && response.success === true) {
+            if (response.hasChanges !== true) {
+                return { shouldShow: false, changeDescription: '' };
+            }
+
+            const freshDescription = typeof response.changeDescription === 'string'
+                ? response.changeDescription.trim()
+                : '';
+
+            return {
+                shouldShow: true,
+                changeDescription: freshDescription || fallback
+            };
+        }
+    } catch (_) { }
+
+    return { shouldShow: true, changeDescription: fallback };
+}
+
 /**
  * 获取扩展资源的绝对路径。
  * @param {string} relativePath - 相对路径。
@@ -184,27 +230,11 @@ function resumeAutoCloseTimer(targetNotificationId) {
  * @returns {Promise<number|null>} 返回新创建的窗口ID或null。
  */
 async function showBackupReminder(alarmName, changeDescription = "") {
+    let finalChangeDescription = typeof changeDescription === 'string' ? changeDescription.trim() : '';
+
     // 防御 A: 检查已知异常格式
-    if (typeof changeDescription === 'string' && changeDescription.includes('上次变动：') && changeDescription.includes('当前数量/结构：')) {
+    if (finalChangeDescription.includes('上次变动：') && finalChangeDescription.includes('当前数量/结构：')) {
         return null;
-    }
-
-    // 防御 B: 手动模式下检查角标颜色与变化描述是否一致
-    if (changeDescription && changeDescription.trim() !== "") {
-        try {
-            const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
-            if (!autoSync) {
-                const badgeColorData = await browserAPI.action.getBadgeBackgroundColor({});
-                const currentColorHex = rgbToHex(badgeColorData);
-                const yellowHex = '#ffff00';
-
-                if (currentColorHex !== yellowHex) {
-
-                     return null;
-                }
-            }
-        } catch (badgeError) {
-             }
     }
 
     if (activeNotificationInfo && activeNotificationInfo.windowId) {
@@ -222,6 +252,29 @@ async function showBackupReminder(alarmName, changeDescription = "") {
         closeTimer = null;
     }
     isAutoClosePaused = false;
+
+    const freshDisplayState = await getFreshReminderDisplayState(alarmName, finalChangeDescription);
+    if (!freshDisplayState.shouldShow) {
+        return null;
+    }
+    finalChangeDescription = freshDisplayState.changeDescription;
+
+    // 防御 B: 手动模式下检查角标颜色与变化描述是否一致
+    if (finalChangeDescription) {
+        try {
+            const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+            if (!autoSync) {
+                const badgeColorData = await browserAPI.action.getBadgeBackgroundColor({});
+                const currentColorHex = rgbToHex(badgeColorData);
+                const yellowHex = '#ffff00';
+
+                if (currentColorHex !== yellowHex) {
+                    return null;
+                }
+            }
+        } catch (badgeError) {
+        }
+    }
 
     const width = 720;
     const height = 640;
@@ -244,7 +297,7 @@ async function showBackupReminder(alarmName, changeDescription = "") {
 
     const urlParams = new URLSearchParams();
     urlParams.set('alarmName', alarmName);
-    if (changeDescription) { urlParams.set('changeDescription', changeDescription); }
+    if (finalChangeDescription) { urlParams.set('changeDescription', finalChangeDescription); }
 
     try {
         const settings = await getReminderSettings();
@@ -430,12 +483,39 @@ async function showTestNotification(activeWindowId) {
  * @param {number|null} activeWindowId - 活动窗口ID，可选。
  * @returns {Promise<number|null>} 返回新创建的窗口ID或null。
  */
-async function showForceBackupReminder(activeWindowId) {
+async function showForceBackupReminder(activeWindowId, options = {}) {
     let isCreatingNotification = false;
     try {
-        const notificationUrl = getExtensionURL('backup_reminder/notification.html') +
-            '?force=true&emergency=true&t=' + Date.now() +
-            (activeWindowId ? `&windowId=${activeWindowId}` : '');
+        const {
+            alarmName = '',
+            changeDescription = '',
+            timeLabel = '',
+            phaseLabel = ''
+        } = (options && typeof options === 'object') ? options : {};
+
+        const urlParams = new URLSearchParams();
+        urlParams.set('force', 'true');
+        urlParams.set('emergency', 'true');
+        urlParams.set('t', String(Date.now()));
+
+        if (activeWindowId) {
+            urlParams.set('windowId', String(activeWindowId));
+        }
+        if (typeof alarmName === 'string' && alarmName.trim()) {
+            urlParams.set('alarmName', alarmName.trim());
+        }
+        if (typeof changeDescription === 'string' && changeDescription.trim()) {
+            urlParams.set('changeDescription', changeDescription.trim());
+        }
+        if (typeof timeLabel === 'string' && timeLabel.trim()) {
+            urlParams.set('timeLabel', timeLabel.trim());
+        }
+        if (typeof phaseLabel === 'string' && phaseLabel.trim()) {
+            urlParams.set('phaseLabel', phaseLabel.trim());
+        }
+
+        const notificationUrl = getExtensionURL('backup_reminder/notification_popup.html') +
+            `?${urlParams.toString()}`;
 
         if (isCreatingNotification) {
             return null;

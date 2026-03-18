@@ -357,6 +357,38 @@ function handleRuntimeMessage(message, sender, sendResponse) {
     } else if (message.action === "forceSendNotification") {
         (async () => {
             try {
+            const requestedAlarmName = typeof message.alarmName === 'string' ? message.alarmName.trim() : '';
+            let freshChangeDescription = typeof message.changeDescription === 'string'
+                ? message.changeDescription.trim()
+                : '';
+
+            try {
+                const checkResponse = await new Promise((resolve) => {
+                    browserAPI.runtime.sendMessage({ action: 'checkBookmarkChanges' }, (response) => {
+                        const runtimeError = browserAPI.runtime?.lastError;
+                        if (runtimeError) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(response || null);
+                    });
+                });
+
+                if (checkResponse && checkResponse.success === true) {
+                    if (checkResponse.hasChanges !== true) {
+                        sendResponse({ success: true, method: 'suppressed-no-changes' });
+                        return true;
+                    }
+
+                    const liveDescription = typeof checkResponse.changeDescription === 'string'
+                        ? checkResponse.changeDescription.trim()
+                        : '';
+                    if (liveDescription) {
+                        freshChangeDescription = liveDescription;
+                    }
+                }
+            } catch (_) { }
+
             let hasResponded = false;
             let notificationShown = false;
             const timeoutId = setTimeout(() => {
@@ -385,7 +417,10 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
             if (!notificationShown) {
                 try {
-                    const forceWindowId = await showForceBackupReminder(activeNotificationWindowId);
+                    const forceWindowId = await showForceBackupReminder(activeNotificationWindowId, {
+                        alarmName: requestedAlarmName,
+                        changeDescription: freshChangeDescription
+                    });
                     if (forceWindowId) {
                         notificationShown = true; activeNotificationWindowId = forceWindowId;
                         if (!hasResponded) {
@@ -398,7 +433,7 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
             if (!notificationShown) {
                 try {
-                    const normalWindowId = await showBackupReminder(activeNotificationWindowId);
+                    const normalWindowId = await showBackupReminder(requestedAlarmName, freshChangeDescription);
                     if (normalWindowId) {
                         notificationShown = true; activeNotificationWindowId = normalWindowId;
                         if (!hasResponded) {
@@ -423,7 +458,17 @@ function handleRuntimeMessage(message, sender, sendResponse) {
                             activeNotificationWindowId = null;
                         }
                     }
-                    const url = browserAPI.runtime.getURL('backup_reminder/notification_popup.html') + '?force=true&emergency=true&t=' + Date.now();
+                    const urlParams = new URLSearchParams();
+                    urlParams.set('force', 'true');
+                    urlParams.set('emergency', 'true');
+                    urlParams.set('t', String(Date.now()));
+                    if (requestedAlarmName) {
+                        urlParams.set('alarmName', requestedAlarmName);
+                    }
+                    if (freshChangeDescription) {
+                        urlParams.set('changeDescription', freshChangeDescription);
+                    }
+                    const url = browserAPI.runtime.getURL('backup_reminder/notification_popup.html') + `?${urlParams.toString()}`;
                     const window = await browserAPI.windows.create({ url: url, type: 'popup', width: 620, height: 580, focused: true });
                     notificationShown = true; activeNotificationWindowId = window.id;
                     if (!hasResponded) {

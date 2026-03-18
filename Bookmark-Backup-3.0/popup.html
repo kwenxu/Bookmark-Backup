@@ -2573,6 +2573,117 @@
             gap: 6px;
         }
 
+        .status-card-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            width: 100%;
+            max-width: 320px;
+            text-align: left;
+        }
+
+        .status-card-progress-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .status-card-progress-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--theme-text-primary);
+            min-width: 0;
+        }
+
+        .status-card-progress-percent {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--theme-text-secondary);
+            flex-shrink: 0;
+        }
+
+        .status-card-progress-track {
+            position: relative;
+            width: 100%;
+            height: 8px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.45);
+        }
+
+        .status-card-progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #43a047 0%, #81c784 100%);
+            transition: width 0.22s ease;
+        }
+
+        .status-card.manual-mode .status-card-progress-fill {
+            background: linear-gradient(90deg, #1e88e5 0%, #64b5f6 100%);
+        }
+
+        .status-card.auto-mode .status-card-progress-track {
+            background: rgba(46, 125, 50, 0.16);
+        }
+
+        .status-card.manual-mode .status-card-progress-track {
+            background: rgba(25, 118, 210, 0.16);
+        }
+
+        .status-card-progress-detail {
+            font-size: 11.5px;
+            line-height: 1.45;
+            color: var(--theme-text-secondary);
+            text-align: center;
+        }
+
+        .status-card-progress-targets {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .status-card-progress-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 20px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 10.5px;
+            font-weight: 700;
+            line-height: 1;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+
+        .status-card-progress-chip.pending {
+            color: var(--theme-text-secondary);
+            background: rgba(120, 120, 120, 0.12);
+            border-color: rgba(120, 120, 120, 0.18);
+        }
+
+        .status-card-progress-chip.running {
+            color: #0d47a1;
+            background: rgba(33, 150, 243, 0.14);
+            border-color: rgba(33, 150, 243, 0.26);
+        }
+
+        .status-card-progress-chip.success {
+            color: #2e7d32;
+            background: rgba(76, 175, 80, 0.14);
+            border-color: rgba(76, 175, 80, 0.26);
+        }
+
+        .status-card-progress-chip.failed,
+        .status-card-progress-chip.skipped {
+            color: #c62828;
+            background: rgba(244, 67, 54, 0.12);
+            border-color: rgba(244, 67, 54, 0.24);
+        }
+
         #statusCardText {
             flex: 1;
             width: 100%;
@@ -3200,7 +3311,7 @@
             min-width: 16px;
             min-height: 16px;
             flex: 0 0 16px;
-            margin-left: 4px;
+            margin-left: 0;
             font-size: 10px;
         }
 
@@ -3282,6 +3393,7 @@
         #restoreVersionTable td.restore-cell-note {
             padding-left: 4px;
             padding-right: 4px;
+            text-align: left;
         }
 
         #restoreVersionTable td.restore-cell-hash {
@@ -3467,6 +3579,30 @@
             white-space: nowrap;
             cursor: pointer;
             user-select: none;
+        }
+
+        #confirmRestoreBtnRef {
+            min-width: 108px;
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        #confirmRestoreBtnRef.restore-main-confirm-btn-en {
+            min-width: 118px;
+            height: 40px;
+            padding: 5px 16px;
+            font-size: 12px;
+            line-height: 1.1;
+            white-space: normal;
+            text-align: center;
+        }
+
+        #confirmRestoreBtnRef .restore-main-confirm-lines {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.08;
         }
 
         .restore-modal-action-btn.secondary {
@@ -4891,12 +5027,19 @@
         .setting-label-with-help {
             display: inline-flex;
             align-items: center;
-            gap: 1px;
+            gap: 0;
             min-width: auto;
         }
 
         .setting-label-with-help .setting-label {
             min-width: auto;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .setting-label-with-help .current-changes-mode-help-btn {
+            margin-left: -5px;
+            position: relative;
         }
 
         .section-header.clickable {
@@ -4937,201 +5080,12 @@
             opacity: 0;
         }
 
-        .versioned-log-panel {
-            margin-top: 2px;
-            border: none;
-            background: transparent;
-            border-radius: 0;
-            padding: 4px 0 1px;
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            flex-wrap: nowrap;
-            width: 100%;
-            min-height: 22px;
-        }
-
-        .versioned-log-title {
-            display: inline-flex;
-            align-items: center;
-            min-width: 60px;
-            font-size: 11px;
-            font-weight: 400;
-            color: var(--theme-text-secondary);
-            line-height: 1;
-            white-space: nowrap;
-        }
-
-        .versioned-log-right {
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-left: auto;
-            flex-wrap: nowrap;
-            min-width: 0;
-        }
-
-        .versioned-log-enable-wrap {
-            display: inline-flex;
-            align-items: center;
-            gap: 0;
-            cursor: pointer;
-            user-select: none;
-            height: 18px;
-            position: relative;
-            top: 2px;
-        }
-
-        .versioned-log-enable-wrap input[type="checkbox"] {
-            margin: 0;
-            width: 15px;
-            height: 15px;
-            cursor: pointer;
-            accent-color: #0d6efd;
-            transform: translateY(1px);
-        }
-
-        html[data-theme="dark"] .versioned-log-enable-wrap input[type="checkbox"] {
-            accent-color: #72a9ff;
-        }
-
-        .versioned-log-desc {
-            font-size: 11px;
-            color: var(--theme-text-secondary);
-            line-height: 1.35;
-        }
-
-        .versioned-log-control {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            font-size: 10px;
-            color: var(--theme-text-primary);
-            flex-wrap: nowrap;
-            white-space: nowrap;
-        }
-
-        .versioned-log-control.disabled {
-            opacity: 0.55;
-            pointer-events: none;
-        }
-
-        .versioned-log-panel.force-versioned .versioned-log-enable-wrap {
-            display: none;
-        }
-
-        .versioned-log-panel.force-versioned .versioned-log-right {
-            gap: 0;
-        }
-
-        .versioned-log-panel.force-versioned .versioned-log-control {
-            margin-left: auto;
-        }
-
-        .versioned-log-spinner {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 0;
-            border: none;
-            background: transparent;
-        }
-
-        .versioned-log-step-btn {
-            width: 18px;
-            height: 18px;
-            border: 1px solid rgba(13, 110, 253, 0.35);
-            border-radius: 4px;
-            background: transparent;
-            color: #0d6efd;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            padding: 0;
-            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-        }
-
-        html[data-theme="dark"] .versioned-log-step-btn {
-            background: transparent;
-            color: #72a9ff;
-            border-color: rgba(114, 169, 255, 0.45);
-        }
-
-        .versioned-log-step-btn i {
-            font-size: 9px;
-            line-height: 1;
-        }
-
-        .versioned-log-step-btn:hover:not(:disabled) {
-            background: rgba(13, 110, 253, 0.14);
-            border-color: rgba(13, 110, 253, 0.45);
-            color: #0b5ed7;
-        }
-
-        .versioned-log-step-btn:active:not(:disabled) {
-            transform: translateY(1px);
-        }
-
-        .versioned-log-step-btn:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-
-        #versionedLogEveryInput {
-            width: 36px;
-            height: 20px;
-            border: 1px solid rgba(13, 110, 253, 0.35);
-            border-radius: 4px;
-            background: var(--theme-bg-secondary);
-            color: var(--theme-text-primary);
-            font-size: 12px;
-            font-weight: 500;
-            text-align: center;
-            outline: none;
-            padding: 0 2px;
-            box-sizing: border-box;
-        }
-
-        #versionedLogEveryInput:focus {
-            border-color: #0d6efd;
-            box-shadow: none;
-        }
-
-        #versionedLogEveryInput::-webkit-inner-spin-button,
-        #versionedLogEveryInput::-webkit-outer-spin-button {
-            -webkit-appearance: none !important;
-            appearance: none;
-            margin: 0 !important;
-            width: 0 !important;
-            display: none !important;
-        }
-
         #backupStrategySection.compact .section-content {
             padding-top: 4px;
             padding-bottom: 4px;
             gap: 0;
         }
 
-        #backupStrategySection.compact #versionedLogPanel {
-            display: flex !important;
-        }
-
-        #backupStrategySection.compact #manualExportCloudUploadPanel {
-            display: flex !important;
-        }
-
-        .manual-export-cloud-panel {
-            margin-top: 2px;
-        }
-
-        .manual-export-cloud-switch {
-            margin-left: 0;
-            margin-top: 0;
-        }
     </style>
 </head>
 
@@ -5284,20 +5238,20 @@
                     </button>
                 </div>
 
-                <div class="form-group" style="padding-left: 5px;">
+                <div class="button-group"
+                    style="margin-top: 2px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding-left: 5px; padding-right: 5px; margin-bottom: 8px;">
+                    <button id="testGithubRepoBtn"
+                        style="width: auto; min-width: 140px; background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                    <button id="saveGithubRepoConfigBtn"
+                        style="width: auto; min-width: 140px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                </div>
+
+                <div class="form-group" style="padding-left: 5px; margin-bottom: 5px;">
                     <label for="githubRepoInfoDisplay" style="display: block; margin-bottom: 5px;"
                         id="githubRepoInfoLabel"></label>
                     <div id="githubRepoInfoDisplay"
                         style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-secondary); user-select: text; word-break: break-all; white-space: pre-wrap;">
                     </div>
-                </div>
-
-                <div class="button-group"
-                    style="margin-top: 15px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
-                    <button id="testGithubRepoBtn"
-                        style="width: auto; min-width: 140px; background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
-                    <button id="saveGithubRepoConfigBtn"
-                        style="width: auto; min-width: 140px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
                 </div>
             </div>
         </div>
@@ -5354,7 +5308,7 @@
                 <!-- 隐藏的文件输入框 (用于本地恢复：目录优先) -->
                 <input type="file" id="localRestoreInput" style="display: none;" webkitdirectory directory>
                 <!-- 隐藏的文件输入框 (用于本地恢复：单独文件) -->
-                <input type="file" id="localRestoreFileInput" style="display: none;" multiple accept=".html,.htm,.xhtml,.json,.md,.markdown,text/html,application/xhtml+xml,application/json,text/markdown,text/plain">
+                <input type="file" id="localRestoreFileInput" style="display: none;" multiple accept=".html,.htm,.xhtml,.json,.md,.markdown,.zip,text/html,application/xhtml+xml,application/json,text/markdown,text/plain,application/zip">
 
                 <!-- 分隔线 -->
                 <div style="border-top: 1px solid var(--theme-border-primary); margin: 6px 0;"></div>
@@ -5543,7 +5497,12 @@
                             </div>
                             <div class="section-content" id="backupStrategyContent">
                                 <div class="setting-row">
-                                    <span class="setting-label" id="bookmarkOverwriteLabel">Strategy</span>
+                                    <div class="setting-label-with-help">
+                                        <span class="setting-label" id="bookmarkOverwriteLabel">Strategy</span>
+                                        <button type="button" id="backupStrategyHelpBtn" class="sync-restore-help-btn current-changes-mode-help-btn" aria-label="Backup strategy help" title="Backup strategy help">
+                                            <i class="fas fa-question-circle"></i>
+                                        </button>
+                                    </div>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
                                             <input type="checkbox" id="overwriteVersioned" checked>
@@ -5554,36 +5513,6 @@
                                             <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
                                         </label>
                                     </div>
-                                </div>
-
-                                <div id="versionedLogPanel" class="versioned-log-panel">
-                                    <span class="versioned-log-title" id="versionedLogTitle">备份历史log（索引）</span>
-                                    <div class="versioned-log-right">
-                                        <div class="versioned-log-control" id="versionedLogControl">
-                                            <span id="versionedLogEveryPrefix">每备份</span>
-                                            <div class="versioned-log-spinner">
-                                                <button type="button" id="versionedLogEveryDownBtn" class="versioned-log-step-btn" aria-label="减少次数" title="减少次数">
-                                                    <i class="fas fa-chevron-down"></i>
-                                                </button>
-                                                <input type="text" inputmode="numeric" maxlength="2" id="versionedLogEveryInput" value="1">
-                                                <button type="button" id="versionedLogEveryUpBtn" class="versioned-log-step-btn" aria-label="增加次数" title="增加次数">
-                                                    <i class="fas fa-chevron-up"></i>
-                                                </button>
-                                            </div>
-                                            <span id="versionedLogEverySuffix">次更新</span>
-                                        </div>
-                                        <label class="versioned-log-enable-wrap" for="versionedLogEnabled" title="Enable">
-                                            <input type="checkbox" id="versionedLogEnabled" checked>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div id="manualExportCloudUploadPanel" class="setting-row manual-export-cloud-panel">
-                                    <span class="setting-label" id="manualExportCloudUploadTitle">手动导出上传至云端</span>
-                                    <label class="switch manual-export-cloud-switch" style="margin: 0;">
-                                        <input type="checkbox" id="manualExportCloudUploadEnabled">
-                                        <span class="slider"></span>
-                                    </label>
                                 </div>
 
                             </div>
@@ -5688,7 +5617,7 @@
                     </div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3
+                        <h3 id="currentChangesMainTitle"
                             style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500;">
                             当前变化</h3>
                     </div>
@@ -5835,19 +5764,11 @@
                 style="margin-bottom: 14px; padding-left: 22px; font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
                 <li id="resetDialogInfo1">恢复插件到首次安装时的状态</li>
                 <li id="resetDialogInfo2">清除所有配置和备份记录</li>
-                <li id="resetDialogInfo3">您当前的书签不受影响</li>
+                <li id="resetDialogInfo3">已经下载和上传的备份不受影响</li>
             </ul>
             <p id="resetDialogInfo4"
                 style="color: var(--theme-success-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-success-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">
                 适用于：清除缓存、解决配置异常等情况</p>
-
-            <!-- 添加显示初始备份记录的区域 -->
-            <div id="initialBackupInfo"
-                style="margin: 14px 0; padding: 8px 10px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-link-color); font-size: 13px; display: none;">
-                <p style="margin: 0 0 5px 0; font-weight: bold; color: var(--theme-text-primary);">您的初始备份文件：</p>
-                <div id="initialBackupFileName"
-                    style="word-break: break-all; font-family: monospace; color: var(--theme-text-secondary);"></div>
-            </div>
 
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
                 <button id="confirmReset"
@@ -6151,6 +6072,8 @@
                     </div>
                 </div>
 
+                <div id="restoreOverwriteGithubHint" style="display: none; margin: -2px 0 10px; padding: 8px 10px; font-size: 11px; line-height: 1.55; color: var(--theme-info-color, #4FC3F7); background: rgba(79, 195, 247, 0.08); border: 1px solid rgba(79, 195, 247, 0.18); border-radius: 8px;"></div>
+
                 <div class="global-export-table-container"
                     style="border: 1px solid var(--theme-border-primary); border-radius: 8px; overflow: hidden;">
                     <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
@@ -6161,7 +6084,7 @@
                                 <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
                                 <th style="text-align: left; width: 64px;"><span id="restoreThHash">哈希值</span></th>
                                 <th style="text-align: left; width: 102px;"><span id="restoreThTime">时间</span></th>
-                                <th style="text-align: left; width: 108px;"><span id="restoreThStats">记录变化</span></th>
+                                <th style="text-align: left; width: 108px;"><span id="restoreThStats">变化记录</span></th>
                                 <th style="text-align: center; width: 70px;"><span id="restoreThViewMode">视图</span></th>
                             </tr>
                         </thead>
@@ -6339,6 +6262,35 @@
                 <div id="restorePreviewContent" class="history-tree-container"
                     style="flex: 1; overflow-y: auto; padding: 10px 0;">
                     <!-- Tree content goes here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GitHub 分支缺失二级确认 -->
+    <div id="githubRepoMissingBranchModal" class="modal">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 0; width: 520px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+            <div class="modal-header compact"
+                style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-elevated);">
+                <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                    <h3 id="githubRepoMissingBranchTitle" style="font-size: 16px; margin: 0; color: var(--text-primary);">
+                        创建分支？
+                    </h3>
+                </div>
+                <button id="closeGithubRepoMissingBranchModal" aria-label="Close"
+                    style="width: 32px; height: 32px; padding: 0; flex: 0 0 auto; border-radius: 50%; background: var(--bg-secondary); color: var(--text-primary); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div style="padding: 16px 20px 18px;">
+                <div id="githubRepoMissingBranchSummary"
+                    style="font-size: 13px; line-height: 1.65; color: var(--theme-text-primary); white-space: pre-wrap;"></div>
+                <div id="githubRepoMissingBranchHint"
+                    style="margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); font-size: 12px; line-height: 1.6; color: var(--theme-text-secondary);"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+                    <button id="githubRepoMissingBranchCancelBtn" class="restore-modal-action-btn secondary">取消</button>
+                    <button id="githubRepoMissingBranchConfirmBtn" class="restore-modal-action-btn primary">确认创建并使用</button>
                 </div>
             </div>
         </div>

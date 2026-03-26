@@ -3067,6 +3067,17 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     return;
                 }
 
+                // 明确的跳转按钮：导出
+                if (e.target.closest('.history-jump-export-btn')) {
+                    const btn = e.target.closest('.history-jump-export-btn');
+                    const recordTime = btn.getAttribute('data-record-time');
+                    if (recordTime) {
+                        const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}&action=export`;
+                        safeCreateTab({ url: historyPageUrl });
+                    }
+                    return;
+                }
+
                 // 明确的跳转按钮：搜索
                 if (e.target.closest('.history-jump-search-btn')) {
                     const btn = e.target.closest('.history-jump-search-btn');
@@ -3212,15 +3223,15 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         if (currentLang === 'en') {
             headerHTML = `
                 <div class="header-item header-action">No.</div>
-                <div class="header-item" style="flex: 1; text-align: center;">Time & Notes</div>
-                <div class="header-item" style="flex: 1; text-align: center;">Quantity & Structure</div>
+                <div class="header-item header-time" style="flex: 1; text-align: center;">Time & Notes</div>
+                <div class="header-item header-count" style="flex: 1; text-align: center;">Quantity & Structure</div>
                 <div class="header-item header-ops">Ops</div>
             `;
         } else {
             headerHTML = `
                 <div class="header-item header-action">序号</div>
-                <div class="header-item" style="flex: 1; text-align: center;">时间与备注</div>
-                <div class="header-item" style="flex: 1; text-align: center;">数量与结构</div>
+                <div class="header-item header-time" style="flex: 1; text-align: center;">时间与备注</div>
+                <div class="header-item header-count" style="flex: 1; text-align: center;">数量与结构</div>
                 <div class="header-item header-ops">操作</div>
             `;
         }
@@ -3603,6 +3614,9 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 const opsBtns = `
                     <div class="history-ops-row">
+                        <button class="history-jump-action-btn history-jump-export-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '导出' : 'Export'}">
+                            <i class="fas fa-file-export"></i>
+                        </button>
                         <button class="history-jump-action-btn history-jump-search-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '搜索' : 'Search'}">
                             <i class="fas fa-search"></i>
                         </button>
@@ -5304,6 +5318,73 @@ function handleAutoSyncToggle(event) {
             autoBackupSettingsBtn2.disabled = true;
             autoBackupSettingsBtn2.classList.add('disabled');
         }
+    }
+
+    // 手动 -> 自动：先判定是否需要执行一次“切换备份”
+    const maybeRunSwitchBackup = (!wasChecked && isChecked);
+    if (maybeRunSwitchBackup) {
+        chrome.runtime.sendMessage({ action: 'getBackupStats' }, (backupResponse) => {
+            if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
+                // 无法获取统计时，降级为直接切换模式
+                chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
+                    scheduleBookmarkCountDisplayRefresh({ delay: 120 });
+                });
+                return;
+            }
+
+            const s = backupResponse.stats;
+            const hasChanges = (
+                Number(s.bookmarkDiff || 0) !== 0 ||
+                Number(s.folderDiff || 0) !== 0 ||
+                Number(s.movedCount || 0) > 0 ||
+                Number(s.modifiedCount || 0) > 0 ||
+                s.bookmarkMoved === true ||
+                s.folderMoved === true ||
+                s.bookmarkModified === true ||
+                s.folderModified === true
+            );
+
+            if (!hasChanges) {
+                chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
+                    scheduleBookmarkCountDisplayRefresh({ delay: 120 });
+                });
+                return;
+            }
+
+            showStatus('检测到修改，正在为您备份...', 'info', 5000);
+            chrome.runtime.sendMessage({
+                action: 'syncBookmarks',
+                isSwitchToAutoBackup: true
+            }, (syncResponse) => {
+                if (syncResponse && syncResponse.success) {
+                    showStatus('切换备份成功！', 'success');
+                    updateSyncHistory();
+                    scheduleBookmarkCountDisplayRefresh({ delay: 120 });
+
+                    // 切换备份成功后，再正式开启自动模式，避免并发触发
+                    chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
+                        scheduleBookmarkCountDisplayRefresh({ delay: 120 });
+                    });
+                } else {
+                    showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
+
+                    // 切换备份失败时回滚开关与模式UI
+                    if (autoSyncToggle) autoSyncToggle.checked = wasChecked;
+                    if (autoSyncToggle2) autoSyncToggle2.checked = wasChecked;
+
+                    const backupModeAuto = document.getElementById('backupModeAuto');
+                    const backupModeManual = document.getElementById('backupModeManual');
+                    if (backupModeAuto) backupModeAuto.checked = wasChecked;
+                    if (backupModeManual) backupModeManual.checked = !wasChecked;
+
+                    const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
+                    const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
+                    if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = wasChecked ? 'flex' : 'none';
+                    if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = wasChecked ? 'none' : 'flex';
+                }
+            });
+        });
+        return;
     }
 
     // 通知 background.js 状态变化
@@ -9261,6 +9342,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         if (inManualExportFolder && isLegacyManualExportChangesLeaf) return false;
         if (inCurrentChangesFolder) return true;
         if (inManualHistoryExportFolder) return true;
+        if (inManualHistoryFolder) return true;
         if (inSnapshotOrOverwriteFolder && hasChangesNameHint) return true;
         if (allowStandalone && hasStandaloneChangesArtifactHints(fileName)) return true;
         return hasChangesNameHint;
@@ -9312,6 +9394,9 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
 
         try {
             if (isZipFileName(name)) {
+                if (!allowStandalone) {
+                    continue;
+                }
                 const zipArrayBuffer = await file.arrayBuffer();
                 localCandidates.push({
                     name,
@@ -9531,6 +9616,7 @@ async function handleLocalRestoreSelection(fileList, options = {}) {
     if (!files || files.length === 0) return;
 
     const { localCandidates, hasMarkdownOnly } = await collectLocalRestoreCandidates(files, options);
+    const selectedZipCount = files.filter((file) => /\.zip$/i.test(String(file?.name || '').trim())).length;
     const zipCandidateCount = localCandidates.filter((item) => item && item.type === 'zip').length;
     const effectiveCandidateCount = localCandidates.filter((item) => {
         if (!item) return false;
@@ -9552,6 +9638,8 @@ async function handleLocalRestoreSelection(fileList, options = {}) {
         lastLocalRestoreSelectionMeta = null;
         if (hasMarkdownOnly) {
             alert('Detected index files only. Please select Bookmark Backup folder or a specific version folder.');
+        } else if (!options?.allowStandalone && selectedZipCount > 0) {
+            alert('Folder restore does not parse ZIP files. Use Select file for ZIP, or extract ZIP to a folder before restore.');
         } else {
             alert('No valid backup files found (Snapshot HTML|JSON / Current Changes JSON|HTML / Restore ZIP).');
         }
@@ -10347,7 +10435,15 @@ function showRestoreModal(versions, source) {
 
     const isStandaloneChangesArtifactVersion = (version) => {
         const sourceType = String(version?.sourceType || version?.restoreRef?.sourceType || '').trim().toLowerCase();
-        return sourceType === 'changes_artifact';
+        if (sourceType === 'changes_artifact') return true;
+
+        if (sourceType === 'zip') {
+            const hasChangesArtifact = !!(version?.restoreRef?.changesArtifact);
+            const hasSnapshotZipEntry = !!String(version?.restoreRef?.zipEntryName || '').trim();
+            return hasChangesArtifact && !hasSnapshotZipEntry;
+        }
+
+        return false;
     };
 
     const hasChangesArtifactCapability = (version) => {
@@ -17546,43 +17642,55 @@ document.addEventListener('DOMContentLoaded', function () {
         const lines = isEn
             ? [
                 'Bookmark Backup/',
-                '├─ Manual Export (Optional)/',
-                '│  ├─ Current Changes/',
-                '│  │  ├─ backup-history-log.md (Optional)',
-                '│  │  └─ 20260225_123456_abcd1234/',
-                '│  │     └─ bookmark-changes_simple_20260225_123456_abcd1234.json (Optional)',
-                '│  ├─ backup-history-log_from_20260305_090000_to_20260307_180000.md (Optional)',
+                '├─ Versioned/',
+                '│  ├─ backup-history-log_from_20260305_090000_to_20260307_180000_Chrome_a3f2.md',
                 '│  └─ 20260225_123456_abcd1234/',
-                '│     ├─ 20260225_123456_abcd1234.html (Optional)',
-                '│     └─ bookmark-changes_detailed_20260225_123456_abcd1234.html (Optional)',
+                '│     ├─ 20260225_123456_abcd1234.html',
+                '│     └─ bookmark-changes_simple_20260225_123456_abcd1234.json',
                 '├─ Overwrite/',
                 '│  ├─ bookmark_backup.html',
-                '│  └─ bookmark-changes_simple_20260225_123456_abcd1234.json (Optional)',
-                '└─ Versioned/',
-                '   ├─ backup-history-log_from_20260305_090000_to_20260307_180000_Chrome_a3f2.md',
-                '   └─ 20260225_123456_abcd1234/',
-                '      ├─ 20260225_123456_abcd1234.html',
-                '      └─ bookmark-changes_simple_20260225_123456_abcd1234.json (Optional)'
+                '│  └─ bookmark-changes_simple_20260225_123456_abcd1234.json',
+                '└─ Manual Export (Local-only)/',
+                '   ├─ Current Changes/',
+                '   │  ├─ bookmark-changes_simple_20260225_123456_abcd1234.json',
+                '   │  └─ bookmark-changes_detailed_20260225_123456_abcd1234.html',
+                '   ├─ Backup_History/',
+                '   │  ├─ 20260225_123456_abcd1234.html',
+                '   │  ├─ bookmark_abcd1234_Detailed_20260225_123456.html',
+                '   │  ├─ bookmark_abcd1234_Simple_20260225_123456.json',
+                '   │  ├─ backup-history-log_from_20260305_090000_to_20260307_180000.md',
+                '   │  └─ Backup_History_Archive_20260307_180000.zip (Local restore -> Select file (single file) only)',
+                '   │     └─ [ZIP] Backup_History_Archive_20260307_180000/',
+                '   │        ├─ backup-history-log_from_20260305_090000_to_20260307_180000.md',
+                '   │        └─ 20260225_123456_abcd1234/',
+                '   │           ├─ 20260225_123456_abcd1234.html',
+                '   │           └─ bookmark-changes_simple_20260225_123456_abcd1234.json'
             ]
             : [
                 '书签备份/',
-                '├─ 手动导出（可选）/',
-                '│  ├─ 当前变化/',
-                '│  │  ├─ 备份历史log.md（可选）',
-                '│  │  └─ 20260225_123456_abcd1234/',
-                '│  │     └─ 书签变化_简略_20260225_123456_abcd1234.json（可选）',
-                '│  ├─ 备份历史log_20260305_090000开始_20260307_180000截止.md（可选）',
+                '├─ 版本化/',
+                '│  ├─ 备份历史log_20260305_090000开始_20260307_180000截止_Chrome_a3f2.md',
                 '│  └─ 20260225_123456_abcd1234/',
-                '│     ├─ 20260225_123456_abcd1234.html（可选）',
-                '│     └─ 书签变化_详细_20260225_123456_abcd1234.html（可选）',
+                '│     ├─ 20260225_123456_abcd1234.html',
+                '│     └─ 书签变化_简略_20260225_123456_abcd1234.json',
                 '├─ 覆盖/',
                 '│  ├─ bookmark_backup.html',
-                '│  └─ 书签变化_简略_20260225_123456_abcd1234.json（可选）',
-                '└─ 版本化/',
-                '   ├─ 备份历史log_20260305_090000开始_20260307_180000截止_Chrome_a3f2.md',
-                '   └─ 20260225_123456_abcd1234/',
-                '      ├─ 20260225_123456_abcd1234.html',
-                '      └─ 书签变化_简略_20260225_123456_abcd1234.json（可选）'
+                '│  └─ 书签变化_简略_20260225_123456_abcd1234.json',
+                '└─ 手动导出（本地专有）/',
+                '   ├─ 当前变化/',
+                '   │  ├─ 书签变化_简略_20260225_123456_abcd1234.json',
+                '   │  └─ 书签变化_详细_20260225_123456_abcd1234.html',
+                '   ├─ 备份历史/',
+                '   │  ├─ 20260225_123456_abcd1234.html',
+                '   │  ├─ 书签_abcd1234_详细_20260225_123456.html',
+                '   │  ├─ 书签_abcd1234_简略_20260225_123456.json',
+                '   │  ├─ 备份历史log_20260305_090000开始_20260307_180000截止.md',
+                '   │  └─ 备份历史归档_20260307_180000.zip（仅支持本地恢复 -> 选择文件（单文件））',
+                '   │     └─ [ZIP内] 备份历史归档_20260307_180000/',
+                '   │        ├─ 备份历史log_20260305_090000开始_20260307_180000截止.md',
+                '   │        └─ 20260225_123456_abcd1234/',
+                '   │           ├─ 20260225_123456_abcd1234.html',
+                '   │           └─ 书签变化_简略_20260225_123456_abcd1234.json'
             ];
         return lines.join('\n');
     };
@@ -17604,8 +17712,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div style="display:flex;flex-direction:column;gap:8px;height:min(62vh, 620px);min-height:360px;">
                         <div style="flex:1;min-height:0;overflow-y:auto;font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                             ${isEn
-                    ? '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. Folder mode</span><br>&nbsp;&nbsp;Recommended root: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Overwrite / Versioned / Manual Export</span><br>&nbsp;&nbsp;If you pick another folder, such as a specific version folder, the restore list is built by direct file matching instead of full grouped directory scan.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. Manual Export</span><br>&nbsp;&nbsp;Manual Export is now <span style="color: var(--theme-warning-color); font-weight: 700;">local only</span>; Cloud 1 / Cloud 2 no longer scan it.<br>&nbsp;&nbsp;It prefers <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log.md</span>; history exports can now sit directly under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/</span>, and old <span style="color: var(--theme-warning-color); font-weight: 700;">Backup_History/</span> layouts are still accepted.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. File compatibility</span><br>&nbsp;&nbsp;File mode accepts snapshots from <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API style .json bookmark trees</span>.<br>&nbsp;&nbsp;Versioned restore metadata comes from <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> and local archived files <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log_from_*_to_*.md</span>.<br>&nbsp;&nbsp;Overwrite does not generate a backup-history log; the extension only reads the current overwrite snapshot in <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span>. For Cloud 2 (GitHub), older overwrite versions should be checked in repo commit history.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. Current Changes</span><br>&nbsp;&nbsp;Selecting Current Changes allows <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span> only.</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> Folder restore reads the index first, so the first pass is lighter and less likely to stutter.<br><span style="font-weight: 700;">2.</span> If a manual-export ZIP exceeds <span style="font-weight: 700;">100MB</span>, its filename adds a restore hint; above <span style="font-weight: 700;">500MB</span>, the hint becomes stronger. If you want to restore it later, extract it to a folder first.</div>'
-                    : '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. 文件夹模式</span><br>&nbsp;&nbsp;推荐优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 覆盖 / 版本化 / 手动导出</span><br>&nbsp;&nbsp;若选择其他文件夹，例如某个具体版本目录，则按文件直接匹配并展示恢复列表，不走完整分组目录扫描。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. 手动导出</span><br>&nbsp;&nbsp;手动导出现在为<span style="color: var(--theme-warning-color); font-weight: 700;">仅本地</span>；云端1 / 云端2不再扫描这类导出包。<br>&nbsp;&nbsp;优先读取 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log.md</span>；备份历史导出现在可以直接放在 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/</span> 下，旧的 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史/</span> 结构也仍然兼容。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. 文件兼容</span><br>&nbsp;&nbsp;文件模式支持快照兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span>，以及 <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API 风格的 .json 书签树</span>。<br>&nbsp;&nbsp;多版本恢复元数据来自 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span>，并兼容本地归档文件 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log_*开始_*截止.md</span>。<br>&nbsp;&nbsp;覆盖策略不生成备份历史 log；扩展内只读取 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 目录里的当前覆盖快照。若使用云端2（GitHub），旧覆盖版本请到仓库提交历史里查看。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. 当前变化</span><br>&nbsp;&nbsp;若选择“当前变化”，仅允许<span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span>。</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> 文件夹恢复会先读索引，首轮更轻量，也更不容易卡顿。<br><span style="font-weight: 700;">2.</span> 手动导出的 ZIP 超过 <span style="font-weight: 700;">100MB</span> 时，文件名会追加恢复提示；超过 <span style="font-weight: 700;">500MB</span> 时提示会更强。如果后续要恢复，建议先解压为文件夹再恢复。</div>'}
+                    ? '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. Folder mode</span><br>&nbsp;&nbsp;Recommended root: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Versioned / Overwrite / Manual Export</span><br>&nbsp;&nbsp;If you pick another folder, such as a specific version folder, the restore list is built by direct file matching instead of full grouped directory scan.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. Manual Export</span><br>&nbsp;&nbsp;Manual Export is now <span style="color: var(--theme-warning-color); font-weight: 700;">local only</span>; Cloud 1 / Cloud 2 no longer scan it.<br>&nbsp;&nbsp;Current Changes exports are direct files under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Current Changes/</span>.<br>&nbsp;&nbsp;Backup History single-entry exports and Backup History ZIP exports are both under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Backup_History/</span>.<br>&nbsp;&nbsp;Extracted folders with <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log*.md</span> are still supported locally.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. File compatibility</span><br>&nbsp;&nbsp;File mode accepts snapshots from <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API style .json bookmark trees</span>.<br>&nbsp;&nbsp;Versioned restore metadata comes from <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> and local archived files <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log_from_*_to_*.md</span>.<br>&nbsp;&nbsp;Overwrite does not generate a backup-history log; the extension only reads the current overwrite snapshot in <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span>. For Cloud 2 (GitHub), older overwrite versions should be checked in repo commit history.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. Restore routing</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Snapshot</span> uses <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite Restore</span>.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Changes</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes</span> use <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span> only.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Backup History ZIP</span> is supported only via <span style="color: var(--theme-warning-color); font-weight: 700;">Local Restore -> Select file</span> (single file).</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> Folder restore reads the index first, so the first pass is lighter and less likely to stutter.<br><span style="font-weight: 700;">2.</span> If a manual-export ZIP exceeds <span style="font-weight: 700;">100MB</span>, its filename adds a restore hint; above <span style="font-weight: 700;">500MB</span>, the hint becomes stronger. If you want to restore it later, extract it to a folder first.</div>'
+                    : '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. 文件夹模式</span><br>&nbsp;&nbsp;推荐优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 版本化 / 覆盖 / 手动导出</span><br>&nbsp;&nbsp;若选择其他文件夹，例如某个具体版本目录，则按文件直接匹配并展示恢复列表，不走完整分组目录扫描。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. 手动导出</span><br>&nbsp;&nbsp;手动导出现在为<span style="color: var(--theme-warning-color); font-weight: 700;">本地专有</span>；云端1 / 云端2不再扫描这类导出包。<br>&nbsp;&nbsp;当前变化导出是直接文件，位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/当前变化/</span>。<br>&nbsp;&nbsp;备份历史单条导出与备份历史 ZIP 导出都位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/备份历史/</span>。<br>&nbsp;&nbsp;若你先解压，只要内部仍带有 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log*.md</span>，本地恢复也仍能识别。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. 文件兼容</span><br>&nbsp;&nbsp;文件模式支持快照兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span>，以及 <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API 风格的 .json 书签树</span>。<br>&nbsp;&nbsp;多版本恢复元数据来自 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span>，并兼容本地归档文件 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log_*开始_*截止.md</span>。<br>&nbsp;&nbsp;覆盖策略不生成备份历史 log；扩展内只读取 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 目录里的当前覆盖快照。若使用云端2（GitHub），旧覆盖版本请到仓库提交历史里查看。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. 恢复路由</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 快照</span> 使用 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖恢复</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 变化</span> 与 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化</span> 仅允许 <span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 备份历史 ZIP</span> 仅支持通过 <span style="color: var(--theme-warning-color); font-weight: 700;">本地恢复 -> 选择文件</span>（单文件）导入。</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> 文件夹恢复会先读索引，首轮更轻量，也更不容易卡顿。<br><span style="font-weight: 700;">2.</span> 手动导出的 ZIP 超过 <span style="font-weight: 700;">100MB</span> 时，文件名会追加恢复提示；超过 <span style="font-weight: 700;">500MB</span> 时提示会更强。如果后续要恢复，建议先解压为文件夹再恢复。</div>'}
                         </div>
                         <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;">
                             <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
@@ -17643,11 +17751,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 contentHtml: `
                     <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                         ${isEn
-                    ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. Bookmark IDs may change<br>• <s>Patch Restore: applies add/delete/move/modify by strict ID matching and preserves IDs when possible</s><br>• Note: source chains may differ, so Patch Restore is not the primary path in Main UI for first-time or large-scale restore flows<br>• Import Merge: imports into a new folder and keeps existing bookmarks'
-                    : '• 覆盖恢复：先删除当前书签，再按目标快照重建，Bookmark ID 可能变化<br>• <s>补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID</s><br>• 说明：由于来源链路可能不一致，主 UI 的首次恢复或大规模恢复流程不以补丁恢复作为主路径<br>• 导入合并：导入到新文件夹，保留现有书签'}
+                    ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. This is the main path for snapshots, including <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite / Versioned Snapshot / Manual Export -> Snapshot</span>. Bookmark IDs may change<br>• Import Merge: imports into a new folder and keeps existing bookmarks. This is the main path for <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes / Manual Export -> Changes</span><br>• <s>Patch Restore: applies add/delete/move/modify by strict ID matching and preserves IDs when possible</s><br>• Note: source chains may differ, so Patch Restore is not the primary path in Main UI for first-time or large-scale restore flows'
+                    : '• 覆盖恢复：先删除当前书签，再按目标快照重建。这是快照类来源的主路径，包括 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖 / 多版本快照 / 手动导出 -> 快照</span>；Bookmark ID 可能变化<br>• 导入合并：导入到新文件夹，保留现有书签。这是 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化 / 手动导出 -> 变化</span> 的主路径<br>• <s>补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID</s><br>• 说明：由于来源链路可能不一致，主 UI 的首次恢复或大规模恢复流程不以补丁恢复作为主路径'}
                     </div>
                     <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
-                        ${isEn ? 'Reference structure (Cloud 1 / Cloud 2 / Local)' : '参考结构（云端1 / 云端2 / 本地通用）'}
+                        ${isEn ? 'Reference structure (Local restore example)' : '参考结构（本地恢复示例）'}
                     </div>
                     <pre style="margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x: auto;">${structureExample}</pre>
                     <div style="font-size: 10px; color: var(--theme-warning-color); padding: 6px 8px; background: rgba(255, 152, 0, 0.08); border-radius: 4px;">

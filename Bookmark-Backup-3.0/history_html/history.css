@@ -1223,6 +1223,11 @@ body {
     content: none !important;
 }
 
+.action-btn.record-export-open-btn::after {
+    display: none !important;
+    content: none !important;
+}
+
 .restore-title {
     color: var(--accent-primary) !important;
 }
@@ -2485,20 +2490,34 @@ body {
     gap: 0;
 }
 
+.action-btn.record-export-open-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 0;
+    gap: 0;
+}
+
 .action-btn.detail-search-open-btn i {
+    font-size: 13px;
+}
+
+.action-btn.record-export-open-btn i {
     font-size: 13px;
 }
 
 /* Tighter icon buttons only inside history list rows */
 .commit-actions .action-btn.detail-btn,
-.commit-actions .action-btn.detail-search-open-btn {
+.commit-actions .action-btn.detail-search-open-btn,
+.commit-actions .action-btn.record-export-open-btn {
     width: 28px;
     min-width: 28px;
     height: 28px;
 }
 
 .commit-actions .action-btn.detail-btn i,
-.commit-actions .action-btn.detail-search-open-btn i {
+.commit-actions .action-btn.detail-search-open-btn i,
+.commit-actions .action-btn.record-export-open-btn i {
     font-size: 12px;
 }
 

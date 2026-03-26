@@ -74,6 +74,37 @@ function extractGitHubErrorText(error) {
   return parts.join(' | ');
 }
 
+function extractGitHubExpectedShaFromConflict(error) {
+  const haystack = [
+    String(error?.message || ''),
+    extractGitHubErrorText(error)
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  if (!haystack) return null;
+
+  // Common GitHub conflict text:
+  // "<path> does not match <40-hex-sha>"
+  let match = haystack.match(/does\s+not\s+match\s+([0-9a-f]{40})/i);
+  if (match && match[1]) {
+    return String(match[1]).toLowerCase();
+  }
+
+  // Fallback patterns seen in API / proxy layers.
+  match = haystack.match(/expected(?:\s+sha)?[:=\s]+([0-9a-f]{40})/i);
+  if (match && match[1]) {
+    return String(match[1]).toLowerCase();
+  }
+
+  match = haystack.match(/\bsha\b[^0-9a-f]{0,16}([0-9a-f]{40})/i);
+  if (match && match[1]) {
+    return String(match[1]).toLowerCase();
+  }
+
+  return null;
+}
+
 function isGitHubBranchWarmupError(error) {
   const status = Number(error?.status);
   if (status !== 404 && status !== 409 && status !== 422) return false;
@@ -685,7 +716,8 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
       }
     }
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const payload = {
         message: safeMessage,
         content: safeContentBase64
@@ -723,7 +755,7 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
         const messageText = String(error?.message || '').toLowerCase();
         const shouldRetryBranchWarmup = branchEnsureResult?.branchCreated === true
           && isGitHubBranchWarmupError(error)
-          && attempt < 2;
+          && attempt < (maxAttempts - 1);
         const isShaConflict = status === 409
           || (status === 422 && (messageText.includes('sha') || messageText.includes('conflict') || messageText.includes('does not match')));
 
@@ -751,17 +783,25 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
           continue;
         }
 
-        if (!isShaConflict || attempt >= 2) {
+        if (!isShaConflict || attempt >= (maxAttempts - 1)) {
           if (branchEnsureResult?.branchCreated === true && isGitHubBranchWarmupError(error)) {
             return { success: false, error: '新分支已创建，但 GitHub 还在同步分支信息，请稍后重试' };
           }
           return { success: false, error: normalizeGitHubError(error) };
         }
 
+        // 优先使用冲突响应中给出的最新 sha，避免 Contents API 读到旧缓存导致循环冲突。
+        const expectedShaFromConflict = extractGitHubExpectedShaFromConflict(error);
+        if (expectedShaFromConflict && expectedShaFromConflict !== existingSha) {
+          existingSha = expectedShaFromConflict;
+          await delay((attempt + 1) * 160);
+          continue;
+        }
+
         try {
           existingSha = await loadExistingSha({
             allowTreeFallback: true,
-            waitMs: (attempt + 1) * 200
+            waitMs: (attempt + 1) * 220
           });
         } catch (refreshError) {
           if (Number(refreshError?.status) === 404) {

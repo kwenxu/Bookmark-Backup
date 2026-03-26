@@ -5,7 +5,7 @@
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 const getHistoryExportRootFolder = () => currentLang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
 const getManualExportParentFolder = () => currentLang === 'zh_CN' ? '手动导出' : 'Manual Export';
-const getHistoryExportFolder = () => getManualExportParentFolder();
+const getHistoryExportFolder = () => `${getManualExportParentFolder()}/${currentLang === 'zh_CN' ? '备份历史' : 'Backup_History'}`;
 const getCurrentChangesExportFolder = () => `${getManualExportParentFolder()}/${currentLang === 'zh_CN' ? '当前变化' : 'Current Changes'}`;
 const getManualExportInfoLogFileName = (format = 'md') => {
     const ext = String(format || '').toLowerCase() === 'md' ? 'md' : 'json';
@@ -13,7 +13,6 @@ const getManualExportInfoLogFileName = (format = 'md') => {
         ? `备份历史log.${ext}`
         : `backup-history-log.${ext}`;
 };
-const MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY = 'manualExportCurrentChangesLedgerV1';
 const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
 
@@ -1131,7 +1130,7 @@ function __ensureTreeRootExpanded(tree) {
 }
 
 function __getTreeExpandStateStorageKey(treeContainer) {
-    // Current Changes 预览：独立持久化展开状态（不与其他树混用）
+    // Current Changes 预览：独立键（仅会话内，不与其他树混用）
     try {
         const previewRoot = treeContainer && treeContainer.closest ? treeContainer.closest('#changesTreePreviewInline') : null;
         if (previewRoot) {
@@ -1146,6 +1145,14 @@ function __getTreeExpandStateStorageKey(treeContainer) {
 
 function __readTreeExpandStateFromStorage(treeContainer) {
     const key = __getTreeExpandStateStorageKey(treeContainer);
+    if (__isChangesPreviewExpandedStorageKey(key)) {
+        const expandedIds = __getChangesPreviewExpandedStateByKey(key);
+        if (__hasChangesPreviewExpandedStateByKey(key)) {
+            return JSON.stringify(expandedIds);
+        }
+        return null;
+    }
+
     try {
         const raw = localStorage.getItem(key);
         if (raw) return raw;
@@ -1586,8 +1593,8 @@ const i18n = {
         'en': 'Index Files'
     },
     globalExportContentHint: {
-        'zh_CN': '选择快照或变化记录时会自动附带备份历史log.md。',
-        'en': 'Selecting snapshot or change records automatically includes backup-history-log.md.'
+        'zh_CN': '选择快照或变化记录时会自动附带备份历史log.md。ZIP 下载路径为：书签备份/手动导出/备份历史。',
+        'en': 'Selecting snapshot or change records automatically includes backup-history-log.md. ZIP downloads to: Bookmark Backup/Manual Export/Backup_History.'
     },
     globalExportSelectTitle: {
         'zh_CN': '选择备份记录',
@@ -2142,6 +2149,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
+                if (recordAction === 'export') {
+                    showHistoryExportChangesModal(record.time, {
+                        preferredMode: getRecordDetailMode(record.time),
+                        useDomTreeContainer: false,
+                        treeContainer: null
+                    });
+                    return;
+                }
+
                 showDetailModal(record);
             }, 0);
 
@@ -2484,7 +2500,7 @@ function applyLanguage() {
     }
     const detailExportChangesBtn = document.getElementById('detailExportChangesBtn');
     if (detailExportChangesBtn) {
-        detailExportChangesBtn.title = currentLang === 'zh_CN' ? '导出变化' : 'Export Changes';
+        detailExportChangesBtn.title = currentLang === 'zh_CN' ? '导出' : 'Export';
     }
 
     const globalExportBtn = document.getElementById('globalExportBtn');
@@ -2536,7 +2552,13 @@ function applyLanguage() {
 
     // 导出书签变化模态框
     const exportChangesModalTitle = document.getElementById('exportChangesModalTitle');
-    if (exportChangesModalTitle) exportChangesModalTitle.textContent = i18n.exportChangesModalTitle[currentLang];
+    if (exportChangesModalTitle) updateExportChangesModalHeader();
+    const historyExportArtifactLabel = document.getElementById('historyExportArtifactLabel');
+    if (historyExportArtifactLabel) historyExportArtifactLabel.textContent = currentLang === 'zh_CN' ? '导出内容' : 'Export Content';
+    const historyExportArtifactChangesText = document.getElementById('historyExportArtifactChangesText');
+    if (historyExportArtifactChangesText) historyExportArtifactChangesText.textContent = currentLang === 'zh_CN' ? '变化' : 'Changes';
+    const historyExportArtifactSnapshotText = document.getElementById('historyExportArtifactSnapshotText');
+    if (historyExportArtifactSnapshotText) historyExportArtifactSnapshotText.textContent = currentLang === 'zh_CN' ? '快照' : 'Snapshot';
     const exportChangesFormatLabel = document.getElementById('exportChangesFormatLabel');
     if (exportChangesFormatLabel) exportChangesFormatLabel.textContent = i18n.exportChangesFormatLabel[currentLang];
     const exportChangesLegendHelp = document.getElementById('exportChangesLegendHelp');
@@ -2563,6 +2585,7 @@ function applyLanguage() {
     if (exportChangesConfirmText) exportChangesConfirmText.textContent = i18n.exportChangesConfirmText[currentLang];
     const exportChangesCancelText = document.getElementById('exportChangesCancelText');
     if (exportChangesCancelText) exportChangesCancelText.textContent = i18n.exportChangesCancelText[currentLang];
+    updateExportChangesModalContextUi(document.getElementById('exportChangesModal'));
 }
 
 
@@ -5028,6 +5051,11 @@ function switchView(view) {
     // 更新全局变量
     currentView = view;
 
+    // 当前变化预览的展开状态仅在当前页面会话中有效；每次重新进入时重置
+    if (view === 'current-changes' && previousView !== 'current-changes') {
+        __resetChangesPreviewExpandedStateSession();
+    }
+
     // 视图切换时隐藏搜索结果面板并清除搜索缓存（Phase 1 & 2 & 2.5）
     try {
         // [隔离增强] 确保清理搜索 UI 状态
@@ -5129,12 +5157,215 @@ function renderCurrentView() {
 
 const CHANGES_PREVIEW_EXPANDED_KEY = 'changesPreviewExpandedNodes';
 const CHANGES_PREVIEW_SCROLL_KEY = 'changesPreviewScrollTop';
+const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX = 'currentChangesPreviewExpandedState:';
+const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const __changesPreviewExpandedStateSession = new Map();
+const __changesPreviewExpandedStateLoadPromises = new Map();
+let currentChangesPreviewStateSignature = '';
 
 // 右侧内容区域（.content-area）滚动位置持久化：按“当前变化 + 详略模式”分别记忆
 const CURRENT_CHANGES_CONTENT_SCROLL_KEY = 'currentChangesContentScrollTop';
 
 let __currentChangesContentAreaScrollBound = false;
 let __currentChangesContentAreaScrollHandler = null;
+
+function __isChangesPreviewExpandedStorageKey(key) {
+    return typeof key === 'string' && key.startsWith(`${CHANGES_PREVIEW_EXPANDED_KEY}:`);
+}
+
+function __buildCurrentChangesPreviewStateSignature(meta = {}) {
+    const baselineTimestamp = meta && Object.prototype.hasOwnProperty.call(meta, 'baselineTimestamp')
+        ? meta.baselineTimestamp
+        : (meta?.lastBookmarkDataTimestamp ?? meta?.lastBookmarkData?.timestamp ?? '');
+    const rawChangeTime = meta && Object.prototype.hasOwnProperty.call(meta, 'lastBookmarkChangeTime')
+        ? meta.lastBookmarkChangeTime
+        : meta?.lastChangeTime;
+    const lastBookmarkChangeTime = typeof rawChangeTime === 'number' && Number.isFinite(rawChangeTime)
+        ? rawChangeTime
+        : 0;
+    return `baseline:${String(baselineTimestamp || '').trim()}|change:${lastBookmarkChangeTime}`;
+}
+
+function __setCurrentChangesPreviewStateSignature(meta = {}) {
+    currentChangesPreviewStateSignature = __buildCurrentChangesPreviewStateSignature(meta);
+    return currentChangesPreviewStateSignature;
+}
+
+function __getCurrentChangesPreviewStateSignature() {
+    return String(currentChangesPreviewStateSignature || '').trim();
+}
+
+function __normalizeExpandedNodeIds(ids) {
+    return Array.from(new Set(
+        (Array.isArray(ids) ? ids : [])
+            .map(v => String(v || '').trim())
+            .filter(Boolean)
+    ));
+}
+
+function __extractChangesPreviewModeFromStorageKey(key) {
+    if (!__isChangesPreviewExpandedStorageKey(key)) return '';
+    const parts = String(key).split(':');
+    const mode = String(parts[1] || '').trim().toLowerCase();
+    if (mode === 'compact' || mode === 'collection') return mode;
+    return 'detailed';
+}
+
+function __normalizeChangesPreviewExpandedStateEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const expandedIds = __normalizeExpandedNodeIds(entry.expandedIds);
+    const stateSignature = String(entry.stateSignature || entry.signature || '').trim();
+    const updatedAt = Number(entry.updatedAt);
+    return {
+        expandedIds,
+        exactState: entry.exactState === true,
+        stateSignature,
+        updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0
+    };
+}
+
+function __getChangesPreviewExpandedStateEntryByKey(key, options = {}) {
+    if (!__isChangesPreviewExpandedStorageKey(key)) return null;
+    const entry = __normalizeChangesPreviewExpandedStateEntry(__changesPreviewExpandedStateSession.get(key));
+    if (!entry) return null;
+    const expectedSignature = String(
+        Object.prototype.hasOwnProperty.call(options, 'stateSignature')
+            ? (options.stateSignature || '')
+            : __getCurrentChangesPreviewStateSignature()
+    ).trim();
+    if (expectedSignature) {
+        if (!entry.stateSignature || entry.stateSignature !== expectedSignature) return null;
+    } else if (entry.stateSignature) {
+        return null;
+    }
+    if (!entry.exactState) return null;
+    return entry;
+}
+
+function __hasChangesPreviewExpandedStateByKey(key, options = {}) {
+    return !!__getChangesPreviewExpandedStateEntryByKey(key, options);
+}
+
+function __getChangesPreviewExpandedStateBackgroundStorageKey(mode = __getChangesPreviewMode()) {
+    return `${CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX}${normalizeCurrentChangesPreviewMode(mode)}`;
+}
+
+async function __ensureChangesPreviewExpandedStateLoaded(mode = __getChangesPreviewMode()) {
+    const normalizedMode = normalizeCurrentChangesPreviewMode(mode);
+    const sessionKey = `${CHANGES_PREVIEW_EXPANDED_KEY}:${normalizedMode}`;
+    const stateSignature = __getCurrentChangesPreviewStateSignature();
+
+    if (!stateSignature) {
+        __changesPreviewExpandedStateSession.delete(sessionKey);
+        return;
+    }
+
+    if (__hasChangesPreviewExpandedStateByKey(sessionKey, { stateSignature })) {
+        return;
+    }
+
+    const promiseKey = `${sessionKey}|${stateSignature}`;
+    const existingPromise = __changesPreviewExpandedStateLoadPromises.get(promiseKey);
+    if (existingPromise) {
+        await existingPromise;
+        return;
+    }
+
+    const loadPromise = (async () => {
+        try {
+            const storageKey = __getChangesPreviewExpandedStateBackgroundStorageKey(normalizedMode);
+            if (!browserAPI || !browserAPI.storage || !browserAPI.storage.local || !storageKey) {
+                __changesPreviewExpandedStateSession.delete(sessionKey);
+                return;
+            }
+
+            const stored = await new Promise(resolve => {
+                browserAPI.storage.local.get([storageKey], resolve);
+            });
+            const payload = stored ? stored[storageKey] : null;
+            const entry = __normalizeChangesPreviewExpandedStateEntry(payload);
+            if (!entry || !entry.exactState || !entry.stateSignature) {
+                __changesPreviewExpandedStateSession.delete(sessionKey);
+                return;
+            }
+
+            const ageMs = Date.now() - entry.updatedAt;
+            if (!Number.isFinite(entry.updatedAt)
+                || ageMs < 0
+                || ageMs > CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_MAX_AGE_MS
+                || entry.stateSignature !== stateSignature) {
+                __changesPreviewExpandedStateSession.delete(sessionKey);
+                return;
+            }
+
+            __changesPreviewExpandedStateSession.set(sessionKey, entry);
+        } catch (_) {
+            __changesPreviewExpandedStateSession.delete(sessionKey);
+        }
+    })();
+
+    __changesPreviewExpandedStateLoadPromises.set(promiseKey, loadPromise);
+    try {
+        await loadPromise;
+    } finally {
+        __changesPreviewExpandedStateLoadPromises.delete(promiseKey);
+    }
+}
+
+function __syncChangesPreviewExpandedStateToBackground(key, ids, options = {}) {
+    try {
+        if (!browserAPI || !browserAPI.runtime || typeof browserAPI.runtime.sendMessage !== 'function') return;
+        const mode = __extractChangesPreviewModeFromStorageKey(key);
+        if (!mode) return;
+        const expandedIds = __normalizeExpandedNodeIds(ids);
+        const clearState = options?.clearState === true;
+        const stateSignature = String(options?.stateSignature || __getCurrentChangesPreviewStateSignature()).trim();
+        if (!clearState && !stateSignature) return;
+        browserAPI.runtime.sendMessage({
+            action: 'syncCurrentChangesPreviewExpandedState',
+            mode,
+            expandedIds,
+            clearState,
+            exactState: options?.exactState !== false,
+            stateSignature
+        }, () => {
+            try { void browserAPI.runtime.lastError; } catch (_) { }
+        });
+    } catch (_) { /* ignore */ }
+}
+
+function __getChangesPreviewExpandedStateByKey(key) {
+    const entry = __getChangesPreviewExpandedStateEntryByKey(key);
+    return entry ? entry.expandedIds : [];
+}
+
+function __setChangesPreviewExpandedStateByKey(key, ids, options = {}) {
+    if (!__isChangesPreviewExpandedStorageKey(key)) return;
+    const stateSignature = String(options?.stateSignature || __getCurrentChangesPreviewStateSignature()).trim();
+    if (!stateSignature) return;
+    const normalized = __normalizeExpandedNodeIds(ids);
+    const entry = {
+        expandedIds: normalized,
+        exactState: options?.exactState !== false,
+        stateSignature,
+        updatedAt: Date.now()
+    };
+    __changesPreviewExpandedStateSession.set(key, entry);
+    __syncChangesPreviewExpandedStateToBackground(key, normalized, {
+        exactState: entry.exactState,
+        stateSignature
+    });
+}
+
+function __resetChangesPreviewExpandedStateSession() {
+    try { __changesPreviewExpandedStateSession.clear(); } catch (_) { }
+    // 同步清空 background 侧会话展开状态，避免自动归档误用旧展开集
+    try {
+        __syncChangesPreviewExpandedStateToBackground(`${CHANGES_PREVIEW_EXPANDED_KEY}:detailed`, [], { clearState: true });
+        __syncChangesPreviewExpandedStateToBackground(`${CHANGES_PREVIEW_EXPANDED_KEY}:compact`, [], { clearState: true });
+        __syncChangesPreviewExpandedStateToBackground(`${CHANGES_PREVIEW_EXPANDED_KEY}:collection`, [], { clearState: true });
+    } catch (_) { /* ignore */ }
+}
 
 function __getCurrentChangesContentScrollStorageKey() {
     return `${CURRENT_CHANGES_CONTENT_SCROLL_KEY}:${__getChangesPreviewMode()}`;
@@ -5858,10 +6089,19 @@ async function __expandReadOnlyFolderById(treeEl, folderId) {
     return true;
 }
 
-async function maybeAutoExpandCurrentChangesCompactPreview() {
+async function __maybeAutoExpandCurrentChangesPreviewByMode(targetMode = 'compact') {
     if (currentView !== 'current-changes') return;
     const previewRoot = document.getElementById('changesTreePreviewInline');
-    if (!previewRoot || !previewRoot.classList.contains('compact-mode')) return;
+    if (!previewRoot) return;
+
+    const normalizedMode = normalizeCurrentChangesPreviewMode(targetMode);
+    const isCompactMode = previewRoot.classList.contains('compact-mode');
+    const isCollectionMode = previewRoot.classList.contains('collection-mode');
+    const isDetailedMode = !isCompactMode && !isCollectionMode;
+
+    if (normalizedMode === 'compact' && !isCompactMode) return;
+    if (normalizedMode === 'detailed' && !isDetailedMode) return;
+    if (normalizedMode === 'collection') return;
 
     // Build changed id set (treeChangeMap + explicit moved ids).
     const movedSet = __getActiveExplicitMovedIdSetFromMap(explicitMovedIds);
@@ -5883,25 +6123,32 @@ async function maybeAutoExpandCurrentChangesCompactPreview() {
         }
     } catch (_) { oldIndex = null; }
 
-    const { changedBookmarks, changedFolders } = __countChangedNodesForAutoExpand(changedIds, previewIndex, oldIndex);
-    if (changedBookmarks >= SIMPLE_MODE_AUTO_EXPAND_MAX_BOOKMARKS || changedFolders >= SIMPLE_MODE_AUTO_EXPAND_MAX_FOLDERS) {
-        // 变化太多时，尝试恢复用户之前保存的状态
-        try {
-            const treeEl = document.getElementById('preview_bookmarkTree');
-            if (treeEl) {
-                const userState = getChangesPreviewExpandedState();
-                if (userState && userState.length > 0) {
-                    for (const folderId of userState) {
-                        await __expandReadOnlyFolderById(treeEl, folderId);
-                    }
-                }
-            }
-        } catch (_) { /* ignore */ }
+    const treeEl = document.getElementById('preview_bookmarkTree');
+    if (!treeEl) return;
+
+    const persistedStateKey = `${CHANGES_PREVIEW_EXPANDED_KEY}:${normalizedMode}`;
+    if (__hasChangesPreviewExpandedStateByKey(persistedStateKey)) {
         return;
     }
 
-    const treeEl = document.getElementById('preview_bookmarkTree');
-    if (!treeEl) return;
+    if (normalizedMode === 'compact') {
+        const { changedBookmarks, changedFolders } = __countChangedNodesForAutoExpand(changedIds, previewIndex, oldIndex);
+        if (changedBookmarks >= SIMPLE_MODE_AUTO_EXPAND_MAX_BOOKMARKS || changedFolders >= SIMPLE_MODE_AUTO_EXPAND_MAX_FOLDERS) {
+            // 简略模式变化过多时，尝试恢复用户之前保存的状态
+            try {
+                const treeEl = document.getElementById('preview_bookmarkTree');
+                if (treeEl) {
+                    const userState = getChangesPreviewExpandedState();
+                    if (userState && userState.length > 0) {
+                        for (const folderId of userState) {
+                            await __expandReadOnlyFolderById(treeEl, folderId);
+                        }
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            return;
+        }
+    }
 
     // 收集所有变化节点的祖先路径，记录每个节点的深度
     // Map<folderId, depth>
@@ -5910,7 +6157,8 @@ async function maybeAutoExpandCurrentChangesCompactPreview() {
         const chain = __buildIdChainToRoot(changedId, previewIndex);
         if (!chain.length) continue;
         // chain: [root, ..., parent, changedId]
-        // 展开到变化节点的父级（如果变化的是文件夹则展开到该文件夹所在位置，不展开文件夹内部）
+        // 无论变化节点是书签还是文件夹，UI 默认都只展开到其父路径，
+        // 变化文件夹本身保持折叠；导出再按完整规则带出其子内容。
         const ancestorsToExpand = chain.slice(0, -1).filter(id => id && id !== '0');
         for (let i = 0; i < ancestorsToExpand.length; i++) {
             const fid = ancestorsToExpand[i];
@@ -5962,24 +6210,19 @@ async function maybeAutoExpandCurrentChangesCompactPreview() {
     try { saveTreeExpandState(treeEl); } catch (_) { /* ignore */ }
 }
 
+async function maybeAutoExpandCurrentChangesCompactPreview() {
+    await __maybeAutoExpandCurrentChangesPreviewByMode('compact');
+}
+
+async function maybeAutoExpandCurrentChangesDetailedPreview() {
+    await __maybeAutoExpandCurrentChangesPreviewByMode('detailed');
+}
+
 function getChangesPreviewExpandedState() {
     try {
         const modeKey = __getChangesPreviewExpandedStorageKey();
-        const savedMode = localStorage.getItem(modeKey);
-        if (savedMode) {
-            const parsed = JSON.parse(savedMode);
-            return Array.isArray(parsed) ? parsed : [];
-        }
-
-        // Backward compat: legacy non-mode key.
-        const legacy = localStorage.getItem(CHANGES_PREVIEW_EXPANDED_KEY);
-        if (legacy) {
-            const parsed = JSON.parse(legacy);
-            return Array.isArray(parsed) ? parsed : [];
-        }
-
-        return [];
-    } catch (e) {
+        return __getChangesPreviewExpandedStateByKey(modeKey);
+    } catch (_) {
         return [];
     }
 }
@@ -5988,15 +6231,17 @@ function saveChangesPreviewExpandedState(nodeId, isExpanded) {
     try {
         const storageKey = __getChangesPreviewExpandedStorageKey();
         const expandedIds = getChangesPreviewExpandedState();
-        const index = expandedIds.indexOf(nodeId);
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return;
+        const index = expandedIds.indexOf(normalizedNodeId);
 
         if (isExpanded && index === -1) {
-            expandedIds.push(nodeId);
+            expandedIds.push(normalizedNodeId);
         } else if (!isExpanded && index !== -1) {
             expandedIds.splice(index, 1);
         }
 
-        localStorage.setItem(storageKey, JSON.stringify(expandedIds));
+        __setChangesPreviewExpandedStateByKey(storageKey, expandedIds);
     } catch (e) {
         console.warn('[书签树预览] 保存展开状态失败:', e);
     }
@@ -6427,11 +6672,13 @@ async function renderChangesTreePreview(changeData) {
 
             // C. 绑定必要的交互事件（折叠/展开、点击跳转）
             // 我们复用 attachTreeEvents，它会处理 class 为 tree-toggle 的点击
+            try {
+                await __ensureChangesPreviewExpandedStateLoaded();
+            } catch (_) { }
             attachTreeEvents(previewTreeContainer);
 
             try {
                 restoreTreeExpandState(previewTreeContainer);
-                saveTreeExpandState(previewTreeContainer);
             } catch (_) { }
 
             // 注意：预览树保持“严格懒加载”，不在详细模式下自动加载子树。
@@ -6935,6 +7182,9 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
                     const savedMode = normalizeCurrentChangesPreviewMode(lastData.currentChangesViewMode);
                     applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, savedMode);
+                    try {
+                        await __ensureChangesPreviewExpandedStateLoaded(savedMode);
+                    } catch (_) { }
 
                     const switchCurrentChangesPreviewMode = async (targetMode) => {
                         const nextMode = normalizeCurrentChangesPreviewMode(targetMode);
@@ -6958,6 +7208,9 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
                         applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, nextMode);
                         browserAPI.storage.local.set({ currentChangesViewMode: nextMode });
+                        try {
+                            await __ensureChangesPreviewExpandedStateLoaded(nextMode);
+                        } catch (_) { }
 
                         const needsRerender = previousMode === 'collection' || nextMode === 'collection';
 
@@ -6974,15 +7227,26 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                                 });
                                 __ensureTreeRootExpanded(previewTree);
                                 restoreTreeExpandState(previewTree);
-                                saveTreeExpandState(previewTree);
                             }
                         } catch (_) { }
+
+                        if (!needsRerender) {
+                            try {
+                                if (nextMode === 'compact') {
+                                    await maybeAutoExpandCurrentChangesCompactPreview();
+                                } else if (nextMode === 'detailed') {
+                                    await maybeAutoExpandCurrentChangesDetailedPreview();
+                                }
+                            } catch (_) { }
+                        }
 
                         if (needsRerender) {
                             try {
                                 await renderChangesTreePreview(changeData);
                                 if (nextMode === 'compact') {
                                     try { await maybeAutoExpandCurrentChangesCompactPreview(); } catch (_) { }
+                                } else if (nextMode === 'detailed') {
+                                    try { await maybeAutoExpandCurrentChangesDetailedPreview(); } catch (_) { }
                                 }
                             } catch (_) { }
                         }
@@ -7038,6 +7302,8 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     // 渲染书签树映射预览（内嵌到Bookmark Changes内部）
                     await renderChangesTreePreview(changeData);
 
+                    // 详细模式：默认展开到变化路径（所见即所得）
+                    try { await maybeAutoExpandCurrentChangesDetailedPreview(); } catch (_) { }
                     // 简略模式：默认展开至“第一处变化”（变化过多时不展开）
                     try { await maybeAutoExpandCurrentChangesCompactPreview(); } catch (_) { }
 
@@ -7079,6 +7345,24 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
 // 获取详细变化数据 - 使用与状态卡片完全相同的逻辑
 async function getDetailedChanges(forceRefresh = false) {
+    try {
+        const contextStore = await new Promise(resolve => {
+            if (!browserAPI || !browserAPI.storage || !browserAPI.storage.local) {
+                resolve({});
+                return;
+            }
+            browserAPI.storage.local.get(['lastBookmarkData', 'lastBookmarkChangeTime'], resolve);
+        });
+        __setCurrentChangesPreviewStateSignature({
+            baselineTimestamp: contextStore?.lastBookmarkData?.timestamp || '',
+            lastBookmarkChangeTime: typeof contextStore?.lastBookmarkChangeTime === 'number'
+                ? contextStore.lastBookmarkChangeTime
+                : 0
+        });
+    } catch (_) {
+        __setCurrentChangesPreviewStateSignature({});
+    }
+
     if (isHistoryBookmarkUiMuted()) {
         return {
             hasChanges: false,
@@ -8595,6 +8879,7 @@ function renderHistoryView() {
         const titleClass = isRestore ? 'commit-title restore-title' : 'commit-title';
         const seqClass = isRestore ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
 
+        const exportAriaLabel = currentLang === 'zh_CN' ? '导出' : 'Export';
         const detailSearchAriaLabel = currentLang === 'zh_CN' ? '搜索' : 'Search';
 
         return `
@@ -8608,6 +8893,10 @@ function renderHistoryView() {
                         </button>
                     </div>
                     <div class="commit-actions">
+                        <button class="action-btn record-export-open-btn" data-time="${record.time}" aria-label="${exportAriaLabel}">
+                            <i class="fas fa-file-export"></i>
+                            <span class="btn-tooltip">${exportAriaLabel}</span>
+                        </button>
                         <button class="action-btn detail-search-open-btn" data-time="${record.time}" aria-label="${detailSearchAriaLabel}">
                             <i class="fas fa-search"></i>
                             <span class="btn-tooltip">${detailSearchAriaLabel}</span>
@@ -8675,6 +8964,22 @@ function renderHistoryView() {
             const recordTime = btn.dataset.time;
             const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (record) showDetailModal(record, { openDetailSearch: true });
+        });
+    });
+
+    // 列表直接打开单条导出弹窗
+    container.querySelectorAll('.action-btn.record-export-open-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const recordTime = btn.dataset.time;
+            const record = syncHistoryPageRecords.find(r => r.time === recordTime);
+            if (!record) return;
+            showHistoryExportChangesModal(record.time, {
+                preferredMode: getRecordDetailMode(record.time),
+                useDomTreeContainer: false,
+                treeContainer: null
+            });
         });
     });
 
@@ -15194,16 +15499,13 @@ function __saveTreeExpandStateToStorage(treeContainer) {
             }
         });
         const key = __getTreeExpandStateStorageKey(treeContainer);
+        if (__isChangesPreviewExpandedStorageKey(key)) {
+            __setChangesPreviewExpandedStateByKey(key, expandedIds);
+            console.log('[树状态] 保存展开节点(会话):', expandedIds.length, 'key:', key);
+            return;
+        }
+
         localStorage.setItem(key, JSON.stringify(expandedIds));
-        try {
-            if (key && key.startsWith('changesPreviewExpandedNodes:') &&
-                browserAPI && browserAPI.storage && browserAPI.storage.local &&
-                typeof browserAPI.storage.local.set === 'function') {
-                browserAPI.storage.local.set({ [key]: expandedIds }, () => {
-                    try { void browserAPI.runtime?.lastError; } catch (_) { }
-                });
-            }
-        } catch (_) { }
         console.log('[树状态] 保存展开节点:', expandedIds.length, 'key:', key);
     } catch (e) {
         console.error('[树状态] 保存失败:', e);
@@ -15212,10 +15514,10 @@ function __saveTreeExpandStateToStorage(treeContainer) {
 function saveTreeExpandState(treeContainer) {
     try {
         if (!treeContainer) return;
-        // Current Changes 预览：立即写入（模式切换时同一个 treeContainer 会复用，debounce 会丢旧模式状态）
+        // Current Changes 预览：立即写入会话态（模式切换时同一个 treeContainer 会复用，debounce 会丢旧模式状态）
         try {
             const key = __getTreeExpandStateStorageKey(treeContainer);
-            if (key && key.startsWith('changesPreviewExpandedNodes:')) {
+            if (__isChangesPreviewExpandedStorageKey(key)) {
                 const prevTimer = _saveTreeExpandStateTimers.get(treeContainer);
                 if (prevTimer) {
                     clearTimeout(prevTimer);
@@ -17035,7 +17337,8 @@ function setRecordDetailMode(recordTime, mode) {
 function hasRecordExpandedState(recordTime) {
     if (!recordTime) return false;
     if (historyViewSettings && historyViewSettings.recordExpandedStates) {
-        return historyViewSettings.recordExpandedStates[String(recordTime)] != null;
+        const ids = historyViewSettings.recordExpandedStates[String(recordTime)];
+        return Array.isArray(ids) && ids.length > 0;
     }
     return false;
 }
@@ -17225,6 +17528,143 @@ function applyRecordExpandedState(recordTime, treeContainer) {
     } catch (_) { /* ignore */ }
 }
 
+function __getHistoryTreeLazyContext(treeContainer, recordTime) {
+    try {
+        const lazyKey = treeContainer?.dataset?.lazyKey
+            ? String(treeContainer.dataset.lazyKey)
+            : String(recordTime || '');
+        if (!lazyKey) return null;
+        if (!(window.__historyTreeLazyContexts instanceof Map)) return null;
+        const ctx = window.__historyTreeLazyContexts.get(lazyKey);
+        if (!ctx || typeof ctx.renderChildren !== 'function') return null;
+        return ctx;
+    } catch (_) {
+        return null;
+    }
+}
+
+function __ensureHistoryTreeFolderChildrenLoaded(treeContainer, recordTime, treeItem, childrenContainer, options = {}) {
+    try {
+        if (!treeContainer || !treeItem || !childrenContainer) return;
+        const loadAllBatches = options && options.loadAllBatches === true;
+        const ctx = __getHistoryTreeLazyContext(treeContainer, recordTime);
+        if (!ctx) return;
+
+        if (childrenContainer.dataset && childrenContainer.dataset.childrenLoaded === 'false') {
+            const html = ctx.renderChildren(
+                treeItem.dataset?.nodeId || '',
+                childrenContainer.dataset?.childLevel,
+                childrenContainer.dataset?.nextForceInclude
+            );
+            if (typeof html === 'string') {
+                childrenContainer.innerHTML = html;
+                childrenContainer.dataset.childrenLoaded = 'true';
+            }
+        }
+
+        if (!loadAllBatches) return;
+
+        let loadMoreBtn = childrenContainer.querySelector(':scope > .tree-load-more');
+        let batchGuard = 0;
+        while (loadMoreBtn && batchGuard++ < 256) {
+            const startIndexRaw = Number.parseInt(loadMoreBtn.dataset.startIndex || '0', 10);
+            const startIndex = Number.isFinite(startIndexRaw) ? Math.max(0, startIndexRaw) : 0;
+            const parentId = loadMoreBtn.dataset.parentId || treeItem.dataset?.nodeId || '';
+            const moreHtml = ctx.renderChildren(
+                parentId,
+                childrenContainer.dataset?.childLevel,
+                childrenContainer.dataset?.nextForceInclude,
+                startIndex
+            );
+
+            if (!moreHtml) {
+                try { loadMoreBtn.remove(); } catch (_) { }
+                break;
+            }
+
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = moreHtml;
+            const fragment = document.createDocumentFragment();
+            while (tempDiv.firstChild) fragment.appendChild(tempDiv.firstChild);
+            try { loadMoreBtn.remove(); } catch (_) { }
+            childrenContainer.appendChild(fragment);
+            childrenContainer.dataset.childrenLoaded = 'true';
+            loadMoreBtn = childrenContainer.querySelector(':scope > .tree-load-more');
+        }
+    } catch (_) { /* ignore */ }
+}
+
+async function autoExpandHistoryDetailTreeToChanges(record, treeContainer) {
+    if (!record || !treeContainer) return;
+
+    let prepared = null;
+    try {
+        prepared = getDetailChangeCache(record.time, 'detailed') || null;
+    } catch (_) {
+        prepared = null;
+    }
+
+    if (!(prepared && prepared.changeMap instanceof Map)) {
+        try {
+            prepared = await prepareDataForExport(record);
+        } catch (_) {
+            prepared = null;
+        }
+    }
+
+    const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+    if (changeMap.size === 0) return;
+
+    const treeToRender = prepared?.treeToExport || record.bookmarkTree;
+    const rootNode = Array.isArray(treeToRender) ? treeToRender[0] : treeToRender;
+    const treeIndex = buildTreeIndexFromRoot(rootNode);
+    if (!(treeIndex instanceof Map) || treeIndex.size === 0) return;
+
+    // 默认展开到变化节点的父路径；变化节点本身（即便是文件夹）保持折叠。
+    const folderDepthMap = new Map();
+    for (const [changedId] of changeMap) {
+        if (changedId == null) continue;
+        const chain = __buildIdChainToRoot(String(changedId), treeIndex);
+        if (!chain.length) continue;
+        const ancestorsToExpand = chain.slice(0, -1).filter(id => id && id !== '0');
+        for (let i = 0; i < ancestorsToExpand.length; i++) {
+            const folderId = ancestorsToExpand[i];
+            const depth = i + 1;
+            if (!folderDepthMap.has(folderId) || folderDepthMap.get(folderId) > depth) {
+                folderDepthMap.set(folderId, depth);
+            }
+        }
+    }
+
+    const sortedFolders = Array.from(folderDepthMap.entries())
+        .sort((a, b) => a[1] - b[1])
+        .map(entry => entry[0]);
+
+    for (const folderId of sortedFolders) {
+        const item = treeContainer.querySelector(`.tree-item[data-node-id="${CSS.escape(String(folderId))}"]`);
+        if (!item) continue;
+        if ((item.getAttribute('data-node-type') || item.dataset.nodeType) !== 'folder') continue;
+
+        const treeNode = item.closest('.tree-node');
+        const children = treeNode?.querySelector(':scope > .tree-children');
+        const toggle = item.querySelector('.tree-toggle:not([style*="opacity: 0"])') || item.querySelector('.tree-toggle');
+        const icon = item.querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+
+        if (children) children.classList.add('expanded');
+        if (toggle) toggle.classList.add('expanded');
+        if (icon) {
+            icon.classList.remove('fa-folder');
+            icon.classList.add('fa-folder-open');
+        }
+
+        if (children) {
+            __ensureHistoryTreeFolderChildrenLoaded(treeContainer, record.time, item, children, { loadAllBatches: true });
+        }
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+}
+
 function updateDetailModalToggleUI(mode) {
     const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
     const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
@@ -17331,8 +17771,15 @@ function renderDetailModalContent(record, mode) {
             const treeContainer = body.querySelector('.history-tree-container');
             if (treeContainer) {
                 if (normalizedMode === 'detailed') {
-                    if (hasRecordExpandedState(record.time)) {
+                    const manualExpandedIds = getRecordExpandedState(record.time);
+                    const hasManualExpandedState = manualExpandedIds instanceof Set && manualExpandedIds.size > 0;
+                    if (hasManualExpandedState) {
                         applyRecordExpandedState(record.time, treeContainer);
+                        // 叠加自动展开变化路径，避免旧的手动状态遮蔽真实变化位置。
+                        autoExpandHistoryDetailTreeToChanges(record, treeContainer).catch(() => { });
+                    } else {
+                        // 首次打开（无手动展开记录）时，自动展开到变化路径，便于所见即所得。
+                        autoExpandHistoryDetailTreeToChanges(record, treeContainer).catch(() => { });
                     }
                 }
 
@@ -17583,7 +18030,7 @@ function showDetailModal(record, options = {}) {
 
     const exportBtn = document.getElementById('detailExportChangesBtn');
     if (exportBtn) {
-        exportBtn.title = currentLang === 'zh_CN' ? '导出变化' : 'Export Changes';
+        exportBtn.title = currentLang === 'zh_CN' ? '导出' : 'Export';
     }
 
     modal.classList.add('show');
@@ -17712,7 +18159,7 @@ async function generateDetailContent(record, mode) {
                     <button id="detailSearchChangesBtn" class="action-btn compact detail-search-btn" title="${currentLang === 'zh_CN' ? '搜索变化' : 'Search Changes'}">
                         <i class="fas fa-search"></i>
                     </button>
-                    <button id="detailExportChangesBtn" class="action-btn compact" title="${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}">
+                    <button id="detailExportChangesBtn" class="action-btn compact" title="${currentLang === 'zh_CN' ? '导出' : 'Export'}">
                         <i class="fas fa-file-export"></i>
                     </button>
                     <div class="toggle-btn-group" id="historyDetailModeToggleModal">
@@ -21174,16 +21621,117 @@ let currentChangesManualExportLastFileName = '';
 let currentExportHistoryRecord = null;
 // 当前导出的书签树（供备份历史导出使用）
 let currentExportBookmarkTree = null;
+let currentExportHistoryArtifactType = 'changes';
+
+function normalizeHistoryExportArtifactType(value, fallback = 'changes') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'snapshot') return 'snapshot';
+    if (normalized === 'changes') return 'changes';
+    return fallback;
+}
+
+function getSelectedHistoryExportArtifactType(modal = document.getElementById('exportChangesModal')) {
+    if (!currentExportHistoryRecord) return 'changes';
+    const selected = modal?.querySelector('input[name="historyExportArtifactType"]:checked')?.value || '';
+    return normalizeHistoryExportArtifactType(selected, currentExportHistoryArtifactType);
+}
+
+function buildExportChangesModalMeta(record) {
+    if (!record) return null;
+
+    const isZh = currentLang === 'zh_CN';
+    const seqText = Number.isFinite(Number(record?.seqNumber)) ? `#${Number(record.seqNumber)}` : '#-';
+    let displayTitle = getUnifiedHistoryRecordNote(record, currentLang);
+
+    if (record?.type === 'restore' && record?.restoreInfo && (!displayTitle || !String(displayTitle).trim())) {
+        const sourceSeq = record.restoreInfo.sourceSeqNumber;
+        const sourceTime = record.restoreInfo.sourceTime ? formatTime(record.restoreInfo.sourceTime) : '';
+        const sourceNote = record.restoreInfo.sourceNote ? String(record.restoreInfo.sourceNote) : '';
+        const sourceSeqText = sourceSeq ? `#${sourceSeq}` : '#-';
+        const noteText = sourceNote ? ` ${sourceNote}` : '';
+        displayTitle = isZh
+            ? `恢复至 ${sourceSeqText}${noteText}${sourceTime ? ` (${sourceTime})` : ''}`
+            : `Restored to ${sourceSeqText}${noteText}${sourceTime ? ` (${sourceTime})` : ''}`;
+    }
+
+    displayTitle = String(displayTitle || formatTime(record?.time || '') || '').trim();
+
+    const text = displayTitle
+        ? (isZh ? `（${seqText} ${displayTitle}）` : `(${seqText} ${displayTitle})`)
+        : (isZh ? `（${seqText}）` : `(${seqText})`);
+
+    return {
+        text,
+        title: text
+    };
+}
+
+function updateExportChangesModalHeader(selectedArtifactType = null) {
+    const titleEl = document.getElementById('exportChangesModalTitle');
+    const metaEl = document.getElementById('exportChangesModalMeta');
+    const isZh = currentLang === 'zh_CN';
+    const isHistoryExport = !!currentExportHistoryRecord;
+    const normalizedArtifactType = isHistoryExport
+        ? normalizeHistoryExportArtifactType(selectedArtifactType, currentExportHistoryArtifactType)
+        : 'changes';
+    const isSnapshotExport = isHistoryExport && normalizedArtifactType === 'snapshot';
+
+    if (titleEl) {
+        if (!isHistoryExport) {
+            titleEl.textContent = i18n.exportChangesModalTitle[currentLang];
+        } else {
+            titleEl.textContent = isSnapshotExport
+                ? (isZh ? '导出快照' : 'Export Snapshot')
+                : (isZh ? '导出' : 'Export');
+        }
+    }
+
+    if (!metaEl) return;
+
+    if (!isHistoryExport) {
+        metaEl.style.display = 'none';
+        metaEl.textContent = '';
+        metaEl.removeAttribute('title');
+        return;
+    }
+
+    const meta = buildExportChangesModalMeta(currentExportHistoryRecord);
+    if (!meta) {
+        metaEl.style.display = 'none';
+        metaEl.textContent = '';
+        metaEl.removeAttribute('title');
+        return;
+    }
+
+    metaEl.style.display = 'inline-block';
+    metaEl.textContent = meta.text;
+    metaEl.title = meta.title;
+}
 
 function updateExportChangesActionOptionsByMode(modal) {
     if (!modal) return;
 
+    const isHistorySnapshotExport = !!currentExportHistoryRecord
+        && getSelectedHistoryExportArtifactType(modal) === 'snapshot';
     const modeValue = modal.querySelector('input[name="exportChangesMode"]:checked')?.value || 'simple';
     const isCollectionMode = modeValue === 'collection';
 
     const copyInput = modal.querySelector('input[name="exportChangesAction"][value="copy"]');
     const downloadInput = modal.querySelector('input[name="exportChangesAction"][value="download"]');
     const copyLabel = copyInput ? copyInput.closest('label') : null;
+
+    if (isHistorySnapshotExport) {
+        if (copyLabel) copyLabel.style.display = 'none';
+        if (copyInput) {
+            copyInput.disabled = true;
+            copyInput.checked = false;
+        }
+        if (downloadInput) {
+            downloadInput.disabled = false;
+            downloadInput.checked = true;
+        }
+        return;
+    }
 
     if (copyLabel) {
         copyLabel.style.display = isCollectionMode ? 'none' : '';
@@ -21196,6 +21744,97 @@ function updateExportChangesActionOptionsByMode(modal) {
     if (isCollectionMode && copyInput && copyInput.checked && downloadInput) {
         downloadInput.checked = true;
     }
+}
+
+function updateExportChangesModalContextUi(modal = document.getElementById('exportChangesModal')) {
+    if (!modal) return;
+
+    const isZh = currentLang === 'zh_CN';
+    const isHistoryExport = !!currentExportHistoryRecord;
+    const selectedArtifactType = isHistoryExport
+        ? getSelectedHistoryExportArtifactType(modal)
+        : 'changes';
+    const isSnapshotExport = isHistoryExport && selectedArtifactType === 'snapshot';
+    currentExportHistoryArtifactType = selectedArtifactType;
+
+    const artifactSection = document.getElementById('historyExportArtifactSection');
+    const formatSection = document.getElementById('exportChangesFormatSection');
+    const modeSection = document.getElementById('exportChangesModeSection');
+    const actionSection = document.getElementById('exportChangesActionSection');
+    const depthSection = document.getElementById('exportChangesDepthSection');
+    const legendHelpIcon = document.getElementById('exportChangesLegendHelp');
+    const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
+    const modeHelpIcon = document.getElementById('exportChangesDetailedHelp');
+    const modeHelpContent = document.getElementById('exportChangesDetailedHelpContent');
+
+    const formatHtmlInput = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
+    const formatJsonInput = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
+    const formatJsonLabel = formatJsonInput ? formatJsonInput.closest('label') : null;
+
+    if (artifactSection) {
+        artifactSection.style.display = isHistoryExport ? '' : 'none';
+    }
+
+    updateExportChangesModalHeader(selectedArtifactType);
+
+    if (modeSection) {
+        modeSection.style.display = isSnapshotExport ? 'none' : '';
+    }
+    if (actionSection) {
+        actionSection.style.display = '';
+    }
+    if (formatSection) {
+        formatSection.style.display = '';
+    }
+    if (depthSection) {
+        depthSection.style.display = 'none';
+    }
+
+    if (legendHelpContent) legendHelpContent.style.display = 'none';
+    if (modeHelpContent) modeHelpContent.style.display = 'none';
+
+    if (legendHelpIcon) {
+        legendHelpIcon.style.display = isSnapshotExport ? 'none' : '';
+    }
+    if (modeHelpIcon) {
+        modeHelpIcon.style.display = isSnapshotExport ? 'none' : '';
+    }
+
+    if (formatJsonInput) {
+        formatJsonInput.disabled = isSnapshotExport;
+        if (isSnapshotExport) formatJsonInput.checked = false;
+    }
+    if (formatJsonLabel) {
+        formatJsonLabel.style.display = isSnapshotExport ? 'none' : '';
+        formatJsonLabel.style.opacity = '';
+        formatJsonLabel.style.pointerEvents = '';
+    }
+    if (formatHtmlInput && isSnapshotExport) {
+        formatHtmlInput.checked = true;
+    }
+
+    updateExportChangesActionOptionsByMode(modal);
+}
+
+function normalizeExportChangesModalMode(mode, fallback = 'simple') {
+    const value = String(mode || '').toLowerCase();
+    if (value === 'detailed') return 'detailed';
+    if (value === 'collection') return 'collection';
+    if (value === 'compact' || value === 'simple') return 'simple';
+    return fallback;
+}
+
+function buildExportChangesModeGuideHtml() {
+    const isZh = currentLang === 'zh_CN';
+    const isHistoryExport = !!currentExportHistoryRecord;
+    const viewLabel = isHistoryExport
+        ? (isZh ? '「备份历史」' : '"Backup History"')
+        : (isZh ? '「当前变化」' : '"Current Changes"');
+    const exportFolderPath = `${getHistoryExportRootFolder()}/${isHistoryExport ? getHistoryExportFolder() : getCurrentChangesExportFolder()}`;
+
+    return isZh
+        ? `<strong>模式说明：</strong><br>• 简略：仅导出有变化的分支，保持原生书签树层级。<br>• 详细：导出 html 页面 ${viewLabel} 当前详细视图里已展开的内容（所见即所得）。<br>• 集合：按增加/删除/移动/修改分组导出为文件夹集合。<br>• 下载路径：${exportFolderPath}。`
+        : `<strong>Mode Guide:</strong><br>• Simple: Export changed branches only, keeping native bookmark-tree hierarchy.<br>• Detailed: Export expanded content from the current detailed ${viewLabel} HTML view (WYSIWYG).<br>• Collection: Export grouped folders by Added/Deleted/Moved/Modified.<br>• Download path: ${exportFolderPath}.`;
 }
 
 // 显示导出变化模态框
@@ -21211,14 +21850,38 @@ function showExportChangesModal(changeData) {
     console.log('[showExportChangesModal] moved:', changeData?.moved?.length || 0, changeData?.moved);
 
     currentExportChangeData = changeData;
+    currentExportHistoryRecord = null;
+    currentExportBookmarkTree = null;
+    currentExportHistoryTreeContainer = null;
+    currentExportHistoryArtifactType = 'changes';
     const modal = document.getElementById('exportChangesModal');
     if (modal) {
         modal.classList.add('show');
+        const historyArtifactChangesInput = modal.querySelector('input[name="historyExportArtifactType"][value="changes"]');
+        if (historyArtifactChangesInput) historyArtifactChangesInput.checked = true;
         // 重置为默认值
+        const formatJson = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
         const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
-        if (formatHtml) formatHtml.checked = true;
+        if (formatJson) formatJson.checked = true;
+        else if (formatHtml) formatHtml.checked = true;
+
+        let modeValue = 'simple';
+        try {
+            const currentPreviewMode = typeof __getChangesPreviewMode === 'function'
+                ? __getChangesPreviewMode()
+                : 'detailed';
+            modeValue = normalizeExportChangesModalMode(
+                normalizeCurrentChangesPreviewMode(currentPreviewMode),
+                'simple'
+            );
+        } catch (_) {
+            modeValue = 'simple';
+        }
+
+        const modeRadio = modal.querySelector(`input[name="exportChangesMode"][value="${modeValue}"]`);
         const modeSimple = modal.querySelector('input[name="exportChangesMode"][value="simple"]');
-        if (modeSimple) modeSimple.checked = true;
+        if (modeRadio) modeRadio.checked = true;
+        else if (modeSimple) modeSimple.checked = true;
         const actionDownload = modal.querySelector('input[name="exportChangesAction"][value="download"]');
         if (actionDownload) actionDownload.checked = true;
         updateExportChangesActionOptionsByMode(modal);
@@ -21233,6 +21896,7 @@ function showExportChangesModal(changeData) {
         // 隐藏标记说明
         const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
         if (legendHelpContent) legendHelpContent.style.display = 'none';
+        updateExportChangesModalContextUi(modal);
     }
 }
 
@@ -21266,20 +21930,28 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
     currentExportHistoryRecord = record;
     currentExportBookmarkTree = treeToExport;
     currentExportHistoryTreeContainer = useDomTreeContainer ? (treeContainer || document.querySelector('#modalBody .history-tree-container')) : null;
+    currentExportHistoryArtifactType = 'changes';
 
     // 显示模态框
     const modal = document.getElementById('exportChangesModal');
     if (modal) {
         modal.classList.add('show');
+        const historyArtifactChangesInput = modal.querySelector('input[name="historyExportArtifactType"][value="changes"]');
+        if (historyArtifactChangesInput) historyArtifactChangesInput.checked = true;
         // 重置为默认值
+        const formatJson = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
         const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
-        if (formatHtml) formatHtml.checked = true;
+        if (formatJson) formatJson.checked = true;
+        else if (formatHtml) formatHtml.checked = true;
 
         // 使用当前备份历史的详略模式
-        const modeValue = normalizeRestoreMergeViewMode(preferredMode)
+        const modeValue = normalizeExportChangesModalMode(
+            normalizeRestoreMergeViewMode(preferredMode)
             || normalizeRestoreMergeViewMode(getRecordDetailMode(recordTime))
             || normalizeRestoreMergeViewMode(historyDetailMode)
-            || 'simple';
+            || 'simple',
+            'simple'
+        );
         const modeRadio = modal.querySelector(`input[name="exportChangesMode"][value="${modeValue}"]`);
         if (modeRadio) modeRadio.checked = true;
 
@@ -21298,6 +21970,7 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         // 隐藏标记说明
         const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
         if (legendHelpContent) legendHelpContent.style.display = 'none';
+        updateExportChangesModalContextUi(modal);
     }
 }
 
@@ -21315,6 +21988,7 @@ function initExportChangesModal() {
             currentExportHistoryRecord = null;
             currentExportBookmarkTree = null;
             currentExportHistoryTreeContainer = null;
+            currentExportHistoryArtifactType = 'changes';
         });
     }
 
@@ -21326,7 +22000,16 @@ function initExportChangesModal() {
             currentExportHistoryRecord = null;
             currentExportBookmarkTree = null;
             currentExportHistoryTreeContainer = null;
+            currentExportHistoryArtifactType = 'changes';
         }
+    });
+
+    const artifactTypeRadios = modal.querySelectorAll('input[name="historyExportArtifactType"]');
+    artifactTypeRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            currentExportHistoryArtifactType = normalizeHistoryExportArtifactType(radio.value, 'changes');
+            updateExportChangesModalContextUi(modal);
+        });
     });
 
     // 模式切换 - 控制扩展层级显示
@@ -21340,6 +22023,7 @@ function initExportChangesModal() {
                 depthSection.style.display = 'none';
             }
             updateExportChangesActionOptionsByMode(modal);
+            updateExportChangesModalContextUi(modal);
             // 切换模式时隐藏帮助内容
             const helpContent = document.getElementById('exportChangesDetailedHelpContent');
             if (helpContent) helpContent.style.display = 'none';
@@ -21370,10 +22054,7 @@ function initExportChangesModal() {
             const helpContent = document.getElementById('exportChangesDetailedHelpContent');
             if (helpContent) {
                 if (helpContent.style.display === 'none') {
-                    const isZh = currentLang === 'zh_CN';
-                    helpContent.innerHTML = isZh
-                        ? '<strong>模式说明：</strong><br>• 简略：仅导出有变化的分支，保持原生书签树层级。<br>• 详细：导出 html 页面「当前变化」里已展开的内容（所见即所得）。<br>• 集合：按增加/删除/移动/修改分组导出为文件夹集合。'
-                        : '<strong>Mode Guide:</strong><br>• Simple: Export changed branches only, keeping native bookmark-tree hierarchy.<br>• Detailed: Export expanded content from the HTML "Current Changes" page (WYSIWYG).<br>• Collection: Export grouped folders by Added/Deleted/Moved/Modified.';
+                    helpContent.innerHTML = buildExportChangesModeGuideHtml();
                     helpContent.style.display = 'block';
                 } else {
                     helpContent.style.display = 'none';
@@ -21409,9 +22090,9 @@ function initExportChangesModal() {
 // 执行导出
 async function executeExportChanges() {
     const modal = document.getElementById('exportChangesModal');
-    if (!modal || !currentExportChangeData) return;
+    if (!modal) return;
 
-    const format = modal.querySelector('input[name="exportChangesFormat"]:checked')?.value || 'html';
+    const format = modal.querySelector('input[name="exportChangesFormat"]:checked')?.value || 'json';
     const mode = modal.querySelector('input[name="exportChangesMode"]:checked')?.value || 'simple';
     const action = modal.querySelector('input[name="exportChangesAction"]:checked')?.value || 'download';
     const depth = parseInt(document.getElementById('exportChangesDepth')?.value || '1');
@@ -21423,14 +22104,37 @@ async function executeExportChanges() {
 
     // 判断是否是备份历史导出
     const isHistoryExport = !!currentExportHistoryRecord;
+    const historyArtifactType = isHistoryExport ? getSelectedHistoryExportArtifactType(modal) : 'changes';
+    const isHistorySnapshotExport = isHistoryExport && historyArtifactType === 'snapshot';
+    if (!isHistorySnapshotExport && !currentExportChangeData) return;
     const useHistoryDomTree = isHistoryExport && !!currentExportHistoryTreeContainer;
+    const historyRecordExpandedIds = (() => {
+        if (!isHistoryExport || isHistorySnapshotExport || mode !== 'detailed') return null;
+        try {
+            if (useHistoryDomTree && currentExportHistoryTreeContainer) {
+                const captured = __captureTreeExpandedNodeIds(currentExportHistoryTreeContainer);
+                if (captured instanceof Set && captured.size > 0) {
+                    return captured;
+                }
+            }
+        } catch (_) { }
+        try {
+            const recordTime = currentExportHistoryRecord?.time;
+            if (recordTime && hasRecordExpandedState(recordTime)) {
+                const persisted = getRecordExpandedState(recordTime);
+                if (persisted instanceof Set && persisted.size > 0) {
+                    return persisted;
+                }
+            }
+        } catch (_) { }
+        return null;
+    })();
 
     try {
         let content = '';
         let filename = '';
         const timestamp = formatTimeForFilename(); // 当前时间（导出时间）
         const exportIsoTime = new Date().toISOString();
-        let currentChangesManualExportBundle = null;
 
         // 设置按钮加载状态
         confirmBtn.disabled = true;
@@ -21439,19 +22143,36 @@ async function executeExportChanges() {
         // 稍微延迟一下让UI更新，避免大计算量卡顿
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        if (format === 'html') {
+        if (isHistorySnapshotExport) {
+            const seqMap = buildSequenceMapFromHistory(syncHistory);
+            const seqWidth = String(Math.max(syncHistory?.length || 1, 1)).length;
+            const naming = buildGlobalExportRecordNamingInfo(
+                currentExportHistoryRecord,
+                getRecordDetailMode(currentExportHistoryRecord.time) || 'simple',
+                seqMap,
+                seqWidth
+            );
+            content = await generateExportSnapshotHtmlContentForGlobal(currentExportHistoryRecord);
+            filename = naming.snapshotLeafName;
+        } else if (format === 'html') {
             if (isHistoryExport) {
-                // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
-                if (useHistoryDomTree) {
-                    content = await generateHistoryChangesHTMLFromDOM(currentExportHistoryTreeContainer, mode);
-                } else if (mode === 'collection') {
+                // 备份历史导出：
+                // - collection 使用专用分组导出
+                // - simple/detailed 统一走完整树数据导出，避免 DOM 懒加载导致内容缺失
+                if (mode === 'collection') {
                     content = await generateHistoryCollectionChangesHTML(currentExportHistoryRecord, {
                         treeToExport: currentExportBookmarkTree,
                         changeMap: currentExportChangeData,
                         changeData: null
                     });
                 } else {
-                    content = await generateHistoryChangesHTML(currentExportBookmarkTree, currentExportChangeData, mode);
+                    content = await generateHistoryChangesHTML(
+                        currentExportBookmarkTree,
+                        currentExportChangeData,
+                        mode,
+                        historyRecordExpandedIds,
+                        currentExportHistoryRecord
+                    );
                 }
 
                 // Construct filename: Note_Hash_Mode_Time
@@ -21479,17 +22200,23 @@ async function executeExportChanges() {
             }
         } else {
             if (isHistoryExport) {
-                // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
-                if (useHistoryDomTree) {
-                    content = await generateHistoryChangesJSONFromDOM(currentExportHistoryTreeContainer, mode);
-                } else if (mode === 'collection') {
+                // 备份历史导出：
+                // - collection 使用专用分组导出
+                // - simple/detailed 统一走完整树数据导出，避免 DOM 懒加载导致内容缺失
+                if (mode === 'collection') {
                     content = await generateHistoryCollectionChangesJSON(currentExportHistoryRecord, {
                         treeToExport: currentExportBookmarkTree,
                         changeMap: currentExportChangeData,
                         changeData: null
                     });
                 } else {
-                    content = await generateHistoryChangesJSON(currentExportBookmarkTree, currentExportChangeData, mode);
+                    content = await generateHistoryChangesJSON(
+                        currentExportBookmarkTree,
+                        currentExportChangeData,
+                        mode,
+                        historyRecordExpandedIds,
+                        currentExportHistoryRecord
+                    );
                 }
 
                 // Construct filename: Note_Hash_Mode_Time
@@ -21521,41 +22248,15 @@ async function executeExportChanges() {
             }
         }
 
-        if (!isHistoryExport && action === 'download') {
-            const nextRecord = buildCurrentChangesManualExportIndexRecord({
-                mode,
-                format,
-                fileName: filename,
-                stats: normalizeCurrentChangesExportStatsManual(currentExportChangeData),
-                exportTime: exportIsoTime
-            });
-            const stored = await historyStorageGet([MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY]);
-            const mergedLedgerRecords = mergeCurrentChangesManualExportLedger(
-                stored?.[MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY],
-                nextRecord
-            );
-            await historyStorageSet({
-                [MANUAL_EXPORT_CURRENT_CHANGES_LEDGER_KEY]: mergedLedgerRecords
-            });
-
-            currentChangesManualExportBundle = {
-                snapshotKey: nextRecord.snapshotKey,
-                artifactRelativePath: `${nextRecord.snapshotKey}/${filename}`,
-                logMarkdown: buildManualExportLogMarkdown(mergedLedgerRecords)
-            };
-        }
-
         if (action === 'download') {
             // 下载文件 - 使用统一的导出文件夹结构
-            const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
+            const blob = new Blob([content], { type: (isHistorySnapshotExport || format === 'html') ? 'text/html' : 'application/json' });
             const url = URL.createObjectURL(blob);
 
             // 根据导出类型选择不同的子文件夹（根据语言动态选择）
             const exportSubFolder = isHistoryExport ? getHistoryExportFolder() : getCurrentChangesExportFolder();
             const exportPath = `${getHistoryExportRootFolder()}/${exportSubFolder}`;
-            const localFileName = (!isHistoryExport && currentChangesManualExportBundle)
-                ? currentChangesManualExportBundle.artifactRelativePath
-                : filename;
+            const localFileName = filename;
 
             // 尝试使用 chrome.downloads API 以支持子目录
             if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
@@ -21563,7 +22264,7 @@ async function executeExportChanges() {
                     url: url,
                     filename: `${exportPath}/${localFileName}`,
                     saveAs: false,
-                    conflictAction: (!isHistoryExport && currentChangesManualExportBundle) ? 'overwrite' : 'uniquify'
+                    conflictAction: 'uniquify'
                 }, (downloadId) => {
                     if (chrome.runtime.lastError) {
                         console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
@@ -21584,28 +22285,6 @@ async function executeExportChanges() {
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
             }
 
-            if (!isHistoryExport && currentChangesManualExportBundle && chrome?.downloads?.download) {
-                const extraFiles = [
-                    {
-                        relativeName: getManualExportInfoLogFileName('md'),
-                        mimeType: 'text/markdown;charset=utf-8',
-                        content: currentChangesManualExportBundle.logMarkdown
-                    }
-                ];
-                extraFiles.forEach((item) => {
-                    try {
-                        const extraUrl = URL.createObjectURL(new Blob([item.content], { type: item.mimeType }));
-                        chrome.downloads.download({
-                            url: extraUrl,
-                            filename: `${exportPath}/${item.relativeName}`,
-                            saveAs: false,
-                            conflictAction: 'overwrite'
-                        }, () => {
-                            setTimeout(() => URL.revokeObjectURL(extraUrl), 10000);
-                        });
-                    } catch (_) { }
-                });
-            }
         } else {
             // 复制到剪贴板
             await navigator.clipboard.writeText(content);
@@ -22040,23 +22719,36 @@ function buildCurrentChangesStatsLineManual(stats, lang) {
     return parts.length > 0 ? parts.join('  ') : labels.none;
 }
 
-function getCurrentChangesExportExpandedIdsManual() {
+function getCurrentChangesExportViewStateManual() {
+    let expandedIds = new Set();
+    let exactExpandedState = false;
+
     try {
         const previewTree = document.querySelector('#changesTreePreviewInline #preview_bookmarkTree')
             || document.querySelector('#changesTreePreviewInline .bookmark-tree');
         if (previewTree) {
-            return __captureTreeExpandedNodeIds(previewTree);
+            expandedIds = __captureTreeExpandedNodeIds(previewTree);
+            exactExpandedState = true;
+            return { expandedIds, exactExpandedState };
         }
     } catch (_) { }
 
     try {
-        const stored = getChangesPreviewExpandedState();
-        if (Array.isArray(stored)) {
-            return new Set(stored.map(v => String(v)));
+        const storageKey = __getChangesPreviewExpandedStorageKey();
+        if (__hasChangesPreviewExpandedStateByKey(storageKey)) {
+            const stored = getChangesPreviewExpandedState();
+            if (Array.isArray(stored)) {
+                expandedIds = new Set(stored.map(v => String(v)));
+            }
+            exactExpandedState = true;
         }
     } catch (_) { }
 
-    return new Set();
+    return { expandedIds, exactExpandedState };
+}
+
+function getCurrentChangesExportExpandedIdsManual() {
+    return getCurrentChangesExportViewStateManual().expandedIds;
 }
 
 async function getCurrentChangesExportTreeDataManual(mode) {
@@ -22095,9 +22787,10 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
         ? 'detailed'
         : (options?.mode === 'collection' ? 'collection' : 'simple');
     const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
+    const exactExpandedState = mode === 'detailed' && options?.exactExpandedState === true;
     const isZh = options?.lang === 'zh_CN';
     const stats = options?.stats || {};
-    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set);
+    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set) && expandedIds.size > 0;
 
     const safeTitle = (t) => {
         const title = String(t || '').trim();
@@ -22321,8 +23014,13 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
 
             let shouldRecurse = false;
             if (mode === 'detailed') {
-                if (useWysiwygExpansion) {
-                    shouldRecurse = expandedIds.has(String(node.id));
+                if (exactExpandedState && (expandedIds instanceof Set)) {
+                    // 精确状态只负责“额外展开哪些分支”；
+                    // 实际变化路径始终保底导出，避免折叠后把变化项本身裁掉。
+                    shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
+                } else if (useWysiwygExpansion) {
+                    // 当前变化导出：既保留用户手动展开分支，也保底展开变化路径
+                    shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
                 } else {
                     shouldRecurse = nodeHasChanges;
                 }
@@ -22361,11 +23059,15 @@ async function buildCurrentChangesExportPayloadManual(changeData, mode) {
     const lang = isZh ? 'zh_CN' : 'en';
 
     const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode);
+    const viewState = normalizedMode === 'detailed'
+        ? getCurrentChangesExportViewStateManual()
+        : { expandedIds: new Set(), exactExpandedState: false };
     const normalizedStats = normalizeCurrentChangesExportStatsManual(changeData);
 
     const exportChildren = buildCurrentChangesExportTreeManual(treeToExport, changeMap, {
         mode: normalizedMode,
-        expandedIds,
+        expandedIds: normalizedMode === 'detailed' ? viewState.expandedIds : expandedIds,
+        exactExpandedState: normalizedMode === 'detailed' ? viewState.exactExpandedState : false,
         lang,
         stats: normalizedStats
     });
@@ -22465,6 +23167,14 @@ async function buildCurrentChangesManualExportFallback({ mode, format, changeDat
 
 async function requestCurrentChangesManualExportFromBackground({ mode, format, changeData }) {
     const timeoutMs = 12000;
+    const viewState = mode === 'detailed'
+        ? getCurrentChangesExportViewStateManual()
+        : { expandedIds: new Set(), exactExpandedState: false };
+    const expandedIds = (() => {
+        if (mode !== 'detailed') return null;
+        if (!(viewState.expandedIds instanceof Set)) return [];
+        return Array.from(viewState.expandedIds).map(v => String(v || '').trim()).filter(Boolean);
+    })();
 
     try {
         const response = await new Promise((resolve, reject) => {
@@ -22487,7 +23197,11 @@ async function requestCurrentChangesManualExportFromBackground({ mode, format, c
                     action: 'buildCurrentChangesManualExport',
                     mode,
                     format,
-                    lang: currentLang
+                    lang: currentLang,
+                    ...(mode === 'detailed' ? {
+                        expandedIds: Array.isArray(expandedIds) ? expandedIds : [],
+                        exactExpandedState: viewState.exactExpandedState === true
+                    } : {})
                 }, (responseData) => {
                     const runtimeError = browserAPI.runtime.lastError;
                     if (runtimeError) {
@@ -22856,9 +23570,9 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expande
     const now = new Date().toLocaleString();
     const historyRecord = recordMeta || currentExportHistoryRecord || null;
 
-    // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
-    // 注意：expandedIds 可能为空集合（用户已“全收起”）；仍应视为 WYSIWYG，而不是回退到默认展开规则。
-    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set);
+    // 在详细模式下，如果提供了非空 expandedIds，则叠加 WYSIWYG 展开；
+    // 同时“变化路径”始终保底展开，确保变化文件夹子内容不会因 UI 折叠而丢失。
+    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set) && expandedIds.size > 0;
 
     let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
     html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
@@ -22953,8 +23667,8 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expande
                 if (mode === 'detailed') {
                     // 详细模式
                     if (useWysiwygExpansion) {
-                        // WYSIWYG: 只展开用户手动展开过的节点
-                        shouldRecurse = expandedIds.has(String(node.id));
+                        // WYSIWYG 与变化路径保底并存
+                        shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
                     } else {
                         // 默认行为：只有有变化的路径才展开
                         shouldRecurse = nodeHasChanges;
@@ -23004,9 +23718,9 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expande
     const now = new Date().toISOString();
     const historyRecord = recordMeta || currentExportHistoryRecord || null;
 
-    // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
-    // 注意：expandedIds 可能为空集合（用户已“全收起”）；仍应视为 WYSIWYG，而不是回退到默认展开规则。
-    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set);
+    // 在详细模式下，如果提供了非空 expandedIds，则叠加 WYSIWYG 展开；
+    // 同时“变化路径”始终保底展开，确保变化文件夹子内容不会因 UI 折叠而丢失。
+    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set) && expandedIds.size > 0;
 
     if (!bookmarkTree) {
         return {
@@ -23082,8 +23796,8 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expande
             if (mode === 'detailed') {
                 // 详细模式
                 if (useWysiwygExpansion) {
-                    // WYSIWYG: 只展开用户手动展开过的节点
-                    shouldRecurse = expandedIds.has(String(node.id));
+                    // WYSIWYG 与变化路径保底并存
+                    shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
                 } else {
                     // 默认行为：只有有变化的路径才展开
                     shouldRecurse = nodeHasChanges;

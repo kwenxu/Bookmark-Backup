@@ -282,14 +282,36 @@
     <div id="exportChangesModal" class="modal">
         <div class="modal-content" style="max-width: 420px;">
             <div class="modal-header compact">
-                <h3 id="exportChangesModalTitle">导出书签变化</h3>
+                <div style="display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; margin-right: 12px;">
+                    <h3 id="exportChangesModalTitle" style="margin: 0; white-space: nowrap;">导出书签变化</h3>
+                    <span id="exportChangesModalMeta"
+                        style="display: none; min-width: 0; font-size: 12px; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                </div>
                 <button class="modal-close" id="exportChangesModalClose">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body" style="padding: 16px 20px;">
+                <!-- 备份历史单条导出内容选择（仅备份历史显示） -->
+                <div class="export-section" id="historyExportArtifactSection" style="margin-bottom: 16px; display: none;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="historyExportArtifactLabel">导出内容</h4>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="historyExportArtifactType" value="changes" checked>
+                            <span id="historyExportArtifactChangesText">变化</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="historyExportArtifactType" value="snapshot">
+                            <span id="historyExportArtifactSnapshotText">快照</span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- 格式选择 -->
-                <div class="export-section" style="margin-bottom: 16px;">
+                <div class="export-section" id="exportChangesFormatSection" style="margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; margin-bottom: 10px;">
                         <h4 style="font-size: 14px; color: var(--text-secondary); margin: 0; margin-right: 6px;"
                             id="exportChangesFormatLabel">导出格式</h4>
@@ -326,7 +348,7 @@
                 </div>
 
                 <!-- 模式选择 -->
-                <div class="export-section" style="margin-bottom: 16px;">
+                <div class="export-section" id="exportChangesModeSection" style="margin-bottom: 16px;">
                     <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
                         <h4 style="margin: 0; font-size: 14px; color: var(--text-secondary);"
                             id="exportChangesModeLabel">导出模式</h4>
@@ -375,7 +397,7 @@
                 </div>
 
                 <!-- 操作选择 -->
-                <div class="export-section" style="margin-bottom: 16px;">
+                <div class="export-section" id="exportChangesActionSection" style="margin-bottom: 16px;">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
                         id="exportChangesActionLabel">操作方式</h4>
                     <div class="radio-group" style="display: flex; gap: 20px;">

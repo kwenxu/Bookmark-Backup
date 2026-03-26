@@ -5306,6 +5306,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     const explicitMovedIds = Array.from(new Set(optionMovedIds.length > 0 ? optionMovedIds : storageMovedIds));
                     const forceExpandedIds = Array.isArray(message.expandedIds) ? message.expandedIds : null;
+                    const forceExpandedStateExact = mode === 'detailed' && message.exactExpandedState === true;
 
                     const artifact = await buildCurrentChangesManualExportArtifact({
                         mode,
@@ -5313,7 +5314,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         lang,
                         explicitMovedIds,
                         localBookmarks,
-                        forceExpandedIds
+                        forceExpandedIds,
+                        forceExpandedStateExact
                     });
 
                     if (!artifact || typeof artifact.content !== 'string') {
@@ -5332,6 +5334,55 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || '构建当前变化导出失败'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'syncCurrentChangesPreviewExpandedState') {
+            (async () => {
+                try {
+                    const mode = normalizeCurrentChangesPreviewModeForExport(message.mode);
+                    const key = `${CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX}${mode}`;
+                    const clearState = message.clearState === true;
+                    const exactState = message.exactState === true;
+                    const stateSignature = String(message.stateSignature || '').trim();
+                    const expandedIds = Array.isArray(message.expandedIds)
+                        ? Array.from(new Set(
+                            message.expandedIds
+                                .map(v => String(v || '').trim())
+                                .filter(Boolean)
+                        ))
+                        : [];
+
+                    if (clearState) {
+                        if (browserAPI?.storage?.local && typeof browserAPI.storage.local.remove === 'function') {
+                            await browserAPI.storage.local.remove([key]);
+                        } else {
+                            await browserAPI.storage.local.set({ [key]: null });
+                        }
+                    } else if (exactState && stateSignature) {
+                        await browserAPI.storage.local.set({
+                            [key]: {
+                                expandedIds,
+                                updatedAt: Date.now(),
+                                mode,
+                                exactState: true,
+                                stateSignature
+                            }
+                        });
+                    } else {
+                        if (browserAPI?.storage?.local && typeof browserAPI.storage.local.remove === 'function') {
+                            await browserAPI.storage.local.remove([key]);
+                        } else {
+                            await browserAPI.storage.local.set({ [key]: null });
+                        }
+                    }
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || '同步当前变化展开状态失败'
                     });
                 }
             })();
@@ -6757,10 +6808,11 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
         ? 'detailed'
         : (options?.mode === 'collection' ? 'collection' : 'simple');
     const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
+    const exactExpandedState = mode === 'detailed' && options?.exactExpandedState === true;
     const isZh = options?.lang === 'zh_CN';
     const stats = options?.stats || {};
-    // 与 history_html 当前变化导出保持一致：只要传入 Set（即便为空）就按 WYSIWYG 处理
-    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set);
+    // 仅在存在有效展开节点时叠加 WYSIWYG 展开；变化路径始终保留
+    const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set) && expandedIds.size > 0;
 
     const safeTitle = (t) => {
         const title = String(t || '').trim();
@@ -6987,8 +7039,15 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
 
             let shouldRecurse = false;
             if (mode === 'detailed') {
-                if (useWysiwygExpansion) {
-                    shouldRecurse = expandedIds.has(String(node.id));
+                if (exactExpandedState && (expandedIds instanceof Set)) {
+                    // 精确状态只负责“额外展开哪些分支”；
+                    // 实际变化路径始终保底导出，避免主 UI 自动归档把变化项裁掉。
+                    shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
+                } else if (useWysiwygExpansion) {
+                    // WYSIWYG 展开与变化路径保底并存：
+                    // - 用户手动展开的分支要导出
+                    // - 实际发生变化的分支也必须导出
+                    shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
                 } else {
                     shouldRecurse = nodeHasChanges;
                 }
@@ -7035,6 +7094,29 @@ function normalizeCurrentChangesArchiveSettings(settings = {}) {
     const modes = [mode || 'simple'];
 
     return { enabled, formats, modes };
+}
+
+const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX = 'currentChangesPreviewExpandedState:';
+const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+function normalizeCurrentChangesPreviewModeForExport(value) {
+    const mode = String(value || '').toLowerCase();
+    if (mode === 'compact' || mode === 'simple') return 'compact';
+    if (mode === 'collection') return 'collection';
+    return 'detailed';
+}
+
+function buildCurrentChangesPreviewStateSignature(meta = {}) {
+    const baselineTimestamp = meta && Object.prototype.hasOwnProperty.call(meta, 'baselineTimestamp')
+        ? meta.baselineTimestamp
+        : (meta?.lastBookmarkDataTimestamp ?? meta?.lastBookmarkData?.timestamp ?? '');
+    const rawChangeTime = meta && Object.prototype.hasOwnProperty.call(meta, 'lastBookmarkChangeTime')
+        ? meta.lastBookmarkChangeTime
+        : meta?.lastChangeTime;
+    const lastBookmarkChangeTime = typeof rawChangeTime === 'number' && Number.isFinite(rawChangeTime)
+        ? rawChangeTime
+        : 0;
+    return `baseline:${String(baselineTimestamp || '').trim()}|change:${lastBookmarkChangeTime}`;
 }
 
 function clampVersionedInfoLogEvery(value) {
@@ -8516,14 +8598,14 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
     };
 }
 
-async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, lang, explicitMovedIds, previousBookmarks = null, usePreviousBookmarks = false, forceFormats = null, forceModes = null, forceEnabled = null, forceExpandedIds = null, skipInitialFullExport = false }) {
+async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, lang, explicitMovedIds, previousBookmarks = null, usePreviousBookmarks = false, forceFormats = null, forceModes = null, forceEnabled = null, forceExpandedIds = null, forceExpandedStateExact = false, previewStateSignature = '', skipInitialFullExport = false }) {
     if (!Array.isArray(localBookmarks) || !localBookmarks.length) {
         return [];
     }
 
     const naming = buildSnapshotNamingContext({ syncTime });
     const currentTree = localBookmarks;
-    const baseData = await browserAPI.storage.local.get(['lastBookmarkData', 'currentChangesViewMode']);
+    const baseData = await browserAPI.storage.local.get(['lastBookmarkData', 'currentChangesViewMode', 'lastBookmarkChangeTime']);
     const previousTree = usePreviousBookmarks
         ? (Array.isArray(previousBookmarks) && previousBookmarks.length ? previousBookmarks : null)
         : (baseData?.lastBookmarkData?.bookmarkTree || null);
@@ -8593,7 +8675,6 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
 
     const normalizedStats = buildRestoreStats(diffSummary);
 
-    const viewMode = String(baseData?.currentChangesViewMode || 'detailed').toLowerCase() === 'compact' ? 'compact' : 'detailed';
     const settings = await browserAPI.storage.local.get(['currentChangesArchiveFormats', 'currentChangesArchiveModes', 'currentChangesArchiveEnabled']);
     const archiveSettings = normalizeCurrentChangesArchiveSettings(settings);
 
@@ -8625,6 +8706,70 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
 
     if (!archiveSettings.enabled) return [];
 
+    const hasForcedExpandedIds = forceExpandedIds instanceof Set || Array.isArray(forceExpandedIds);
+    const allowStoredPreviewExpandedFallback = !hasForcedExpandedIds && forceExpandedStateExact !== true;
+    const previewModeForExport = normalizeCurrentChangesPreviewModeForExport(baseData?.currentChangesViewMode);
+    const previewExpandedStateStorageKey = `${CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX}${previewModeForExport}`;
+    const activePreviewStateSignature = String(
+        previewStateSignature || buildCurrentChangesPreviewStateSignature({
+            baselineTimestamp: baseData?.lastBookmarkData?.timestamp || '',
+            lastBookmarkChangeTime: typeof baseData?.lastBookmarkChangeTime === 'number'
+                ? baseData.lastBookmarkChangeTime
+                : 0
+        })
+    ).trim();
+    let cachedPreviewExpandedState = null;
+    let hasLoadedPreviewExpandedState = false;
+
+    const getStoredPreviewExpandedState = async () => {
+        if (!allowStoredPreviewExpandedFallback) {
+            return { available: false, expandedIds: [], exactState: false };
+        }
+        if (hasLoadedPreviewExpandedState) {
+            return cachedPreviewExpandedState || { available: false, expandedIds: [], exactState: false };
+        }
+        hasLoadedPreviewExpandedState = true;
+        cachedPreviewExpandedState = { available: false, expandedIds: [], exactState: false };
+
+        try {
+            const stored = await browserAPI.storage.local.get([previewExpandedStateStorageKey]);
+            const payload = stored ? stored[previewExpandedStateStorageKey] : null;
+            if (!payload || typeof payload !== 'object') {
+                return cachedPreviewExpandedState;
+            }
+
+            const updatedAt = Number(payload.updatedAt);
+            if (!Number.isFinite(updatedAt)) {
+                return cachedPreviewExpandedState;
+            }
+
+            const ageMs = Date.now() - updatedAt;
+            if (ageMs < 0 || ageMs > CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_MAX_AGE_MS) {
+                return cachedPreviewExpandedState;
+            }
+
+            const stateSignature = String(payload.stateSignature || '').trim();
+            if (payload.exactState !== true || !stateSignature || stateSignature !== activePreviewStateSignature) {
+                return cachedPreviewExpandedState;
+            }
+
+            const expandedIds = Array.isArray(payload.expandedIds)
+                ? Array.from(new Set(
+                    payload.expandedIds
+                        .map(v => String(v || '').trim())
+                        .filter(Boolean)
+                ))
+                : [];
+            cachedPreviewExpandedState = {
+                available: true,
+                expandedIds,
+                exactState: true
+            };
+        } catch (_) { /* ignore */ }
+
+        return cachedPreviewExpandedState || { available: false, expandedIds: [], exactState: false };
+    };
+
     const artifacts = [];
 
     for (const mode of archiveSettings.modes) {
@@ -8633,28 +8778,38 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
             : (mode === 'collection' ? 'collection' : 'simple');
 
         let expandedIdsSet = null;
+        let exactExpandedState = false;
         if (exportMode === 'detailed') {
             if (forceExpandedIds instanceof Set) {
-                expandedIdsSet = new Set(Array.from(forceExpandedIds).map(v => String(v)));
+                const normalized = Array.from(forceExpandedIds)
+                    .map(v => String(v || '').trim())
+                    .filter(Boolean);
+                expandedIdsSet = new Set(normalized);
+                exactExpandedState = forceExpandedStateExact === true;
             } else if (Array.isArray(forceExpandedIds)) {
-                expandedIdsSet = new Set(forceExpandedIds.map(v => String(v)));
-            } else {
-                try {
-                    const scope = viewMode === 'compact' ? 'compact' : 'detailed';
-                    const storeKey = `changesPreviewExpandedNodes:${scope}`;
-                    const data = await browserAPI.storage.local.get([storeKey]);
-                    const hasStoredExpansionState = data && Object.prototype.hasOwnProperty.call(data, storeKey);
-                    const raw = hasStoredExpansionState ? data[storeKey] : null;
-                    if (hasStoredExpansionState && Array.isArray(raw)) {
-                        expandedIdsSet = new Set(raw.map(v => String(v)));
-                    }
-                } catch (_) { }
+                const normalized = forceExpandedIds
+                    .map(v => String(v || '').trim())
+                    .filter(Boolean);
+                expandedIdsSet = new Set(normalized);
+                exactExpandedState = forceExpandedStateExact === true;
+            } else if (forceExpandedStateExact === true) {
+                expandedIdsSet = new Set();
+                exactExpandedState = true;
+            }
+
+            if ((!expandedIdsSet || expandedIdsSet.size === 0) && !exactExpandedState && allowStoredPreviewExpandedFallback) {
+                const storedExpandedState = await getStoredPreviewExpandedState();
+                if (storedExpandedState?.available) {
+                    expandedIdsSet = new Set(storedExpandedState.expandedIds || []);
+                    exactExpandedState = storedExpandedState.exactState === true;
+                }
             }
         }
 
         const exportChildren = buildCurrentChangesExportTree(treeToExport, changeMap, {
             mode: exportMode,
             expandedIds: expandedIdsSet,
+            exactExpandedState,
             lang,
             stats: normalizedStats
         });
@@ -8803,7 +8958,7 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
     };
 }
 
-async function buildCurrentChangesManualExportArtifact({ mode, format, lang, explicitMovedIds = null, localBookmarks = null, syncTime = null, previousBookmarks = null, usePreviousBookmarks = false, forceExpandedIds = null }) {
+async function buildCurrentChangesManualExportArtifact({ mode, format, lang, explicitMovedIds = null, localBookmarks = null, syncTime = null, previousBookmarks = null, usePreviousBookmarks = false, forceExpandedIds = null, forceExpandedStateExact = false }) {
     const normalizedMode = String(mode || '').toLowerCase() === 'detailed'
         ? 'detailed'
         : (String(mode || '').toLowerCase() === 'collection' ? 'collection' : 'simple');
@@ -8823,7 +8978,8 @@ async function buildCurrentChangesManualExportArtifact({ mode, format, lang, exp
         forceFormats: [normalizedFormat],
         forceModes: [normalizedMode],
         forceEnabled: true,
-        forceExpandedIds
+        forceExpandedIds,
+        forceExpandedStateExact
     });
 
     if (!Array.isArray(artifacts) || artifacts.length === 0) return null;
@@ -8979,6 +9135,7 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
             explicitMovedIds,
             previousBookmarks,
             usePreviousBookmarks,
+            previewStateSignature: String(options.previewStateSignature || '').trim(),
             skipInitialFullExport: true
         });
 
@@ -14387,7 +14544,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
     try {
         const postSyncWarnings = [];
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned' } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned', lastBookmarkChangeTime = 0 } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
@@ -14396,7 +14553,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             'recentMovedIds',
             'recentModifiedIds',
             'recentAddedIds',
-            'overwriteMode'
+            'overwriteMode',
+            'lastBookmarkChangeTime'
         ]);
 
         const activeLang = currentLang === 'en' || currentLang === 'zh_CN'
@@ -14787,12 +14945,19 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             const runAutoArtifactsSync = async () => {
                 try {
                     const overwriteStrategy = effectiveOverwriteMode === 'overwrite' ? 'overwrite' : 'versioned';
+                    const previewStateSignature = buildCurrentChangesPreviewStateSignature({
+                        baselineTimestamp: lastBookmarkData?.timestamp || '',
+                        lastBookmarkChangeTime: typeof lastBookmarkChangeTime === 'number' && Number.isFinite(lastBookmarkChangeTime)
+                            ? lastBookmarkChangeTime
+                            : 0
+                    });
                     const archiveResult = await exportCurrentChangesArchiveToCloud({
                         syncTime: time,
                         fingerprint,
                         localBookmarks,
                         previousBookmarks: lastBookmarkData?.bookmarkTree || null,
                         explicitMovedIds: explicitMovedIdListForRecord,
+                        previewStateSignature,
                         overwriteMode: overwriteStrategy,
                         suppressLocalDownloadNotification: true,
                         allowedTargets: successfulBackupTargets

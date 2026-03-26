@@ -877,10 +877,18 @@
         }
 
         .history-header .header-item.header-ops {
-            flex: 0 0 62px;
-            min-width: 62px;
+            flex: 0 0 95px;
+            min-width: 95px;
             padding: 0;
             text-align: center;
+        }
+
+        .history-header .header-item.header-time {
+            padding-left: 12px;
+        }
+
+        .history-header .header-item.header-count {
+            transform: translateX(-6px);
         }
 
         .history-header .header-item {
@@ -897,11 +905,6 @@
             padding: 0;
             /* 添加小的左右padding */
             margin: 0;
-        }
-
-        /* 让“时间与备注 / Time & Notes”这一栏整体略向右偏移一点 */
-        .history-header .header-item:nth-child(2) {
-            padding-left: 12px;
         }
 
         /* 历史记录项 */
@@ -931,8 +934,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            flex: 0 0 62px;
-            min-width: 62px;
+            flex: 0 0 95px;
+            min-width: 95px;
         }
 
         .history-ops-row {
@@ -967,6 +970,7 @@
         /* 确保历史记录内容换行时的对齐 */
         .history-item-count>div {
             width: 100%;
+            transform: translateX(-6px);
         }
 
         /* 历史记录项悬停效果 */
@@ -5707,9 +5711,10 @@
                         </div>
                         <div id="syncHistoryList" class="history-list">
                             <div class="history-header">
-                                <div class="header-item">时间与备注</div>
-                                <div class="header-item">数量/结构</div>
-                                <div class="header-item">状态</div>
+                                <div class="header-item header-action">序号</div>
+                                <div class="header-item header-time">时间与备注</div>
+                                <div class="header-item header-count">数量与结构</div>
+                                <div class="header-item header-ops">操作</div>
                             </div>
                             <!-- 历史记录项将通过JavaScript添加 -->
                         </div>

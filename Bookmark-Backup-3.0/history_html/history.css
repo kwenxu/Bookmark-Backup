@@ -1,17 +1,17 @@
 /* ==================== 主题变量 ==================== */
 :root {
     /* Light Theme */
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f9fa;
-    --bg-tertiary: #f0f2f5;
+    --bg-primary: #f5f7fa;
+    --bg-secondary: #eef2f6;
+    --bg-tertiary: #e7ecf2;
     --bg-elevated: #ffffff;
 
     --text-primary: #1c1e21;
     --text-secondary: #65676b;
     --text-tertiary: #8a8d91;
 
-    --border-color: #e4e6eb;
-    --border-hover: #ccd0d5;
+    --border-color: #d5dce5;
+    --border-hover: #c4ccd7;
 
     --accent-primary: #1877f2;
     --accent-hover: #166fe5;
@@ -21,7 +21,7 @@
     --success: #42b72a;
     --success-light: #e7f5e4;
     --warning: #ff9800;
-    --warning-light: #fff3e0;
+    --warning-light: #fff4e8;
     --error: #e74c3c;
     --error-light: #ffebee;
     --info: #17a2b8;
@@ -2554,6 +2554,12 @@ body {
     pointer-events: none;
 }
 
+/* 当前变化头部操作按钮：只保留 .btn-tooltip（下方），去掉顶部伪类tooltip */
+.current-changes-header-action-btn::after {
+    display: none !important;
+    content: none !important;
+}
+
 .detail-actions-right .action-btn {
     z-index: 2;
 }
@@ -2622,21 +2628,29 @@ body {
 .commit-badge {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
+    padding: 4px 12px;
+    min-height: 26px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    box-sizing: border-box;
+    white-space: nowrap;
 }
 
 .commit-badge.auto {
     background: var(--success-light);
     color: var(--success);
+    border-color: var(--border-color);
 }
 
 .commit-badge.manual {
     background: var(--info-light);
     color: var(--info);
+    border-color: var(--border-color);
 }
 
 .commit-badge.success {
@@ -2652,24 +2666,35 @@ body {
 .commit-badge.direction {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
+    min-width: 40px;
+}
+
+.commit-badge i {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.commit-badge.direction i + i {
+    margin-left: 2px;
 }
 
 .commit-badge.strategy.versioned {
     background: var(--accent-light);
     color: var(--accent-primary);
-    border: 1px solid rgba(74, 144, 226, 0.2);
+    border-color: var(--border-color);
 }
 
 .commit-badge.strategy.overwrite {
     background: var(--warning-light);
     color: var(--warning);
-    border: 1px solid rgba(255, 152, 0, 0.2);
+    border-color: var(--border-color);
 }
 
 /* 切换备份标识 */
 .commit-badge.switch {
     background: var(--warning-light);
     color: var(--warning);
+    border-color: var(--border-color);
 }
 
 .commit-stats {
@@ -2704,11 +2729,14 @@ body {
 .stat-badge {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
     padding: 2px 8px;
     border-radius: 10px;
     font-size: 11px;
     font-weight: 500;
+    line-height: 1;
+    box-sizing: border-box;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     white-space: nowrap;
@@ -2719,6 +2747,7 @@ body {
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
     padding: 4px 12px;
+    min-height: 26px;
     font-size: 13px;
     font-weight: 600;
 }
@@ -2768,11 +2797,23 @@ body {
 .stat-badge.no-change {
     background: var(--success-light);
     color: var(--success);
+    border: 1px solid rgba(66, 183, 42, 0.35);
+    padding: 4px 12px;
+    min-height: 26px;
+    min-width: 88px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .stat-badge.first {
     background: var(--success-light);
     color: var(--success);
+    border: 1px solid var(--border-color);
+    padding: 4px 12px;
+    min-height: 26px;
+    min-width: 88px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .commit-note {
@@ -3905,7 +3946,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -7827,7 +7868,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .permanent-section-body::-webkit-scrollbar-track {
-    background: var(--bg-tertiary);
+    background: transparent;
     border-radius: 6px;
 }
 
@@ -8397,7 +8438,7 @@ a.tree-label.tree-bookmark-link:hover {
     -webkit-overflow-scrolling: touch;
     /* 自定义滚动条样式 */
     scrollbar-width: thin;
-    scrollbar-color: var(--accent-primary) var(--bg-secondary);
+    scrollbar-color: var(--accent-primary) transparent;
 }
 
 .manual-selector-list::-webkit-scrollbar {
@@ -8405,7 +8446,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .manual-selector-list::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+    background: transparent;
     border-radius: 4px;
 }
 

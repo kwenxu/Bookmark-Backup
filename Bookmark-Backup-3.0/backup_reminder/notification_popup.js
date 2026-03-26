@@ -1097,16 +1097,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         showOperationStatus(statusStrings.manualBackupCompleted[currentLang] || statusStrings.manualBackupCompleted['zh_CN'], 'success');
 
         try {
-            browserAPI.runtime.sendMessage({ action: "notificationAction", buttonIndex: 1 });
-            const badgeColor = '#0000FF';
-            if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
-                browserAPI.action.setBadgeBackgroundColor({ color: badgeColor })
-                    .then(() => console.log('直接在通知窗口设置角标颜色为蓝色成功'))
-                    .catch(err => console.error('直接设置角标颜色失败:', err));
-            } else if (typeof browserAPI.browserAction !== 'undefined' && typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
-                browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
-            }
-
             await sendMessagePromise({
                 action: "syncBookmarks", direction: "upload", isManual: true,
                 bookmarkStats: { bookmarkMoved: false, folderMoved: false, bookmarkModified: false, folderModified: false },

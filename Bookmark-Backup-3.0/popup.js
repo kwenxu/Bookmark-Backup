@@ -138,7 +138,7 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     if (exportTooltip) exportTooltip.textContent = isEn ? 'Export records' : '导出记录';
 
     const historyTooltip = document.getElementById('historyViewerTooltip');
-    if (historyTooltip) historyTooltip.textContent = isEn ? 'Open HTML page' : '跳转至HTML页面';
+    if (historyTooltip) historyTooltip.textContent = isEn ? 'Open HTML page' : '打开HTML页面';
 }
 
 function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') {
@@ -8821,7 +8821,7 @@ function initializeBackupSettings() {
     function collectCurrentChangesArchiveModes() {
         if (currentChangesArchiveModeCollection?.checked) return ['collection'];
         if (currentChangesArchiveModeDetailed?.checked) return ['detailed'];
-        return ['simple'];
+        return ['collection'];
     }
 
     function saveCurrentChangesArchiveSettings() {
@@ -8852,7 +8852,7 @@ function initializeBackupSettings() {
             : [];
 
         const format = rawFormats.find(v => v === 'html' || v === 'json') || 'html';
-        const mode = rawModes.find(v => v === 'simple' || v === 'detailed' || v === 'collection') || 'simple';
+        const mode = rawModes.find(v => v === 'simple' || v === 'detailed' || v === 'collection') || 'collection';
 
         if (currentChangesArchiveEnabled) currentChangesArchiveEnabled.checked = enabled;
         if (currentChangesArchiveFormatHtml) currentChangesArchiveFormatHtml.checked = format === 'html';
@@ -8862,7 +8862,7 @@ function initializeBackupSettings() {
         if (currentChangesArchiveModeCollection) currentChangesArchiveModeCollection.checked = mode === 'collection';
 
         normalizeExclusivePair(currentChangesArchiveFormatHtml, currentChangesArchiveFormatJson, true);
-        normalizeExclusiveGroup(currentChangesArchiveModeOptions, 0);
+        normalizeExclusiveGroup(currentChangesArchiveModeOptions, 2);
 
         if (currentChangesArchiveSection) {
             currentChangesArchiveSection.classList.remove('collapsed');
@@ -8906,19 +8906,19 @@ function initializeBackupSettings() {
     }
     if (currentChangesArchiveModeSimple) {
         currentChangesArchiveModeSimple.addEventListener('change', function () {
-            handleExclusiveGroupChange(currentChangesArchiveModeSimple, currentChangesArchiveModeOptions, 0);
+            handleExclusiveGroupChange(currentChangesArchiveModeSimple, currentChangesArchiveModeOptions, 2);
             saveCurrentChangesArchiveSettings();
         });
     }
     if (currentChangesArchiveModeDetailed) {
         currentChangesArchiveModeDetailed.addEventListener('change', function () {
-            handleExclusiveGroupChange(currentChangesArchiveModeDetailed, currentChangesArchiveModeOptions, 0);
+            handleExclusiveGroupChange(currentChangesArchiveModeDetailed, currentChangesArchiveModeOptions, 2);
             saveCurrentChangesArchiveSettings();
         });
     }
     if (currentChangesArchiveModeCollection) {
         currentChangesArchiveModeCollection.addEventListener('change', function () {
-            handleExclusiveGroupChange(currentChangesArchiveModeCollection, currentChangesArchiveModeOptions, 0);
+            handleExclusiveGroupChange(currentChangesArchiveModeCollection, currentChangesArchiveModeOptions, 2);
             saveCurrentChangesArchiveSettings();
         });
     }
@@ -9980,6 +9980,7 @@ function showRestoreModal(versions, source) {
     const detectRestoreFolderType = (version) => {
         const restoreRef = version?.restoreRef || {};
         const snapshotKey = String(restoreRef.snapshotKey || '').trim().toLowerCase();
+        const isSyntheticChangesArtifactKey = snapshotKey.startsWith('__changes_artifact_');
         if (snapshotKey === '__overwrite__') return 'overwrite';
 
         const explicitFolderType = String(
@@ -10008,11 +10009,12 @@ function showRestoreModal(versions, source) {
             const artifactType = detectTypeFromPathValues(collectChangesArtifactPathValues(restoreRef));
             if (artifactType === 'manual_export') return 'manual_export';
             if (artifactType === 'overwrite') return 'overwrite';
+            if (isSyntheticChangesArtifactKey) return 'changes_artifact';
 
             if (snapshotKey && snapshotKey !== '__overwrite__') return 'versioned';
 
-            // 规则：当前变化文件不归类到“多版本”，避免与快照主线混淆
-            return 'overwrite';
+            // 独立变化文件不归类到“多版本”或“覆盖”，避免误导。
+            return 'changes_artifact';
         }
 
         if (coreType) return coreType;
@@ -11370,6 +11372,7 @@ function showRestoreModal(versions, source) {
 
     const getVersionTypeLabel = (lang, type) => {
         const isEn = lang === 'en';
+        if (type === 'changes_artifact') return isEn ? 'Changes File' : '变化文件';
         if (type === 'overwrite') return isEn ? 'Overwrite' : '覆盖';
         if (type === 'manual_export') return isEn ? 'Manual Export' : '手动导出';
         return isEn ? 'Versioned' : '多版本';

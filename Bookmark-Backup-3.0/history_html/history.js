@@ -48,7 +48,7 @@ let currentTheme = 'light';
 // 将所有视图设置存储在 chrome.storage.local，替代分散的 localStorage
 // 这样 background.js (Service Worker) 也能访问这些设置，实现 WYSIWYG 导出
 // =============================================================================
-let historyDetailMode = 'simple'; // 默认值，将在初始化时从 chrome.storage.local 加载
+let historyDetailMode = 'collection'; // 默认值，将在初始化时从 chrome.storage.local 加载
 let historyViewSettings = null;   // 缓存视图设置对象
 let historyViewSettingsSaveTimeout = null; // 防抖保存定时器
 
@@ -58,9 +58,13 @@ const HISTORY_DETAIL_EXPANDED_PREFIX = 'historyDetailExpanded:';
 
 function normalizeHistoryDetailMode(mode, fallback = 'simple') {
     const value = String(mode || '').toLowerCase();
+    if (value === 'simple') return 'simple';
     if (value === 'detailed') return 'detailed';
     if (value === 'collection') return 'collection';
-    return fallback;
+    const normalizedFallback = String(fallback || '').toLowerCase();
+    if (normalizedFallback === 'detailed') return 'detailed';
+    if (normalizedFallback === 'collection') return 'collection';
+    return 'simple';
 }
 
 function getHistoryDetailModeLabel(mode, isZh = currentLang === 'zh_CN') {
@@ -79,14 +83,14 @@ async function loadHistoryViewSettings() {
         const browserAPI = (typeof chrome !== 'undefined' && chrome.storage) ? chrome : (typeof browser !== 'undefined' ? browser : null);
         if (!browserAPI || !browserAPI.storage) {
             console.warn('[历史视图设置] 无法访问 storage API');
-            historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
-            historyDetailMode = 'simple';
+            historyViewSettings = { defaultMode: 'collection', recordModes: {}, recordExpandedStates: {} };
+            historyDetailMode = 'collection';
             resolve(historyViewSettings);
             return;
         }
         browserAPI.storage.local.get(['historyViewSettings'], result => {
             const rawSettings = result.historyViewSettings || {
-                defaultMode: 'simple',
+                defaultMode: 'collection',
                 recordModes: {},
                 recordExpandedStates: {}
             };
@@ -95,13 +99,13 @@ async function loadHistoryViewSettings() {
                 normalizedRecordModes[String(recordTime)] = normalizeHistoryDetailMode(mode);
             });
             historyViewSettings = {
-                defaultMode: normalizeHistoryDetailMode(rawSettings.defaultMode),
+                defaultMode: normalizeHistoryDetailMode(rawSettings.defaultMode, 'collection'),
                 recordModes: normalizedRecordModes,
                 recordExpandedStates: (rawSettings && typeof rawSettings.recordExpandedStates === 'object' && rawSettings.recordExpandedStates)
                     ? rawSettings.recordExpandedStates
                     : {}
             };
-            historyDetailMode = historyViewSettings.defaultMode || 'simple';
+            historyDetailMode = historyViewSettings.defaultMode || 'collection';
             console.log('[历史视图设置] 已加载:', {
                 defaultMode: historyDetailMode,
                 recordModesCount: Object.keys(historyViewSettings.recordModes || {}).length,
@@ -157,7 +161,7 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
     console.log('[迁移] 开始迁移 localStorage 中的历史视图设置...');
 
     const newSettings = {
-        defaultMode: 'simple',
+        defaultMode: 'collection',
         recordModes: {},
         recordExpandedStates: {}
     };
@@ -5455,8 +5459,12 @@ function __getChangesPreviewMode() {
 function normalizeCurrentChangesPreviewMode(mode, fallback = 'detailed') {
     const value = String(mode || '').toLowerCase();
     if (value === 'compact' || value === 'simple') return 'compact';
+    if (value === 'detailed') return 'detailed';
     if (value === 'collection') return 'collection';
-    return (String(fallback || '').toLowerCase() === 'simple') ? 'compact' : fallback;
+    const normalizedFallback = String(fallback || '').toLowerCase();
+    if (normalizedFallback === 'compact' || normalizedFallback === 'simple') return 'compact';
+    if (normalizedFallback === 'collection') return 'collection';
+    return 'detailed';
 }
 
 function applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, mode) {
@@ -5586,18 +5594,23 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
     const { opsGrid, added, moved, deleted, modified, unchanged } = __getCurrentChangesOpsEls(container);
     if (!opsGrid || !added || !moved || !deleted || !modified) return;
 
-    const { hasQuantityChange = false, hasStructureChange = false, stats = {}, diffMeta = {} } = context;
+    const { hasQuantityChange = false, hasStructureChange = false, stats = {}, diffMeta = {}, renderState = null } = context;
     const bookmarkDiff = diffMeta.bookmarkDiff || 0;
     const folderDiff = diffMeta.folderDiff || 0;
     const isZh = currentLang === 'zh_CN';
 
-    const { movedCount, modifiedCount } = await __computeMovedModifiedCountsForCurrentChanges(changeData, stats);
-    const displayStats = resolveAbsoluteDisplayStats(stats, {
+    const effectiveRenderState = renderState || await resolveCurrentChangesRenderState(changeData, {
+        requireDiffMap: !!changeData?.hasChanges
+    });
+    const effectiveStats = effectiveRenderState?.normalizedStats || normalizeCurrentChangesExportStatsManual(changeData || {});
+    const displayStats = resolveAbsoluteDisplayStats(effectiveStats, {
         bookmarkDiff,
         folderDiff,
-        canCalculateDiff: hasQuantityChange,
-        movedTotal: movedCount,
-        modifiedTotal: modifiedCount
+        canCalculateDiff: hasQuantityChange
+            || diffMeta?.hasNumericalChange === true
+            || hasAnyCurrentChangesStatsCounts(effectiveStats),
+        movedTotal: effectiveStats.movedCount,
+        modifiedTotal: effectiveStats.modifiedCount
     });
     const {
         bookmarkAddedCount,
@@ -5657,12 +5670,24 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
         title: isZh ? '跳转至对应位置' : 'Jump to changes'
     });
 
-    // 如果没有任何变化（hasChanges=true 但 diff 汇总没有变化的场景）
-    const showUnchanged = !addedVisible && !deletedVisible && !movedVisible && !modifiedVisible && !normalizedHasQuantityChange && !normalizedHasStructuralChange;
+    const showPendingDetails = !addedVisible
+        && !deletedVisible
+        && !movedVisible
+        && !modifiedVisible
+        && effectiveRenderState?.hasAnyChange;
+    const showUnchanged = !showPendingDetails
+        && !addedVisible
+        && !deletedVisible
+        && !movedVisible
+        && !modifiedVisible
+        && !normalizedHasQuantityChange
+        && !normalizedHasStructuralChange;
     __setCurrentChangesOpLine(unchanged, {
-        visible: showUnchanged,
-        prefix: '=',
-        text: isZh ? '无变化' : 'No changes',
+        visible: showPendingDetails || showUnchanged,
+        prefix: showPendingDetails ? '...' : '=',
+        text: showPendingDetails
+            ? (isZh ? '检测到变化，正在同步详情…' : 'Changes detected, syncing details...')
+            : (isZh ? '无变化' : 'No changes'),
         display: 'block'
     });
 
@@ -6443,27 +6468,10 @@ function __restoreChangesPreviewBodyScroll(previewBody, targetTop) {
 
 async function renderCurrentChangesCollectionPreview(changeData, targetContainer) {
     const isZh = currentLang === 'zh_CN';
-
-    try {
-        await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: true });
-    } catch (_) { }
-
-    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
-    const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
-    const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
-
-    let treeToRender = currentTree;
-    if (oldTree && currentTree && changeMap.size > 0) {
-        try {
-            if (hasDeletedChangeInMap(changeMap)) {
-                treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, changeMap);
-            }
-        } catch (_) {
-            treeToRender = currentTree;
-        }
-    }
-
-    const normalizedStats = normalizeCurrentChangesExportStatsManual(changeData || {});
+    const renderState = await resolveCurrentChangesRenderState(changeData, { requireDiffMap: true });
+    const changeMap = renderState?.changeMap instanceof Map ? renderState.changeMap : new Map();
+    const treeToRender = Array.isArray(renderState?.treeToRender) ? renderState.treeToRender : [];
+    const normalizedStats = renderState?.normalizedStats || normalizeCurrentChangesExportStatsManual(changeData || {});
     const lang = isZh ? 'zh_CN' : 'en';
     const collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
         mode: 'collection',
@@ -6924,12 +6932,18 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             diffMeta.hasNumericalChange = true;
         }
 
-        const summary = buildChangeSummary(diffMeta, stats, currentLang);
-        // 直接检查是否有数量变化（不仅依赖 summary）
-        const hasQuantityChange = summary.hasQuantityChange || (bookmarkDiff !== 0 || folderDiff !== 0);
-        const hasStructureChange = summary.hasStructuralChange;
+        const renderState = await resolveCurrentChangesRenderState(changeData, {
+            requireDiffMap: changeData.hasChanges === true
+        });
+        const effectiveStats = renderState?.normalizedStats || normalizeCurrentChangesExportStatsManual(changeData || {});
+        const summary = buildChangeSummary(diffMeta, effectiveStats, currentLang);
+        const hasVisibleChanges = summary.hasQuantityChange
+            || summary.hasStructuralChange
+            || (bookmarkDiff !== 0 || folderDiff !== 0)
+            || renderState?.hasAnyChange
+            || changeData.hasChanges === true;
 
-        if (hasQuantityChange || hasStructureChange) {
+        if (hasVisibleChanges) {
             // Git diff 风格的容器
             html += '<div class="git-diff-container">';
 
@@ -7060,7 +7074,13 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 // 原地更新四个操作行文本/显示，并按“可见行数量”决定 single-op
                 try {
                     latestCurrentChangesData = changeData;
-                    await updateCurrentChangesOpsGridInPlace(changeData, { hasQuantityChange, hasStructureChange, stats, diffMeta });
+                    await updateCurrentChangesOpsGridInPlace(changeData, {
+                        hasQuantityChange: summary.hasQuantityChange || (bookmarkDiff !== 0 || folderDiff !== 0),
+                        hasStructureChange: summary.hasStructuralChange,
+                        stats: effectiveStats,
+                        diffMeta,
+                        renderState
+                    });
                     bindCurrentChangesOpsEventsOnce();
                 } catch (_) { }
 
@@ -7180,7 +7200,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     };
                     expandFoldersRef = expandFoldersWithChanges;
 
-                    const savedMode = normalizeCurrentChangesPreviewMode(lastData.currentChangesViewMode);
+                    const savedMode = normalizeCurrentChangesPreviewMode(lastData.currentChangesViewMode, 'collection');
                     applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, savedMode);
                     try {
                         await __ensureChangesPreviewExpandedStateLoaded(savedMode);
@@ -8822,7 +8842,7 @@ function renderHistoryView() {
         // 切换标识徽章（可选显示）
         // 模式显示文本
         const savedMode = getRecordDetailMode(record.time);
-        const defaultMode = historyDetailMode || 'simple';
+        const defaultMode = historyDetailMode || 'collection';
         const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
         const modeText = getHistoryDetailModeLabel(mode);
 
@@ -17313,13 +17333,13 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 // =============================================================================
 
 function getRecordDetailMode(recordTime) {
-    if (!recordTime) return normalizeHistoryDetailMode(historyDetailMode || 'simple');
+    if (!recordTime) return normalizeHistoryDetailMode(historyDetailMode || 'collection', 'collection');
     // 从统一存储对象中读取
     if (historyViewSettings && historyViewSettings.recordModes) {
         const mode = historyViewSettings.recordModes[String(recordTime)];
         if (mode) return normalizeHistoryDetailMode(mode);
     }
-    return normalizeHistoryDetailMode(historyDetailMode || 'simple');
+    return normalizeHistoryDetailMode(historyDetailMode || 'collection', 'collection');
 }
 
 function setRecordDetailMode(recordTime, mode) {
@@ -17327,7 +17347,7 @@ function setRecordDetailMode(recordTime, mode) {
     const normalizedMode = normalizeHistoryDetailMode(mode);
     // 确保 historyViewSettings 已初始化
     if (!historyViewSettings) {
-        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
+        historyViewSettings = { defaultMode: 'collection', recordModes: {}, recordExpandedStates: {} };
     }
     historyViewSettings.recordModes[String(recordTime)] = normalizedMode;
     // 异步保存（带防抖）
@@ -17358,7 +17378,7 @@ function saveRecordExpandedState(recordTime, nodeId, isExpanded) {
     if (!recordTime || !nodeId) return;
     // 确保 historyViewSettings 已初始化
     if (!historyViewSettings) {
-        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
+        historyViewSettings = { defaultMode: 'collection', recordModes: {}, recordExpandedStates: {} };
     }
     if (!historyViewSettings.recordExpandedStates) {
         historyViewSettings.recordExpandedStates = {};
@@ -17382,7 +17402,7 @@ function saveRecordExpandedState(recordTime, nodeId, isExpanded) {
 function captureRecordExpandedState(recordTime, treeContainer) {
     if (!recordTime || !treeContainer) return;
     if (!historyViewSettings) {
-        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
+        historyViewSettings = { defaultMode: 'collection', recordModes: {}, recordExpandedStates: {} };
     }
     if (!historyViewSettings.recordExpandedStates) {
         historyViewSettings.recordExpandedStates = {};
@@ -22686,6 +22706,112 @@ function normalizeCurrentChangesExportStatsManual(changeData) {
     };
 }
 
+function hasAnyCurrentChangesStatsCounts(stats = {}) {
+    const keys = [
+        'bookmarkAdded',
+        'bookmarkDeleted',
+        'folderAdded',
+        'folderDeleted',
+        'movedCount',
+        'modifiedCount',
+        'movedBookmarkCount',
+        'movedFolderCount',
+        'modifiedBookmarkCount',
+        'modifiedFolderCount'
+    ];
+    return keys.some(key => {
+        const value = stats?.[key];
+        return typeof value === 'number' && Number.isFinite(value) && value > 0;
+    });
+}
+
+function hasDetailedCurrentChangesEntries(changeData = {}) {
+    return ['added', 'deleted', 'moved', 'modified'].some(key => Array.isArray(changeData?.[key]) && changeData[key].length > 0);
+}
+
+function mergeCurrentChangesStatsWithHistoryCounts(baseStats = {}, counts = null, useRenderableCounts = false) {
+    const merged = {
+        ...baseStats
+    };
+
+    if (!useRenderableCounts || !counts) {
+        return merged;
+    }
+
+    const readPair = (key) => ({
+        bookmarks: Number(counts?.[key]?.bookmarks || 0),
+        folders: Number(counts?.[key]?.folders || 0)
+    });
+
+    const added = readPair('added');
+    const deleted = readPair('deleted');
+    const moved = readPair('moved');
+    const modified = readPair('modified');
+
+    merged.bookmarkAdded = added.bookmarks;
+    merged.folderAdded = added.folders;
+    merged.bookmarkDeleted = deleted.bookmarks;
+    merged.folderDeleted = deleted.folders;
+    merged.movedBookmarkCount = moved.bookmarks;
+    merged.movedFolderCount = moved.folders;
+    merged.modifiedBookmarkCount = modified.bookmarks;
+    merged.modifiedFolderCount = modified.folders;
+    merged.movedCount = moved.bookmarks + moved.folders;
+    merged.modifiedCount = modified.bookmarks + modified.folders;
+
+    return merged;
+}
+
+function buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree) {
+    let treeToRender = Array.isArray(currentTree) ? currentTree : [];
+
+    if (!oldTree || !Array.isArray(currentTree) || currentTree.length === 0 || !(changeMap instanceof Map) || changeMap.size === 0) {
+        return treeToRender;
+    }
+
+    if (!hasDeletedChangeInMap(changeMap)) {
+        return treeToRender;
+    }
+
+    try {
+        return rebuildTreeWithDeleted(oldTree, currentTree, changeMap);
+    } catch (_) {
+        return treeToRender;
+    }
+}
+
+async function resolveCurrentChangesRenderState(changeData, options = {}) {
+    const requireDiffMap = options?.requireDiffMap !== false;
+
+    if (requireDiffMap) {
+        try {
+            await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: !!changeData?.hasChanges });
+        } catch (_) { }
+    }
+
+    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
+    const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
+    const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
+    const treeToRender = buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree);
+    const useRenderableCounts = changeMap.size > 0 && Array.isArray(treeToRender) && treeToRender.length > 0;
+    const counts = useRenderableCounts ? getHistoryChangeCounts(changeMap, treeToRender) : null;
+    const baseStats = normalizeCurrentChangesExportStatsManual(changeData || {});
+    const normalizedStats = mergeCurrentChangesStatsWithHistoryCounts(baseStats, counts, useRenderableCounts);
+
+    return {
+        changeMap,
+        currentTree,
+        oldTree,
+        treeToRender,
+        counts,
+        normalizedStats,
+        hasRenderableCounts: useRenderableCounts && hasAnyCounts(counts),
+        hasAnyChange: useRenderableCounts
+            ? hasAnyCounts(counts) || hasDetailedCurrentChangesEntries(changeData) || hasAnyCurrentChangesStatsCounts(baseStats) || !!changeData?.hasChanges
+            : hasDetailedCurrentChangesEntries(changeData) || hasAnyCurrentChangesStatsCounts(baseStats) || !!changeData?.hasChanges
+    };
+}
+
 function buildCurrentChangesStatsLineManual(stats, lang) {
     const isZh = lang === 'zh_CN';
     const labels = isZh
@@ -23062,7 +23188,12 @@ async function buildCurrentChangesExportPayloadManual(changeData, mode) {
     const viewState = normalizedMode === 'detailed'
         ? getCurrentChangesExportViewStateManual()
         : { expandedIds: new Set(), exactExpandedState: false };
-    const normalizedStats = normalizeCurrentChangesExportStatsManual(changeData);
+    const exportCounts = getHistoryChangeCounts(changeMap, treeToExport);
+    const normalizedStats = mergeCurrentChangesStatsWithHistoryCounts(
+        normalizeCurrentChangesExportStatsManual(changeData),
+        exportCounts,
+        changeMap instanceof Map && changeMap.size > 0
+    );
 
     const exportChildren = buildCurrentChangesExportTreeManual(treeToExport, changeMap, {
         mode: normalizedMode,
@@ -24798,7 +24929,7 @@ function renderGlobalExportPage() {
         const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || '';
 
         const savedMode = getRecordDetailMode(record.time);
-        const defaultMode = historyDetailMode || 'simple';
+        const defaultMode = historyDetailMode || 'collection';
         const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
 
         const isChecked = globalExportSelectedState[record.time] !== false;
@@ -25530,7 +25661,7 @@ async function startGlobalExport() {
             if (!record) continue;
 
             const savedMode = getRecordDetailMode(record.time);
-            const defaultMode = historyDetailMode || 'simple';
+            const defaultMode = historyDetailMode || 'collection';
             const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
             const naming = buildGlobalExportRecordNamingInfo(record, mode, seqMap, seqWidth);
             const recordFolderRelativePath = `${naming.snapshotKey}`;

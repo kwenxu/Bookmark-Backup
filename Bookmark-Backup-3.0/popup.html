@@ -15,9 +15,9 @@
         /* Theme variables */
         html {
             /* Light Theme (Default) */
-            --light-bg-primary: #ffffff;
-            --light-bg-secondary: #f8f9fa;
-            --light-bg-tertiary: #f0f0f0;
+            --light-bg-primary: #f5f7fa;
+            --light-bg-secondary: #eef2f6;
+            --light-bg-tertiary: #e7ecf2;
             --light-bg-elevated: #ffffff;
 
             --light-text-primary: #212529;
@@ -25,12 +25,12 @@
             --light-text-disabled: #adb5bd;
             --light-text-on-accent: #ffffff;
 
-            --light-border-primary: #dee2e6;
-            --light-border-secondary: #ced4da;
+            --light-border-primary: #d5dce5;
+            --light-border-secondary: #c4ccd7;
 
             --light-input-bg: #ffffff;
             --light-input-text: #495057;
-            --light-input-border: #ced4da;
+            --light-input-border: #cbd3de;
             --light-input-placeholder: #adb5bd;
             --light-input-focus-border: #007AFF;
             --light-input-focus-shadow: rgba(0, 122, 255, 0.2);
@@ -45,9 +45,9 @@
 
             --light-link-color: #007AFF;
 
-            --light-scrollbar-track: #f1f1f1;
-            --light-scrollbar-thumb: #c1c1c1;
-            --light-scrollbar-thumb-hover: #a8a8a8;
+            --light-scrollbar-track: transparent;
+            --light-scrollbar-thumb: #bcc6d2;
+            --light-scrollbar-thumb-hover: #a7b3c1;
 
             --light-icon-color: #6c757d;
             --light-svg-icon-stroke-color-path: "%23666";
@@ -86,7 +86,7 @@
 
             --dark-link-color: #3694ff;
 
-            --dark-scrollbar-track: #2d2d2d;
+            --dark-scrollbar-track: transparent;
             --dark-scrollbar-thumb: #555555;
             --dark-scrollbar-thumb-hover: #666666;
 
@@ -142,29 +142,29 @@
             --theme-status-error-text: #FF3B30;
             --theme-status-error-border: #ffcdd2;
 
-            --theme-hover-bg: #e9ecef;
+            --theme-hover-bg: #e4eaf1;
             --theme-selected-item-bg: #ddeeff;
 
             --theme-switch-bg: #ccc;
             --theme-switch-bg-checked: #007AFF;
             --theme-switch-slider-bg: #ffffff;
 
-            --theme-backup-mode-auto-gradient: linear-gradient(to right, #e8f5e9, #f0f0f0);
-            --theme-backup-mode-manual-gradient: linear-gradient(to right, #f0f0f0, #e6f7ff);
+            --theme-backup-mode-auto-gradient: linear-gradient(to right, #e9f3ea, #e7ecf2);
+            --theme-backup-mode-manual-gradient: linear-gradient(to right, #e7ecf2, #e6eef9);
             --theme-backup-mode-slider-bg: #ffffff;
             --theme-backup-mode-auto-text: #4CAF50;
             --theme-backup-mode-manual-text: #007AFF;
             --theme-backup-mode-inactive-text: #6c757d;
 
-            --theme-settings-button-bg: #f5f5f5;
+            --theme-settings-button-bg: #edf1f6;
             --theme-settings-button-text: #333;
-            --theme-settings-button-border: #ddd;
-            --theme-settings-button-hover-bg: #eaeaea;
+            --theme-settings-button-border: #cbd3de;
+            --theme-settings-button-hover-bg: #e3e9f0;
 
-            --theme-dropzone-bg: #f8f9fa;
-            --theme-dropzone-border: #ccc;
-            --theme-dropzone-hover-bg: #f0f7ff;
-            --theme-dropzone-drag-bg: #e8f4fc;
+            --theme-dropzone-bg: #f1f4f8;
+            --theme-dropzone-border: #cdd5df;
+            --theme-dropzone-hover-bg: #e9eff6;
+            --theme-dropzone-drag-bg: #e1e9f3;
             --theme-dropzone-success-bg: #f0fff0;
             --theme-dropzone-error-bg: #fff0f0;
             --theme-dropzone-text-color: #666;
@@ -821,6 +821,10 @@
             /* 添加相对定位 */
             z-index: 1;
             /* 确保阴影效果可见 */
+            --history-ops-btn-width: 29px;
+            --history-ops-btn-gap: 5px;
+            --history-ops-track-width: calc((var(--history-ops-btn-width) * 3) + (var(--history-ops-btn-gap) * 2));
+            --history-ops-right-inset: 5px;
         }
 
         .sync-history h3 {
@@ -877,8 +881,8 @@
         }
 
         .history-header .header-item.header-ops {
-            flex: 0 0 95px;
-            min-width: 95px;
+            flex: 0 0 var(--history-ops-track-width);
+            min-width: var(--history-ops-track-width);
             padding: 0;
             text-align: center;
         }
@@ -934,15 +938,16 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            flex: 0 0 95px;
-            min-width: 95px;
+            flex: 0 0 var(--history-ops-track-width);
+            min-width: var(--history-ops-track-width);
         }
 
         .history-ops-row {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 4px;
+            justify-content: flex-start;
+            gap: var(--history-ops-btn-gap);
+            width: var(--history-ops-track-width);
         }
 
         /* 历史记录项的元素 - 只保留两栏 */
@@ -1037,8 +1042,9 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 29px;
+            width: var(--history-ops-btn-width);
             height: 18px;
+            flex: 0 0 var(--history-ops-btn-width);
             padding: 0;
             border-radius: 5px;
             border: 1px solid var(--theme-border-primary);
@@ -1075,11 +1081,23 @@
             gap: 4px;
         }
 
+        .sync-history-header-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: var(--history-ops-btn-gap);
+            width: var(--history-ops-track-width);
+            flex: 0 0 var(--history-ops-track-width);
+            margin-right: var(--history-ops-right-inset);
+            box-sizing: border-box;
+        }
+
         .action-button.history-nav-btn {
-            width: 32px;
-            height: 24px;
+            width: var(--history-ops-btn-width);
+            height: 22px;
+            flex: 0 0 var(--history-ops-btn-width);
             padding: 0;
-            border-radius: 6px;
+            border-radius: 5px;
             border: 1px solid var(--theme-border-primary);
             background: var(--theme-bg-secondary);
             color: var(--theme-text-secondary);
@@ -1088,12 +1106,17 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            box-sizing: border-box;
             transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .action-button.history-nav-btn i {
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1;
+        }
+
+        #openHistoryViewerBtn i {
+            font-size: 11px;
         }
 
         .action-button.history-nav-btn:hover {
@@ -1840,6 +1863,7 @@
             max-height: 400px;
             overflow-y: auto;
             scrollbar-width: thin;
+            scrollbar-color: var(--theme-scrollbar-thumb) transparent;
         }
 
         /* 美化滚动条 */
@@ -1848,17 +1872,17 @@
         }
 
         .search-results::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: transparent;
             border-radius: 3px;
         }
 
         .search-results::-webkit-scrollbar-thumb {
-            background: #888;
+            background: var(--theme-scrollbar-thumb);
             border-radius: 3px;
         }
 
         .search-results::-webkit-scrollbar-thumb:hover {
-            background: #666;
+            background: var(--theme-scrollbar-thumb-hover);
         }
 
         /* 添加操作按钮容器样式 */
@@ -2505,11 +2529,15 @@
             --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.1);
 
             /* Status card overlay button (glass) */
-            --theme-glass-action-bg: rgba(25, 118, 210, 0.18);
-            --theme-glass-action-bg-hover: rgba(25, 118, 210, 0.24);
-            --theme-glass-action-border: rgba(255, 255, 255, 0.55);
-            --theme-glass-action-border-hover: rgba(255, 255, 255, 0.75);
-            --theme-glass-action-shadow: rgba(0, 0, 0, 0.12);
+            --theme-glass-action-bg: rgba(255, 255, 255, 0.66);
+            --theme-glass-action-bg-hover: rgba(255, 255, 255, 0.8);
+            --theme-glass-action-border: rgba(13, 71, 161, 0.4);
+            --theme-glass-action-border-hover: rgba(13, 71, 161, 0.52);
+            --theme-glass-action-shadow: rgba(13, 71, 161, 0.22);
+            --theme-glass-action-icon-color: #083a7a;
+            --theme-glass-action-text-color: #083a7a;
+            --theme-glass-action-text-shadow: rgba(7, 31, 68, 0.28);
+            --theme-glass-action-inner-ring: rgba(255, 255, 255, 0.56);
         }
 
         html[data-theme="dark"] {
@@ -2531,6 +2559,10 @@
             --theme-glass-action-border: rgba(255, 255, 255, 0.32);
             --theme-glass-action-border-hover: rgba(255, 255, 255, 0.42);
             --theme-glass-action-shadow: rgba(0, 0, 0, 0.35);
+            --theme-glass-action-icon-color: rgba(255, 255, 255, 0.92);
+            --theme-glass-action-text-color: rgba(255, 255, 255, 0.96);
+            --theme-glass-action-text-shadow: rgba(0, 0, 0, 0.26);
+            --theme-glass-action-inner-ring: rgba(255, 255, 255, 0.12);
         }
 
         .status-card {
@@ -2744,9 +2776,9 @@
             border-radius: 8px;
             border: 1px solid var(--theme-glass-action-border);
             background: var(--theme-glass-action-bg);
-            backdrop-filter: blur(10px) saturate(160%);
-            -webkit-backdrop-filter: blur(10px) saturate(160%);
-            box-shadow: 0 8px 18px var(--theme-glass-action-shadow);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            box-shadow: none;
             cursor: pointer;
             user-select: none;
             font-size: 12px;
@@ -2783,8 +2815,8 @@
 
         #manualBackupBtnOverlay i,
         #undoCurrentChangesBtnOverlay i {
-            color: rgba(255, 255, 255, 0.88);
-            filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+            color: var(--theme-glass-action-icon-color);
+            filter: none;
         }
 
         #manualBackupBtnOverlay #manualBackupBtnText,
@@ -2792,12 +2824,9 @@
             display: inline-block;
             white-space: nowrap;
             line-height: 1;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.55));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+            color: var(--theme-glass-action-text-color);
+            -webkit-text-fill-color: var(--theme-glass-action-text-color);
+            text-shadow: none;
         }
 
         .mode-tip.auto-tip {
@@ -4015,17 +4044,17 @@
         }
 
         #restoreConfirmModal {
-            --bg-primary: #ffffff;
-            --bg-secondary: #f8f9fa;
-            --bg-tertiary: #f0f2f5;
+            --bg-primary: #f5f7fa;
+            --bg-secondary: #eef2f6;
+            --bg-tertiary: #e7ecf2;
             --bg-elevated: #ffffff;
 
             --text-primary: #1c1e21;
             --text-secondary: #65676b;
             --text-tertiary: #8a8d91;
 
-            --border-color: #e4e6eb;
-            --border-hover: #ccd0d5;
+            --border-color: #d5dce5;
+            --border-hover: #c4ccd7;
 
             --accent-primary: #1877f2;
             --accent-hover: #166fe5;
@@ -4035,7 +4064,7 @@
             --success: #42b72a;
             --success-light: #e7f5e4;
             --warning: #ff9800;
-            --warning-light: #fff3e0;
+            --warning-light: #fff4e8;
             --error: #e74c3c;
             --error-light: #ffebee;
             --info: #17a2b8;
@@ -5464,7 +5493,7 @@
                                     </div>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="currentChangesArchiveModeSimple" checked>
+                                            <input type="checkbox" id="currentChangesArchiveModeSimple">
                                             <div class="clean-segment-item" id="currentChangesArchiveModeSimpleLabel">Simple</div>
                                         </label>
                                         <label class="clean-segment-label">
@@ -5472,7 +5501,7 @@
                                             <div class="clean-segment-item" id="currentChangesArchiveModeDetailedLabel">Detailed</div>
                                         </label>
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="currentChangesArchiveModeCollection">
+                                            <input type="checkbox" id="currentChangesArchiveModeCollection" checked>
                                             <div class="clean-segment-item" id="currentChangesArchiveModeCollectionLabel">Collection</div>
                                         </label>
                                     </div>
@@ -5688,7 +5717,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sync-history-header-actions">
                                 <button id="clearHistoryBtn" class="action-button history-nav-btn"
                                     style="display: inline-flex;">
                                     <i class="fas fa-trash-alt"></i>
@@ -5703,7 +5732,7 @@
                                 </button>
                                 <button id="openHistoryViewerBtn" class="action-button history-nav-btn history-nav-btn-primary"
                                     style="display: inline-flex;">
-                                    <i class="fas fa-history" style="font-size: 13px;"></i>
+                                    <i class="fas fa-external-link-alt"></i>
                                     <span class="tooltip" id="historyViewerTooltip"
                                         style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"></span>
                                 </button>

@@ -854,6 +854,7 @@ const REMOTE_RESTORE_SCAN_CACHE_TTL_MS = 60000;
 const remoteRestoreScanCache = new Map(); // key -> { time, files }
 const remoteRestoreIndexCache = new Map(); // key -> { time, result }
 let bookmarkChangeTimeout = null;
+let bookmarkChangePostConfirmTimeout = null;
 // 添加一个变量标记是否是从syncDownloadState调用的onCreated处理
 let isProcessingHistoricalDownloads = false;
 // 记录扩展启动时间，用于区分历史下载和新下载
@@ -894,6 +895,26 @@ async function setBookmarkChangesDirty(isDirty) {
             [BOOKMARK_CHANGES_DIRTY_KEY]: isDirty === true
         });
     } catch (_) { }
+}
+
+function analysisContextMatchesStore(currentStore, options = {}) {
+    if ('expectedLastBookmarkChangeTime' in options) {
+        const expectedChangeTime = Number(options.expectedLastBookmarkChangeTime || 0);
+        const actualChangeTime = Number(currentStore?.lastBookmarkChangeTime || 0);
+        if (expectedChangeTime !== actualChangeTime) {
+            return false;
+        }
+    }
+
+    if ('expectedLastBookmarkDataTimestamp' in options) {
+        const expectedBaselineTs = options.expectedLastBookmarkDataTimestamp ?? null;
+        const actualBaselineTs = currentStore?.lastBookmarkData?.timestamp ?? null;
+        if (expectedBaselineTs !== actualBaselineTs) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function analysisHasNetChanges(stats = null) {
@@ -972,6 +993,46 @@ function buildAnalysisChangeDescription(stats, preferredLang = 'zh_CN') {
         : '';
 }
 
+async function syncDirtyStateIfAnalysisHasChanges(stats, options = {}) {
+    if (!analysisHasNetChanges(stats)) {
+        return false;
+    }
+
+    const currentStore = await browserAPI.storage.local.get([
+        BOOKMARK_CHANGES_DIRTY_KEY,
+        'lastBookmarkData',
+        'lastBookmarkChangeTime',
+        'autoSync'
+    ]);
+
+    const dirty = currentStore?.[BOOKMARK_CHANGES_DIRTY_KEY] === true;
+    if (dirty) {
+        return false;
+    }
+
+    if (!analysisContextMatchesStore(currentStore, options)) {
+        return false;
+    }
+
+    const updatePayload = {
+        [BOOKMARK_CHANGES_DIRTY_KEY]: true
+    };
+
+    if (currentStore?.autoSync !== true) {
+        updatePayload.hasBookmarkActivitySinceLastCheck = true;
+    }
+
+    await browserAPI.storage.local.set(updatePayload);
+
+    if (options.refreshBadge !== false) {
+        try {
+            await setBadge();
+        } catch (_) { }
+    }
+
+    return true;
+}
+
 async function clearDirtyStateIfAnalysisIsClean(stats, options = {}) {
     if (analysisHasNetChanges(stats)) {
         return false;
@@ -988,20 +1049,8 @@ async function clearDirtyStateIfAnalysisIsClean(stats, options = {}) {
         return false;
     }
 
-    if ('expectedLastBookmarkChangeTime' in options) {
-        const expectedChangeTime = Number(options.expectedLastBookmarkChangeTime || 0);
-        const actualChangeTime = Number(currentStore?.lastBookmarkChangeTime || 0);
-        if (expectedChangeTime !== actualChangeTime) {
-            return false;
-        }
-    }
-
-    if ('expectedLastBookmarkDataTimestamp' in options) {
-        const expectedBaselineTs = options.expectedLastBookmarkDataTimestamp ?? null;
-        const actualBaselineTs = currentStore?.lastBookmarkData?.timestamp ?? null;
-        if (expectedBaselineTs !== actualBaselineTs) {
-            return false;
-        }
+    if (!analysisContextMatchesStore(currentStore, options)) {
+        return false;
     }
 
     await setBookmarkChangesDirty(false);
@@ -4103,22 +4152,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 强制更新缓存分析数据
                     await updateAndCacheAnalysis();
 
-                    // 确保角标显示为蓝色（手动模式无变动）
-                    try {
-                        const { autoSync = false, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['autoSync', 'preferredLang']);
-                        if (!autoSync) {
-                            // 手动模式下，确保角标为蓝色
-                            const badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
-                            await browserAPI.action.setBadgeText({ text: badgeText });
-                            await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
-                            await browserAPI.storage.local.set({ isYellowHandActive: false });
-                        } else {
-                            // 自动模式下，使用正常的setBadge
-                            await setBadge();
-                        }
-                    } catch (badgeError) {
-                        await setBadge(); // 回退到正常的setBadge
-                    }
+                    // 统一走权威 badge 链路，避免通知窗口/提醒模块把颜色强制写成蓝色。
+                    await setBadge();
 
                     sendResponse({ success: true });
                 } catch (error) {
@@ -6431,6 +6466,10 @@ async function handleBookmarkChange() {
             if (dirtyBecameTrue) {
                 confirmedHasChanges = await confirmNetChangesBeforeMarkDirty('bookmark_change_first_dirty');
                 if (confirmedHasChanges) {
+                    if (bookmarkChangePostConfirmTimeout) {
+                        clearTimeout(bookmarkChangePostConfirmTimeout);
+                        bookmarkChangePostConfirmTimeout = null;
+                    }
                     const dirtyPayload = {
                         [BOOKMARK_CHANGES_DIRTY_KEY]: true
                     };
@@ -6443,6 +6482,19 @@ async function handleBookmarkChange() {
                 } else if (!autoSync) {
                     // 无净变化时确保手动提醒标志不残留
                     await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
+                }
+
+                if (!confirmedHasChanges) {
+                    if (bookmarkChangePostConfirmTimeout) {
+                        clearTimeout(bookmarkChangePostConfirmTimeout);
+                    }
+                    // 首次确认可能发生在拖拽/批量移动尚未完全落稳的中间态，补一次延迟复核。
+                    bookmarkChangePostConfirmTimeout = setTimeout(() => {
+                        bookmarkChangePostConfirmTimeout = null;
+                        updateAndCacheAnalysis().catch((error) => {
+                            console.warn('[handleBookmarkChange] delayed post-confirm analysis failed:', error);
+                        });
+                    }, 900);
                 }
             }
 
@@ -7091,7 +7143,7 @@ function normalizeCurrentChangesArchiveSettings(settings = {}) {
         : null;
 
     const formats = [format || 'html'];
-    const modes = [mode || 'simple'];
+    const modes = [mode || 'collection'];
 
     return { enabled, formats, modes };
 }
@@ -7102,8 +7154,9 @@ const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 function normalizeCurrentChangesPreviewModeForExport(value) {
     const mode = String(value || '').toLowerCase();
     if (mode === 'compact' || mode === 'simple') return 'compact';
+    if (mode === 'detailed') return 'detailed';
     if (mode === 'collection') return 'collection';
-    return 'detailed';
+    return 'collection';
 }
 
 function buildCurrentChangesPreviewStateSignature(meta = {}) {
@@ -10738,7 +10791,7 @@ async function exportSyncHistoryToCloud(options = {}) {
 
         // 获取视图设置（用于 WYSIWYG 导出）
         const historyViewSettings = settings.historyViewSettings || {
-            defaultMode: 'detailed',
+            defaultMode: 'collection',
             recordModes: {},
             recordExpandedStates: {}
         };
@@ -16077,6 +16130,10 @@ async function getBackupStatsInternal() {
             expectedLastBookmarkChangeTime: lastChangeTime,
             expectedLastBookmarkDataTimestamp: baselineTs
         });
+        await syncDirtyStateIfAnalysisHasChanges(stats, {
+            expectedLastBookmarkChangeTime: lastChangeTime,
+            expectedLastBookmarkDataTimestamp: baselineTs
+        });
 
         const response = {
             lastSyncTime,
@@ -16319,6 +16376,12 @@ async function updateAndCacheAnalysis() {
 
         try {
             await clearDirtyStateIfAnalysisIsClean(analysis, {
+                expectedLastBookmarkChangeTime: expectedLastChangeTime,
+                expectedLastBookmarkDataTimestamp: expectedBaselineTs
+            });
+        } catch (_) { }
+        try {
+            await syncDirtyStateIfAnalysisHasChanges(analysis, {
                 expectedLastBookmarkChangeTime: expectedLastChangeTime,
                 expectedLastBookmarkDataTimestamp: expectedBaselineTs
             });

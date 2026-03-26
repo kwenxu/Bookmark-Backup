@@ -641,17 +641,6 @@ async function onAutoBackupToggled(isAutoBackupEnabled, shouldCloseWindow = true
  */
 async function onManualBackupCompleted() {
     markManualBackupDone();
-
-    // 备份完成后将角标颜色更新为蓝色（与初始手动备份模式一致）
-    try {
-        const badgeColor = '#2196F3'; // 蓝色，表示手动模式无变动
-        if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
-            await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
-        } else if (typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
-            browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
-        }
-    } catch (error) {
-    }
 }
 
 /**
@@ -707,27 +696,6 @@ browserAPI.runtime.onConnect.addListener((port) => {
     }
 });
 
-// =======================================================
-// 浏览器运行时消息监听器 (通用)
-// =======================================================
-/**
- * 监听来自浏览器运行时（如Popup、Content Script等）的通用消息。
- * 此监听器与 `handleRuntimeMessage` 共同处理消息，但 `handleRuntimeMessage` 优先级更高。
- * @param {object} message - 消息对象。
- * @param {object} sender - 发送者信息。
- * @param {function} sendResponse - 回复函数。
- * @returns {boolean} - 是否异步响应。
- */
-browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // 处理手动备份完成消息
-    if (message.action === "manualBackupCompleted") {
-        onManualBackupCompleted();
-    }
-
-    // 更好的做法是将所有消息处理逻辑合并到一个 onMessage 监听器中
-    // 但为了清晰地添加新功能，暂时分开写，后续应考虑合并
-    return false;
-});
 // =======================================================
 // 模块导出
 // =======================================================

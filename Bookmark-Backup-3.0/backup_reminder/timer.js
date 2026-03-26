@@ -204,7 +204,6 @@ const debugTools = {
         const record = { timestamp, oldPhase, newPhase, reason };
         this.phaseHistory.unshift(record);
         if (this.phaseHistory.length > 20) { this.phaseHistory.pop(); }
-        console.log('阶段变更记录:', record);
         browserAPI.storage.local.set({ phaseHistoryDebug: this.phaseHistory });
     },
 
@@ -1321,7 +1320,7 @@ async function setupFixedTimeAlarmsOnStartup() {
             } else { addLog(`准点定时2今天 ${settings.fixedTime2} 已过，不设置闹钟`); }
         } else { addLog("准点定时2未启用，跳过设置"); }
 
-        if (settings.reminderEnabled && !await isAutoBackupEnabled()) {
+        if (settings.reminderEnabled && !(await isAutoBackupEnabled())) {
             if (manualStartupResetHandled) {
                 manualStartupResetHandled = false;
             } else {

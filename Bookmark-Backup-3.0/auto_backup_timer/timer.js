@@ -63,7 +63,6 @@ export function setCallbacks(checkChanges, syncBookmarks) {
 function addLog(message) {
     const now = new Date();
     const timeString = now.toLocaleString();
-    console.log(`[自动备份定时器] [${timeString}] ${message}`);
 }
 
 /**

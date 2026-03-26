@@ -89,7 +89,7 @@ function scheduleFolderExpand(targetNode) {
                             loadPermanentFolderChildrenLazy(nodeId, children, 0, null);
                         }
                     } catch (loadErr) {
-                        console.warn('[指针拖拽展开] 永久栏目懒加载失败:', loadErr);
+                        
                     }
                 }
 
@@ -108,7 +108,7 @@ function scheduleFolderExpand(targetNode) {
 
 function attachPointerDragEvents(treeContainer) {
     if (!treeContainer) {
-        console.warn('[指针拖拽] 未提供树容器');
+        
         return;
     }
 
@@ -117,8 +117,6 @@ function attachPointerDragEvents(treeContainer) {
         return;
     }
     treeContainer.dataset.pointerDragAttached = 'true';
-
-    console.log('[指针拖拽] 为容器绑定指针拖拽事件:', treeContainer.id || treeContainer.className);
 
     // 使用事件委托，只在容器上监听
     treeContainer.addEventListener('pointerdown', handlePointerDown);
@@ -323,8 +321,6 @@ function startPointerDrag(e) {
             __hoverExpandState.lastAt.clear();
         }
     } catch (_) { }
-
-    console.log('[指针拖拽] 开始拖拽:', draggedElement.dataset.nodeTitle);
 }
 
 function performDrop(draggedElement, targetElement, event) {
@@ -333,12 +329,6 @@ function performDrop(draggedElement, targetElement, event) {
     const sourceId = draggedElement.dataset.nodeId;
     const targetId = targetElement.dataset.nodeId;
     const targetIsFolder = targetElement.dataset.nodeType === 'folder';
-
-    console.log('[指针拖拽] 执行放置:', {
-        from: sourceId,
-        to: targetId,
-        targetIsFolder
-    });
 
     // 获取放置位置（before/inside/after）
     let position = 'inside';
@@ -353,7 +343,7 @@ function performDrop(draggedElement, targetElement, event) {
             event
         });
     } else {
-        console.warn('[指针拖拽] 未找到共享移动接口');
+        
     }
 }
 
@@ -443,5 +433,4 @@ function cleanupPointerDrag() {
 // 导出到全局
 if (typeof window !== 'undefined') {
     window.attachPointerDragEvents = attachPointerDragEvents;
-    console.log('[指针拖拽] 模块已加载');
 }

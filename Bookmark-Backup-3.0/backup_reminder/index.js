@@ -235,7 +235,6 @@ function handleRuntimeMessage(message, sender, sendResponse) {
     }
 
     if (message.action === "zeroChangeDetected") {
-        console.log('注意: 零变化检测已在timer.js中提前处理，该消息不再需要');
         return false;
     }
 
@@ -492,7 +491,7 @@ function handleRuntimeMessage(message, sender, sendResponse) {
             try {
                 if (activeNotificationWindowId !== null) {
                     try { await clearNotification(activeNotificationWindowId); }
-                    catch (err) { console.log('清除现有通知窗口失败，但继续创建测试通知:', err); }
+                    catch (err) {}
                     updateActiveNotificationWindowId(null);
                 }
                 const windowId = await showTestNotification(null);
@@ -512,8 +511,12 @@ function handleRuntimeMessage(message, sender, sendResponse) {
         try {
             browserAPI.runtime.sendMessage({ action: "showReminderSettings" }, (response) => {
                 const error = browserAPI.runtime.lastError;
-                if (error) { console.log('发送showReminderSettings消息时出错:', error.message); sendResponse({ success: false, error: error.message }); }
-                else { console.log('showReminderSettings消息发送成功'); sendResponse({ success: true }); }
+                if (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+                else {
+                    sendResponse({ success: true });
+                }
             });
         } catch (error) {
             sendResponse({ success: false, error: error.message });
@@ -538,7 +541,6 @@ function handleRuntimeMessage(message, sender, sendResponse) {
         (async () => {
             try {
                 await browserAPI.storage.local.set({ reminderSettings: message.settings });
-                console.log('[index.js] 尝试设置准点定时闹钟...');
                 await setupFixedTimeAlarms(message.settings);
                 if (message.settings.reminderEnabled === false) {
                     stopReminderTimer();
@@ -552,8 +554,8 @@ function handleRuntimeMessage(message, sender, sendResponse) {
                         const newMinutes = message.settings.firstReminderMinutes;
                         if (newMinutes > 0) {
                             await startReminderTimer(true);
-                        } else { console.log('[index.js] 新设置的时间间隔为0或无效，不启动计时器'); }
-                    } else { console.log('[index.js] 自动备份已启用，不启动循环计时器'); }
+                        } else {}
+                    } else {}
                 }
                 sendResponse({ success: true });
             } catch (error) {
@@ -562,7 +564,9 @@ function handleRuntimeMessage(message, sender, sendResponse) {
         })();
         return true;
     } else if (message.action === "pauseReminderTimer") {
-        if (message.pausedBy === 'settingsUI') { isTimerPausedBySettingsUI = true; console.log('计时器因设置UI打开而被标记为暂停'); }
+        if (message.pausedBy === 'settingsUI') {
+            isTimerPausedBySettingsUI = true;
+        }
         pauseReminderTimer();
         sendResponse({ success: true });
         return true;

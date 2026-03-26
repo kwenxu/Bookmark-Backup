@@ -869,7 +869,7 @@ function enqueueDeferredPostSyncArtifacts(taskFactory) {
             await taskFactory();
         })
         .catch((error) => {
-            console.warn('[deferredPostSyncArtifactsQueue] task failed:', error);
+            
         });
     return deferredPostSyncArtifactsQueue;
 }
@@ -1080,7 +1080,7 @@ async function confirmNetChangesBeforeMarkDirty(reason = 'bookmark_event') {
         return analysisHasNetChanges(analysis);
     } catch (error) {
         // fail-open：确认失败时保留“有变化”判定，避免漏掉真实变化
-        console.warn(`[confirmNetChangesBeforeMarkDirty] ${reason} failed, fallback to dirty=true:`, error);
+        
         return true;
     }
 }
@@ -1126,7 +1126,7 @@ async function runSparseDirtyRecheck(reason = 'generic', options = {}) {
         await getBackupStatsInternal();
         return { success: true };
     } catch (error) {
-        console.warn(`[runSparseDirtyRecheck] ${reason} failed:`, error);
+        
         return { success: false, error: error?.message || String(error) };
     } finally {
         sparseDirtyRecheckInFlight = false;
@@ -1437,7 +1437,7 @@ async function openHistoryViewFromCommand(view) {
         const url = browserAPI.runtime.getURL(`history_html/history.html?view=${view}`);
         await browserAPI.tabs.create({ url });
     } catch (e) {
-        console.warn('[Commands] 打开视图失败:', view, e);
+        
     }
 }
 
@@ -1543,10 +1543,8 @@ function initializeOperationTracking() {
                 recentModifiedIds: filteredModified,
                 recentAddedIds: filteredAdded
             });
-
-            console.log('[书签Git] 已从记录中移除删除的节点:', removedId);
         } catch (e) {
-            console.warn('[书签Git] 移除删除节点失败:', e);
+            
         }
     }
 
@@ -1720,7 +1718,7 @@ async function initializeBadge() {
             try {
                 await runSparseDirtyRecheck('initialize-badge', { force: true });
             } catch (reconcileError) {
-                console.warn('[initializeBadge] 启动兜底核验失败:', reconcileError);
+                
             }
         }
 
@@ -1821,7 +1819,6 @@ async function migrateToSplitStorage() {
         const needsMigration = syncHistory.some(r => r.bookmarkTree !== undefined && r.bookmarkTree !== null);
         if (!needsMigration) return;
 
-        console.log('[Migration] Starting migration to split storage (Index vs Data)...');
         const newIndex = [];
         const storageUpdates = {};
 
@@ -1841,7 +1838,6 @@ async function migrateToSplitStorage() {
 
         storageUpdates.syncHistory = newIndex;
         await browserAPI.storage.local.set(storageUpdates);
-        console.log('[Migration] Migration completed. Records processed:', newIndex.length);
     } catch (e) {
         console.error('[Migration] Failed:', e);
     }
@@ -1932,7 +1928,6 @@ browserAPI.runtime.onStartup.addListener(async () => {
             checkBookmarkChangesForAutoBackup,  // 检查书签变化
             syncBookmarks                        // 执行备份
         );
-        console.log('[自动备份定时器] 回调函数已设置');
     } catch (error) {
         console.error('[自动备份定时器] 回调函数设置失败:', error);
     }
@@ -1944,18 +1939,13 @@ browserAPI.runtime.onStartup.addListener(async () => {
     try {
         const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
         if (autoSync) {
-            console.log('[自动备份定时器] 浏览器启动，初始化定时器并检查遗漏任务');
-
             // 检查是否有变化（角标是否应该黄）
             const changeResult = await checkBookmarkChangesForAutoBackup();
             if (changeResult && changeResult.hasChanges) {
-                console.log('[自动备份定时器] 检测到书签变化，启动定时器系统');
                 // 直接初始化定时器系统，传入 true 强制检查遗漏
                 await initializeAutoBackupTimerSystem(true);
                 autoBackupTimerRunning = true; // 标记为运行中
-            } else {
-                console.log('[自动备份定时器] 无书签变化，跳过遗漏检查和定时器启动');
-            }
+            } else {}
         }
     } catch (error) {
         console.error('[自动备份定时器] 定时器初始化失败:', error);
@@ -1984,13 +1974,12 @@ async function syncDownloadState() {
                     // 检查是否为书签备份文件 - 使用统一文件夹路径
                     return (
                         // 1. 路径中包含统一父文件夹
+                        (// 4. 数据URL方式的HTML内容
                         exportRootFolderCandidates.some(root => item.filename.includes(`/${root}/`)) ||
                         // 2. 路径中包含Bookmarks目录（兼容旧版）
                         item.filename.includes('/Bookmarks/') ||
                         // 3. 路径中包含Bookmarks_History目录（兼容旧版）
-                        item.filename.includes('/Bookmarks_History/') ||
-                        // 4. 数据URL方式的HTML内容
-                        (item.url && item.url.includes('data:text/html') && item.url.includes('charset=utf-8'))
+                        item.filename.includes('/Bookmarks_History/') || (item.url && item.url.includes('data:text/html') && item.url.includes('charset=utf-8')))
                     );
                 }));
             });
@@ -2041,13 +2030,12 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
         // 使用更准确的条件识别书签备份下载 - 使用统一文件夹路径
         const isBookmarkDownload = downloadItem.filename && (
             // 1. 路径中包含统一父文件夹
+            (// 4. 数据URL方式的HTML内容
             exportRootFolderCandidates.some(root => downloadItem.filename.includes(`/${root}/`)) ||
             // 2. 路径中包含Bookmarks目录（兼容旧版）
             downloadItem.filename.includes('/Bookmarks/') ||
             // 3. 路径中包含Bookmarks_History目录（兼容旧版）
-            downloadItem.filename.includes('/Bookmarks_History/') ||
-            // 4. 数据URL方式的HTML内容
-            (downloadItem.url && downloadItem.url.includes('data:text/html') && downloadItem.url.includes('charset=utf-8'))
+            downloadItem.filename.includes('/Bookmarks_History/') || (downloadItem.url && downloadItem.url.includes('data:text/html') && downloadItem.url.includes('charset=utf-8')))
         );
 
         // 判断是否为历史下载项的重新通知（根据启动时间或处理标志）
@@ -2583,7 +2571,7 @@ const BookmarkSnapshotCache = {
         this.rebuildTimer = setTimeout(() => {
             this.rebuildTimer = null;
             this.ensureFresh().catch((e) => {
-                console.warn('[BookmarkSnapshotCache] rebuild failed:', reason, e);
+                
             });
         }, 800);
     }
@@ -2613,7 +2601,6 @@ async function enterBookmarkBulkChangeMode(reason = '') {
     }
 
     isBookmarkBulkChanging = true;
-    console.log('[BulkGuard] Enter bulk bookmark change mode:', reason);
 
     try {
         await browserAPI.storage.local.set({ bookmarkBulkChangeFlag: true });
@@ -2634,8 +2621,6 @@ async function exitBookmarkBulkChangeMode() {
     isBookmarkBulkChanging = false;
     bookmarkBulkWindowStart = 0;
     bookmarkBulkEventCount = 0;
-
-    console.log('[BulkGuard] Exit bulk bookmark change mode');
 
     try {
         await browserAPI.storage.local.set({ bookmarkBulkChangeFlag: false });
@@ -3078,7 +3063,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                         }
                     }
                 } catch (diffError) {
-                    console.warn('[triggerRestoreBackup] 恢复记录差异修正失败:', diffError);
+                    
                 }
 
                 syncHistory[targetIndex] = targetRecord;
@@ -3157,7 +3142,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                         }
                     });
                 } catch (postSyncError) {
-                    console.warn('[triggerRestoreBackup] 恢复后同步变化归档或备份历史log失败:', postSyncError);
+                    
                 }
             }
         }
@@ -3772,7 +3757,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const baseFileName =
                         message.fileName ||
                         `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
-                    const lang = message.lang || await getCurrentLang();
+                    const lang = message.lang || (await getCurrentLang());
 
                     const config = await browserAPI.storage.local.get([
                         'githubRepoToken',
@@ -3989,7 +3974,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
-                    const lang = message.lang || await getCurrentLang();
+                    const lang = message.lang || (await getCurrentLang());
                     const localHistoryFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const downloadId = await new Promise((resolve, reject) => {
@@ -4068,7 +4053,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (!folderKey) throw new Error('缺少导出类型');
                     if (!contentArrayBuffer && (content == null || content === '')) throw new Error('缺少导出内容');
 
-                    const lang = message.lang || await getCurrentLang();
+                    const lang = message.lang || (await getCurrentLang());
 
                     const [webdav, githubRepo] = await Promise.all([
                         uploadExportFileToWebDAV({
@@ -4404,7 +4389,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if (requestedStrategy === 'patch') {
                                 throw patchError;
                             }
-                            console.warn('[revertAllToLastBackup] Patch revert failed, fallback to overwrite:', patchError);
+                            
                             appliedStrategy = 'overwrite';
                             await executeBookmarkOperationWithAutoRollback(async () => {
                                 await restoreSnapshotTree(tree, {
@@ -4436,7 +4421,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         });
                         await clearRestoreRecoveryTransactionFully(completedTransaction);
                     } catch (cleanupError) {
-                        console.warn('[revertAllToLastBackup] transaction cleanup failed:', cleanupError);
+                        
                     }
 
                     sendResponse({
@@ -4700,7 +4685,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             });
                             await clearRestoreRecoveryTransactionFully(completedTransaction);
                         } catch (cleanupError) {
-                            console.warn('[restoreToHistoryRecord] merge transaction cleanup failed:', cleanupError);
+                            
                         }
 
                         sendResponse({
@@ -4817,7 +4802,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if (requestedStrategy === 'patch') {
                                 throw patchError;
                             }
-                            console.warn('[restoreToHistoryRecord] Patch restore failed, fallback to overwrite:', patchError);
+                            
                             appliedStrategy = 'overwrite';
                             await executeBookmarkOperationWithAutoRollback(async () => {
                                 await restoreSnapshotTree(tree, {
@@ -4849,7 +4834,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         });
                         await clearRestoreRecoveryTransactionFully(completedTransaction);
                     } catch (cleanupError) {
-                        console.warn('[restoreToHistoryRecord] transaction cleanup failed:', cleanupError);
+                        
                     }
 
                     sendResponse({
@@ -5116,15 +5101,11 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                         if (!taskResult.success && !taskResult.skipped && taskResult.error) {
                                             errors.push(taskResult.error);
                                         }
-                                        console.log(
-                                            `[initSync] ${targetName} ${taskResult.success ? 'success' : 'failed'} (${durationMs}ms)`
-                                            + (taskResult.error ? `: ${taskResult.error}` : '')
-                                        );
                                         return;
                                     }
                                     const reasonText = item?.reason?.message || String(item?.reason || '初始化子任务异常');
                                     errors.push(reasonText);
-                                    console.warn('[initSync] 子任务异常:', reasonText);
+                                    
                                 });
                             }
 
@@ -5428,7 +5409,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const forceRefresh = message.forceRefresh === true;
 
             if (forceRefresh) {
-                console.log('[getBackupStats] 强制刷新缓存...');
                 updateAndCacheAnalysis()
                     .then(stats => {
                         browserAPI.storage.local.get(['lastSyncTime'], (data) => {
@@ -5763,12 +5743,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true; // 异步响应
 
         } else if (message.action === "clearSyncHistoryPartial") {
-            // 部分删除备份历史记录（删除最旧的N条，保留最新的记录）
-            console.log('[clearSyncHistoryPartial] Received request, deleteCount:', message.deleteCount);
-
             const deleteCount = parseInt(message.deleteCount, 10) || 0;
             if (deleteCount <= 0) {
-                console.log('[clearSyncHistoryPartial] deleteCount is 0 or invalid, returning success');
                 sendResponse({ success: true, deleted: 0 });
                 return true;
             }
@@ -5778,17 +5754,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const data = await browserAPI.storage.local.get(['syncHistory']);
                     let syncHistory = data.syncHistory || [];
 
-                    console.log('[clearSyncHistoryPartial] Current history length:', syncHistory.length);
-
                     if (syncHistory.length === 0) {
-                        console.log('[clearSyncHistoryPartial] No history to delete');
                         sendResponse({ success: true, deleted: 0, remaining: 0 });
                         return;
                     }
 
                     // 计算实际要删除的数量（不能超过总数）
                     const actualDeleteCount = Math.min(deleteCount, syncHistory.length);
-                    console.log('[clearSyncHistoryPartial] Actual delete count:', actualDeleteCount);
 
                     // 保留最新的记录（删除最旧的）
                     const remainingHistory = syncHistory.slice(actualDeleteCount);
@@ -5839,7 +5811,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
                     }
 
-                    console.log('[clearSyncHistoryPartial] Success, deleted:', actualDeleteCount, 'remaining:', remainingHistory.length);
                     sendResponse({
                         success: true,
                         deleted: actualDeleteCount,
@@ -5854,7 +5825,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             })();
             return true; // 异步响应
-
         } else if (message.action === "deleteSyncHistoryItems") {
             // 删除指定的备份历史记录
             const fingerprintsToDelete = message.fingerprints || [];
@@ -6415,7 +6385,7 @@ function enqueueRealtimeAutoBackup(reason = null) {
     }
 
     flushRealtimeAutoBackupQueue().catch((error) => {
-        console.warn('[RealtimeAutoBackupQueue] flush failed:', error);
+        
     });
 }
 
@@ -6492,7 +6462,7 @@ async function handleBookmarkChange() {
                     bookmarkChangePostConfirmTimeout = setTimeout(() => {
                         bookmarkChangePostConfirmTimeout = null;
                         updateAndCacheAnalysis().catch((error) => {
-                            console.warn('[handleBookmarkChange] delayed post-confirm analysis failed:', error);
+                            
                         });
                     }, 900);
                 }
@@ -8601,11 +8571,11 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
         }));
 
     if (webdavUploadFailures.length > 0) {
-        console.warn(`[syncVersionedInfoLogIfNeeded] WebDAV 上传失败: ${webdavUploadFailures.map(item => `${item.fileName} -> ${item.error}`).join(' | ')}`);
+        
     }
 
     if (githubUploadFailures.length > 0) {
-        console.warn(`[syncVersionedInfoLogIfNeeded] GitHub 上传失败: ${githubUploadFailures.map(item => `${item.fileName}${item.path ? ` (${item.path})` : ''} -> ${item.error}`).join(' | ')}`);
+        
     }
 
     const success = versionedResult?.success === true;
@@ -9141,11 +9111,11 @@ async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang,
         }));
 
     if (webdavUploadFailures.length > 0) {
-        console.warn(`[uploadCurrentChangesArtifactsToTargets] WebDAV 上传失败: ${webdavUploadFailures.map(item => `${item.fileName} -> ${item.error}`).join(' | ')}`);
+        
     }
 
     if (githubUploadFailures.length > 0) {
-        console.warn(`[uploadCurrentChangesArtifactsToTargets] GitHub 上传失败: ${githubUploadFailures.map(item => `${item.fileName}${item.path ? ` (${item.path})` : ''} -> ${item.error}`).join(' | ')}`);
+        
     }
 
     const success = results.some(r => r && r.success === true);
@@ -9201,7 +9171,7 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
             allowedTargets: options.allowedTargets || null
         });
     } catch (error) {
-        console.warn('[exportCurrentChangesArchiveToCloud] failed:', error);
+        
         return { success: false, error: error?.message || '导出当前变化自动归档失败' };
     }
 }
@@ -10431,7 +10401,7 @@ function generateFullBookmarkTreeHtml(record, historyViewSettings, lang = 'zh_CN
                 changeMap = prepared.changeMap || new Map();
             }
         } catch (prepError) {
-            console.warn('[generateFullBookmarkTreeHtml] 变化检测失败，使用原始树:', prepError);
+            
         }
 
         // 获取展开状态（WYSIWYG）
@@ -10599,7 +10569,7 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
                 changeMap = prepared.changeMap || new Map();
             }
         } catch (prepError) {
-            console.warn('[generateFullBookmarkTreeJson] 变化检测失败，使用原始树:', prepError);
+            
         }
 
         // 获取展开状态（WYSIWYG）
@@ -10779,13 +10749,11 @@ async function exportSyncHistoryToCloud(options = {}) {
 
         // 检查是否启用备份历史自动同步
         if (settings.historySyncEnabled === false) {
-            console.log('[exportSyncHistoryToCloud] 备份历史同步已禁用，跳过导出');
             return { success: true, skipped: true, reason: 'disabled' };
         }
 
         const syncHistory = settings.syncHistory || [];
         if (syncHistory.length === 0) {
-            console.log('[exportSyncHistoryToCloud] 无备份历史，跳过导出');
             return { success: true, skipped: true };
         }
 
@@ -10795,16 +10763,11 @@ async function exportSyncHistoryToCloud(options = {}) {
             recordModes: {},
             recordExpandedStates: {}
         };
-        console.log('[exportSyncHistoryToCloud] 视图设置:', {
-            defaultMode: historyViewSettings.defaultMode,
-            recordModesCount: Object.keys(historyViewSettings.recordModes || {}).length,
-            expandedStatesCount: Object.keys(historyViewSettings.recordExpandedStates || {}).length
-        });
 
         const format = settings.historySyncFormat || 'json'; // 默认 JSON（包含完整恢复信息）
         const legacyPackMode = String(settings.historySyncPackMode || 'zip').trim().toLowerCase();
         if (legacyPackMode && legacyPackMode !== 'zip') {
-            console.warn('[exportSyncHistoryToCloud] 旧的 merge 打包模式已移除，自动回退到 ZIP 归档:', legacyPackMode);
+            
         }
         const lang = await getCurrentLang();
         const isZh = lang === 'zh_CN';
@@ -10826,8 +10789,6 @@ async function exportSyncHistoryToCloud(options = {}) {
 
         // ============= ZIP 归档模式 =============
         {
-            console.log('[exportSyncHistoryToCloud] 使用 ZIP 归档模式');
-
             // Split storage：Zip 模式需要从独立 key 加载 bookmarkTree
             try {
                 const dataKeys = Array.from(new Set(syncHistory
@@ -10847,7 +10808,7 @@ async function exportSyncHistoryToCloud(options = {}) {
                     }
                 }
             } catch (e) {
-                console.warn('[exportSyncHistoryToCloud] Zip 模式预加载 bookmarkTree 失败:', e);
+                
             }
 
             const files = [];
@@ -10880,7 +10841,6 @@ async function exportSyncHistoryToCloud(options = {}) {
 
                     // 使用 generateFullBookmarkTreeHtml/Json 生成完整书签树（支持变化检测和 WYSIWYG 展开状态）
                     if (format === 'html') {
-                        console.log('[exportSyncHistoryToCloud] 生成 HTML:', record.time);
                         const htmlContent = generateFullBookmarkTreeHtml(record, historyViewSettings, lang, syncHistory);
                         files.push({
                             name: `${filePath}.html`,
@@ -10888,7 +10848,6 @@ async function exportSyncHistoryToCloud(options = {}) {
                         });
                     }
                     if (format === 'json') {
-                        console.log('[exportSyncHistoryToCloud] 生成 JSON:', record.time);
                         const jsonContent = generateFullBookmarkTreeJson(record, historyViewSettings, lang, syncHistory);
                         files.push({
                             name: `${filePath}.json`,
@@ -10899,8 +10858,6 @@ async function exportSyncHistoryToCloud(options = {}) {
                     console.error('[exportSyncHistoryToCloud] 处理记录失败:', record.time, recordError);
                 }
             }
-
-            console.log('[exportSyncHistoryToCloud] 生成文件数量:', files.length);
 
             if (files.length > 0) {
                 // 创建 ZIP Blob
@@ -10927,14 +10884,11 @@ async function exportSyncHistoryToCloud(options = {}) {
         }
 
         if (tasks.length === 0) {
-            console.log('[exportSyncHistoryToCloud] 没有配置任何导出目标');
             return { success: true, skipped: true };
         }
 
         await Promise.all(tasks);
-        console.log('[exportSyncHistoryToCloud] 备份历史导出完成');
         return { success: true };
-
     } catch (error) {
         console.error('[exportSyncHistoryToCloud] 导出失败:', error);
         return { success: false, error: error.message };
@@ -10954,7 +10908,7 @@ async function downloadsRemoveFileSafe(downloadId) {
             browserAPI.downloads.removeFile(id, () => {
                 const err = browserAPI.runtime?.lastError;
                 if (err && !shouldIgnoreDownloadsLastErrorMessage(err.message)) {
-                    console.warn('[downloadsRemoveFileSafe] removeFile failed:', err.message);
+                    
                 }
                 resolve();
             });
@@ -10972,7 +10926,7 @@ async function downloadsEraseSafe(query) {
             browserAPI.downloads.erase(q, () => {
                 const err = browserAPI.runtime?.lastError;
                 if (err && !shouldIgnoreDownloadsLastErrorMessage(err.message)) {
-                    console.warn('[downloadsEraseSafe] erase failed:', err.message);
+                    
                 }
                 resolve();
             });
@@ -11011,10 +10965,8 @@ async function uploadHistoryBinaryToWebDAV(base64Content, fileName, rootFolder, 
             },
             body: bytes.buffer
         });
-
-        console.log(`[uploadHistoryBinaryToWebDAV] 上传成功: ${fileName}`);
     } catch (e) {
-        console.warn('[uploadHistoryBinaryToWebDAV] 上传失败:', e);
+        
     }
 }
 
@@ -11037,10 +10989,8 @@ async function uploadHistoryBinaryToGitHub(base64Content, fileName, subFolder, s
             message: `Backup History Archive: ${fileName}`,
             contentBase64: base64Content
         });
-
-        console.log(`[uploadHistoryBinaryToGitHub] 上传成功: ${fileName}`);
     } catch (e) {
-        console.warn('[uploadHistoryBinaryToGitHub] 上传失败:', e);
+        
     }
 }
 
@@ -11076,11 +11026,10 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
                         if (exists) {
                             await downloadsRemoveFileSafe(lastId);
                             await downloadsEraseSafe({ id: lastId });
-                            console.log('[downloadHistoryBinaryLocal] 通过ID已删除旧ZIP文件:', lastId);
                             deleted = true;
                         }
                     } catch (e) {
-                        console.warn('[downloadHistoryBinaryLocal] ZIP ID删除失败:', e);
+                        
                     }
                 }
 
@@ -11100,15 +11049,14 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
                             try {
                                 await downloadsRemoveFileSafe(item.id);
                                 await downloadsEraseSafe({ id: item.id });
-                                console.log('[downloadHistoryBinaryLocal] 通过搜索已删除旧ZIP文件:', item.filename);
                             } catch (err) {
-                                console.warn('[downloadHistoryBinaryLocal] ZIP搜索删除失败:', err);
+                                
                             }
                         }
                     }
                 }
             } catch (cleanupError) {
-                console.warn('[downloadHistoryBinaryLocal] 清理旧ZIP文件失败:', cleanupError);
+                
             }
         }
 
@@ -11132,10 +11080,8 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
                 }
             });
         });
-
-        console.log(`[downloadHistoryBinaryLocal] 下载成功: ${fileName}`);
     } catch (e) {
-        console.warn('[downloadHistoryBinaryLocal] 下载失败:', e);
+        
     }
 }
 
@@ -11162,10 +11108,8 @@ async function uploadHistoryToWebDAV(content, fileName, rootFolder, subFolder, s
             },
             body: content
         });
-
-        console.log(`[uploadHistoryToWebDAV] 上传成功: ${fileName}`);
     } catch (e) {
-        console.warn('[uploadHistoryToWebDAV] 上传失败:', e);
+        
     }
 }
 
@@ -11188,10 +11132,8 @@ async function uploadHistoryToGitHub(content, fileName, subFolder, settings, lan
             message: `Backup History: ${fileName}`,
             contentBase64: textToBase64(content)
         });
-
-        console.log(`[uploadHistoryToGitHub] 上传成功: ${fileName}`);
     } catch (e) {
-        console.warn('[uploadHistoryToGitHub] 上传失败:', e);
+        
     }
 }
 
@@ -11263,7 +11205,7 @@ async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, ov
             });
         });
     } catch (e) {
-        console.warn('[downloadHistoryLocal] 下载失败:', e);
+        
     }
 }
 
@@ -11298,9 +11240,7 @@ if (browserAPI.alarms) {
 // =================================================================================
 
 // 双向备份书签
-async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoBackup = false, autoBackupReason = null) { // 添加 autoBackupReason 参数
-    console.log('[syncBookmarks] 参数:', { isManual, direction, isSwitchToAutoBackup, autoBackupReason });
-
+async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoBackup = false, autoBackupReason = null) {
     if (isSyncing) {
         return { success: false, error: '已有备份操作正在进行' };
     }
@@ -11308,7 +11248,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
     // Session lock: 防止 SW 重启后内存锁丢失导致并发备份
     const lockAcquired = await acquireSyncLock();
     if (!lockAcquired) {
-        console.warn('[syncBookmarks] session lock 未释放，可能有未完成的备份（120s 内自动过期）');
+        
         return { success: false, error: '已有备份操作正在进行（session lock）' };
     }
 
@@ -11788,8 +11728,6 @@ async function clearAllExtensionCacheStorage() {
 // 完整版：清除扩展持久化存储、页面本地存储、IndexedDB、CacheStorage，并重载扩展
 async function resetAllData() {
     try {
-        console.log('[resetAllData] 开始完全重置扩展...');
-
         // 1. 关闭所有扩展页面，释放 IndexedDB 连接
         try {
             const extensionOrigin = browserAPI.runtime.getURL('');
@@ -11812,8 +11750,6 @@ async function resetAllData() {
 
         // 4. 清除所有闹钟
         await browserAPI.alarms.clearAll();
-
-        console.log('[resetAllData] 存储已清除，重新加载扩展...');
 
         // 5. 重新加载扩展，内存态由新的 service worker / 页面上下文自然重建
         setTimeout(() => { browserAPI.runtime.reload(); }, 350);
@@ -12766,7 +12702,7 @@ async function getRestoreRecoveryTransactionStatus(options = {}) {
     if (transaction && markPromptShown && !isBookmarkRestoring) {
         const shouldIncrementInCurrentSession = await shouldIncrementRestoreRecoveryPromptCountInCurrentSession(transaction.sessionId)
         if (shouldIncrementInCurrentSession) {
-            transaction = await incrementRestoreRecoveryPromptCount(transaction.sessionId, uiSource) || transaction
+            transaction = (await incrementRestoreRecoveryPromptCount(transaction.sessionId, uiSource)) || transaction
         }
         if (shouldBypassRestoreRecoveryWriteLock(transaction)) {
             await abandonRestoreRecoveryTransaction(transaction)
@@ -12868,7 +12804,7 @@ async function getRestoreRecoveryWriteLockedResponse(preferredLang = '') {
     }
 
     const capabilities = await getRestoreRecoveryTransactionCapabilities(transaction)
-    const lang = String(preferredLang || '').trim() || await getCurrentLang()
+    const lang = String(preferredLang || '').trim() || (await getCurrentLang())
     return buildRestoreRecoveryWriteLockedResponse(lang, transaction, capabilities)
 }
 
@@ -13225,7 +13161,7 @@ async function continueRestoreRecoveryTransaction() {
             await clearRestoreRecoveryTransactionFully(completedTransaction)
             await clearRestoreRecoveryResidualCaches()
         } catch (cleanupError) {
-            console.warn('[restoreRecoveryTransaction] continue cleanup failed:', cleanupError)
+            
         }
 
         return {
@@ -13382,7 +13318,7 @@ async function rollbackRestoreRecoveryTransaction() {
             await clearRestoreRecoveryTransactionFully(completedTransaction)
             await clearRestoreRecoveryResidualCaches()
         } catch (cleanupError) {
-            console.warn('[restoreRecoveryTransaction] rollback cleanup failed:', cleanupError)
+            
         }
 
         return {
@@ -14304,7 +14240,7 @@ async function executeBookmarkOperationWithAutoRollback(operationExecutor, optio
     } = options;
 
     const normalizedRollbackSnapshot = normalizeRestoreRecoverySnapshot(rollbackSnapshot);
-    const rollbackSnapshotTree = normalizedRollbackSnapshot || await browserAPI.bookmarks.getTree();
+    const rollbackSnapshotTree = normalizedRollbackSnapshot || (await browserAPI.bookmarks.getTree());
 
     try {
         return await operationExecutor();
@@ -14592,9 +14528,6 @@ async function updateBookmarks(bookmarksData) {
 
 // 更新备份状态的辅助函数
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
-    // <--- Log 11
-    console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason, snapshotFingerprint, overwriteMode: options?.overwriteMode });
-
     try {
         const postSyncWarnings = [];
         const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned', lastBookmarkChangeTime = 0 } = await browserAPI.storage.local.get([
@@ -14760,11 +14693,11 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                             }
                         }
                     } catch (e) {
-                        console.warn('[updateSyncStatus] 计算显式移动ID列表失败:', e);
+                        
                     }
                 }
             } catch (e) {
-                console.warn('[updateSyncStatus] 计算净变化失败，回退到 recentXxxIds:', e);
+                
             }
 
             bookmarkStats = {
@@ -14849,7 +14782,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     stats: bookmarkStats
                 });
             } catch (changePayloadError) {
-                console.warn('[updateSyncStatus] 构建历史变化数据失败:', changePayloadError);
+                
                 recordChangeDataPayload = null;
             }
         }
@@ -14979,15 +14912,11 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         const deferAutoArtifacts = options && options.deferAutoArtifacts === true;
         if (status === 'success' && !skipAutoArtifacts) {
             const handleArchiveResult = (result) => {
-                if (result && result.success === true && result.skipped !== true) {
-                    console.log('[updateSyncStatus] 当前变化自动归档完成');
-                }
+                if (result && result.success === true && result.skipped !== true) {}
             };
 
             const handleVersionedLogResult = (result) => {
-                if (result && result.success === true && result.skipped !== true) {
-                    console.log('[updateSyncStatus] 备份历史log已更新');
-                }
+                if (result && result.success === true && result.skipped !== true) {}
             };
 
             const hasExplicitSuccessfulTargets = options
@@ -15030,7 +14959,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     if (successfulBackupTargets instanceof Set && infoLogAllowedTargets instanceof Set) {
                         const blockedTargets = Array.from(successfulBackupTargets).filter((targetKey) => !infoLogAllowedTargets.has(targetKey));
                         if (blockedTargets.length > 0) {
-                            console.warn(`[updateSyncStatus] 跳过这些目标的备份历史log写入，因为该目标的变化归档未完整成功: ${blockedTargets.join(', ')}`);
+                            
                             blockedTargets.forEach((targetKey) => {
                                 appendUniqueWarning(
                                     postSyncWarnings,
@@ -15053,7 +14982,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                         activeLang
                     ).forEach((text) => appendUniqueWarning(postSyncWarnings, text));
                 } catch (e) {
-                    console.warn('[updateSyncStatus] 触发当前变化自动归档失败:', e);
+                    
                     appendUniqueWarning(postSyncWarnings, activeLang === 'en'
                         ? 'Post-backup archive update failed. Check network or remote service status.'
                         : '备份后的归档更新失败，请检查网络或远端服务状态。');
@@ -15065,7 +14994,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     try {
                         await runAutoArtifactsSync();
                     } catch (e) {
-                        console.warn('[updateSyncStatus] 延迟执行自动归档失败:', e);
+                        
                     }
                 });
             } else {
@@ -15318,7 +15247,6 @@ async function setBadge() { // 不再接收 status 参数
 
                     // 有变化但定时器未运行：启动自动备份定时器
                     if (!hasAlarm) {
-                        console.log('[自动备份定时器] 角标变黄（检测到变化），启动定时器');
                         try {
                             // 设置回调函数
                             setAutoBackupCallbacks(
@@ -15334,8 +15262,6 @@ async function setBadge() { // 不再接收 status 参数
                             autoBackupTimerRunning = false;
                         }
                     } else if (!autoBackupTimerRunning) {
-                        // alarm存在但标志为false，说明浏览器重启后alarm持久化了
-                        console.log('[自动备份定时器] 检测到持久化的alarm，更新运行标志');
                         autoBackupTimerRunning = true;
                     }
                 } else {
@@ -15349,7 +15275,6 @@ async function setBadge() { // 不再接收 status 参数
 
                     // 无变化但定时器仍在运行：停止自动备份定时器
                     if (hasAlarm) {
-                        console.log('[自动备份定时器] 角标变绿（无变化），停止定时器');
                         try {
                             await stopAutoBackupTimerSystem();
                             autoBackupTimerRunning = false; // 标记为已停止
@@ -15357,8 +15282,6 @@ async function setBadge() { // 不再接收 status 参数
                             console.error('[自动备份定时器] 停止失败:', timerError);
                         }
                     } else if (autoBackupTimerRunning) {
-                        // 没有alarm但标志为true，说明定时器已被清除但标志未更新
-                        console.log('[自动备份定时器] 检测到定时器已停止，更新运行标志');
                         autoBackupTimerRunning = false;
                     }
                 }
@@ -15802,8 +15725,6 @@ async function analyzeBookmarkChanges() {
         'recentAddedIds'
     ]);
 
-    console.log('[analyzeBookmarkChanges] lastBookmarkData:', lastBookmarkData);
-
     // 获取当前书签树（一次 getTree 同时用于计数与净变化计算）
     const localBookmarks = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
 
@@ -16047,7 +15968,7 @@ async function analyzeBookmarkChanges() {
             } catch (_) { }
         }
     } catch (e) {
-        console.warn('[analyzeBookmarkChanges] 净变化计算失败，回退到旧逻辑:', e);
+        
     }
 
     if (!diffSummary) {
@@ -16337,7 +16258,6 @@ function areSetsEqual(setA, setB) {
  */
 async function updateAndCacheAnalysis() {
     try {
-        console.log('[updateAndCacheAnalysis] 开始分析书签变化...');
         const preAnalysisStore = await browserAPI.storage.local.get([
             'lastBookmarkData',
             'lastBookmarkChangeTime'
@@ -16348,12 +16268,6 @@ async function updateAndCacheAnalysis() {
             : 0;
         const analysis = await analyzeBookmarkChanges();
         cachedBookmarkAnalysis = analysis;
-        console.log('[updateAndCacheAnalysis] 分析完成:', {
-            bookmarkDiff: analysis.bookmarkDiff,
-            folderDiff: analysis.folderDiff,
-            bookmarkCount: analysis.bookmarkCount,
-            folderCount: analysis.folderCount
-        });
 
         // 将摘要快照持久化到 storage（供提醒系统/页面在缓存未命中时兜底使用）
         try {
@@ -17085,7 +16999,7 @@ async function listRemoteFiles(source, options = {}) {
 
                         return treeEntries.length;
                     } catch (error) {
-                        console.warn('[listRemoteFiles] WebDAV tree scan failed for root:', rootFolder, error);
+                        
                         return 0;
                     }
                 }, 3);
@@ -17170,7 +17084,7 @@ async function listRemoteFiles(source, options = {}) {
                     }
                 }
             } catch (treeScanError) {
-                console.warn('[listRemoteFiles] WebDAV tree scan fallback to directory scan:', treeScanError);
+                
             }
 
             if (!useIndexOptimizedScan) {
@@ -17196,7 +17110,7 @@ async function listRemoteFiles(source, options = {}) {
                                 }
                             }
                         } catch (e) {
-                            console.warn('[listRemoteFiles] Scan HTML folder failed:', e);
+                            
                         }
                     }
                 }
@@ -17222,7 +17136,7 @@ async function listRemoteFiles(source, options = {}) {
                             }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan root HTML folder failed:', e);
+                        
                     }
                 }
 
@@ -17269,7 +17183,7 @@ async function listRemoteFiles(source, options = {}) {
                                 } catch (_) { }
                             }
                         } catch (e) {
-                            console.warn('[listRemoteFiles] Scan snapshot folders failed:', e);
+                            
                         }
                     }
                 }
@@ -17410,7 +17324,7 @@ async function listRemoteFiles(source, options = {}) {
                             } catch (_) { }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan root snapshot folders failed:', e);
+                        
                     }
                 }
 
@@ -17690,7 +17604,7 @@ async function listRemoteFiles(source, options = {}) {
                     return await finalizeRemoteRestoreFiles(deduped);
                 }
             } catch (treeScanError) {
-                console.warn('[listRemoteFiles] GitHub tree scan fallback to directory scan:', treeScanError);
+                
             }
 
             {
@@ -17718,7 +17632,7 @@ async function listRemoteFiles(source, options = {}) {
                                 }
                             }
                         } catch (e) {
-                            console.warn('[listRemoteFiles] Scan HTML GitHub failed:', e);
+                            
                         }
                     }
                 }
@@ -17746,7 +17660,7 @@ async function listRemoteFiles(source, options = {}) {
                             }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan root HTML GitHub failed:', e);
+                        
                     }
                 }
 
@@ -17796,7 +17710,7 @@ async function listRemoteFiles(source, options = {}) {
                                     } catch (_) { }
                                 }
                             } catch (e) {
-                                console.warn('[listRemoteFiles] Scan snapshot folders GitHub failed:', e);
+                                
                             }
                         }
                     }
@@ -17942,7 +17856,7 @@ async function listRemoteFiles(source, options = {}) {
                             } catch (_) { }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan root snapshot folders GitHub failed:', e);
+                        
                     }
                 }
 
@@ -18243,7 +18157,7 @@ async function unzipStore(zipBlob) {
 
         const compressionMethod = data.getUint16(offset + 8, true);
         if (compressionMethod !== 0) {
-            console.warn('[unzipStore] 发现非 Store 模式压缩的文件，跳过 (仅支持 Store 模式)');
+            
             break;
         }
 
@@ -19495,7 +19409,7 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
     try {
         parsed = safeParseJson(text);
     } catch (e) {
-        console.warn('[parseRestoreVersionsFromMergedHistoryJsonText] JSON parse failed:', e);
+        
         return [];
     }
 
@@ -21089,7 +21003,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                         zipVersions.push(...versions);
                     }
                 } catch (error) {
-                    console.warn('[scanAndParseRestoreSource] Failed to parse local ZIP restore source:', zipCandidate?.name, error);
+                    
                 }
             }
         }
@@ -21534,7 +21448,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     }
                 }
             } catch (e) {
-                console.warn('[scanAndParseRestoreSource] Failed to parse HTML:', f.name, e);
+                
             }
         }
 
@@ -21569,7 +21483,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 applyLocalIndexMetadataToVersion(version, snapshotKey);
                 allVersions.push(version);
             } catch (e) {
-                console.warn('[scanAndParseRestoreSource] Failed to parse JSON snapshot:', f.name, e);
+                
             }
         }
 
@@ -21642,7 +21556,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     bundle.best = entry;
                 }
             } catch (e) {
-                console.warn('[scanAndParseRestoreSource] Failed to parse current changes artifact:', file?.name, e);
+                
             }
         }
 
@@ -21966,16 +21880,12 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 existingIds.add(indexVersionId);
             }
 
-            if (skippedStaleIndexCount > 0) {
-                console.log(`[scanAndParseRestoreSource] Skip stale index-only entries for ${source}: ${skippedStaleIndexCount}`);
-            }
+            if (skippedStaleIndexCount > 0) {}
         }
 
         const normalized = dedupeAndSortRestoreVersions(allVersions);
 
         const orderedVersions = normalized;
-
-        console.log(`[scanAndParseRestoreSource] Total versions found: ${orderedVersions.length}`);
 
         const primarySourceType = orderedVersions.some((item) => String(item?.sourceType || '').toLowerCase() === 'changes_artifact')
             ? 'mixed'
@@ -22094,7 +22004,7 @@ async function runBatchedTasks(items, worker, concurrency = 6) {
                 results[taskIndex] = value;
             })
             .catch((error) => {
-                console.warn('[runBatchedTasks] Task failed:', error);
+                
                 results[taskIndex] = 0;
             })
             .finally(() => {
@@ -22145,7 +22055,7 @@ async function removeAllChildren(parentId, options = {}) {
             if (strictDelete) {
                 deleteFailures.push(detail);
             } else {
-                console.warn('[removeAllChildren] Remove failed:', child?.id, e);
+                
             }
         }
         return 0;
@@ -22372,7 +22282,7 @@ async function buildOverwriteRestorePlanAgainstCurrentBrowser(bookmarkTree) {
 }
 
 async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
-    const lang = options?.preferredLang || await getCurrentLang();
+    const lang = options?.preferredLang || (await getCurrentLang());
     assertBookmarkTreeContent(bookmarkTree, lang, 'overwrite');
 
     const containerState = options?.containerState && typeof options.containerState === 'object'
@@ -22406,7 +22316,7 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
             try {
                 createdCount += await createNodeRecursive(topFolder, targetContainer.id);
             } catch (e) {
-                console.warn('[executeOverwriteBookmarkRestore] Create failed:', e);
+                
             }
             continue;
         }
@@ -22615,7 +22525,7 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
                 try {
                     createdCount += await createNodeRecursive(topFolder, importRootFolder.id);
                 } catch (e) {
-                    console.warn('[executeMergeBookmarkRestore] Create failed:', e);
+                    
                 }
                 continue;
             }
@@ -24466,7 +24376,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             }
         } catch (baselineError) {
             preRestoreTree = null;
-            console.warn('[restoreSelectedVersion] 捕获恢复前基线失败:', baselineError);
+            
         }
 
         let tree = null;
@@ -24528,7 +24438,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                     };
                 }
 
-                console.warn('[restoreSelectedVersion] changes artifact extract failed, fallback to snapshot merge:', mergeExtractError);
+                
                 tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
                 mergeOptions = { importKind: 'snapshot', importParentId: importParentId || null };
             }
@@ -24681,7 +24591,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 });
                 await clearRestoreRecoveryTransactionFully(completedTransaction);
             } catch (cleanupError) {
-                console.warn('[restoreSelectedVersion] merge transaction cleanup failed:', cleanupError);
+                
             }
 
             return await finalizeRestoreSuccess({ strategy: 'merge', requestedStrategy: 'merge', ...result });
@@ -24849,7 +24759,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 if (requestedStrategy === 'patch') {
                     throw patchError;
                 }
-                console.warn('[restoreSelectedVersion] Patch restore failed, fallback to overwrite:', patchError);
+                
                 appliedStrategy = 'overwrite';
                 const overwriteContext = await ensureOverwriteExecutionContext();
                 if (!overwriteContext?.overwritePlan?.success) {
@@ -24900,7 +24810,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             });
             await clearRestoreRecoveryTransactionFully(completedTransaction);
         } catch (cleanupError) {
-            console.warn('[restoreSelectedVersion] transaction cleanup failed:', cleanupError);
+            
         }
 
         return successResponse;

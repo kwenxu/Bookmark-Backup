@@ -139,7 +139,6 @@ window.SearchContextManager = {
 
         this.currentContext = next;
         this._lastContextKey = key;
-        console.log('[SearchContext] Context Updated:', this.currentContext);
 
         // [Search Isolation] Different pages share the same top search input but have different behaviors.
         // When context changes, clear the input + results so queries won't leak across views/tabs.
@@ -148,7 +147,6 @@ window.SearchContextManager = {
         }
 
         this.updateUI();
-
     },
 
     /**
@@ -199,7 +197,6 @@ function syncSearchContextFromCurrentUI(reason = 'sync') {
                 setSearchMode(view, { switchView: false });
             }
         } catch (_) { }
-        console.log('[SearchContext] Synced from UI:', { reason, view });
     } catch (_) { }
 }
 
@@ -2844,7 +2841,7 @@ async function locateNodeInCurrentChangesPreview(nodeId, options = {}) {
     markCurrentChangesPreviewJumpScrollAsUser(previewBody);
     markCurrentChangesContentJumpScroll(contentArea);
 
-    target = await stabilizeCurrentChangesTargetForJump(id, previewContainer) || target;
+    target = (await stabilizeCurrentChangesTargetForJump(id, previewContainer)) || target;
     if (!target) return false;
 
     await nextAnimationFrame();
@@ -4230,7 +4227,6 @@ function resetBackupHistorySearchDb(reason = '') {
         items: [],
         itemByTime: new Map()
     };
-    console.log('[Search] Phase 2 cache cleared:', reason);
 }
 
 /**
@@ -4291,7 +4287,6 @@ function buildBackupHistorySearchDb() {
     });
 
     const buildTime = performance.now() - startTime;
-    console.log(`[Search] Phase 2 index built: ${items.length} items in ${buildTime.toFixed(2)}ms`);
 
     backupHistorySearchDb = { signature, items, itemByTime };
     return backupHistorySearchDb;
@@ -4608,7 +4603,7 @@ async function locateRecordInHistory(recordTime, options = {}) {
     // 计算目标页码
     const targetPage = getRecordPageNumber(recordTime);
     if (targetPage === -1) {
-        console.warn('[Search] Record not found in history:', recordTime);
+        
         return false;
     }
 
@@ -4617,7 +4612,7 @@ async function locateRecordInHistory(recordTime, options = {}) {
         try {
             await renderHistorySearchTargetPage(targetPage);
         } catch (error) {
-            console.warn('[Search] Failed to refresh history page for search jump:', error);
+            
             if (typeof window !== 'undefined') {
                 window.currentHistoryPage = targetPage;
             }
@@ -4636,12 +4631,12 @@ async function locateRecordInHistory(recordTime, options = {}) {
             await renderHistorySearchTargetPage(targetPage);
             target = await findHistoryRecordTarget(recordTime);
         } catch (error) {
-            console.warn('[Search] Retry refresh for history search jump failed:', error);
+            
         }
     }
 
     if (!target) {
-        console.warn('[Search] Target element not found after retries:', recordTime);
+        
         return false;
     }
 
@@ -4734,7 +4729,6 @@ function clearHistoryDetailSearchDb(recordTime) {
     const key = String(recordTime);
     if (historyDetailSearchDbMap.has(key)) {
         historyDetailSearchDbMap.delete(key);
-        console.log('[Search] Phase 2.5 cache cleared for:', key);
     }
 }
 
@@ -4744,9 +4738,7 @@ function clearHistoryDetailSearchDb(recordTime) {
 function clearAllHistoryDetailSearchDb() {
     const count = historyDetailSearchDbMap.size;
     historyDetailSearchDbMap.clear();
-    if (count > 0) {
-        console.log('[Search] Phase 2.5 all caches cleared, count:', count);
-    }
+    if (count > 0) {}
 }
 
 function buildNodeParentIndexForHistorySearch(tree) {
@@ -5078,7 +5070,6 @@ function buildHistoryDetailSearchDb(options) {
     };
 
     historyDetailSearchDbMap.set(cacheKey, db);
-    console.log('[Search] Phase 2.5 index built for:', cacheKey, 'items:', items.length);
 
     return db;
 }
@@ -5835,7 +5826,7 @@ async function locateNodeInHistoryDetailPreview(nodeId, treeContainer, options =
         try { target.scrollIntoView(); } catch (_) { }
     }
 
-    target = await stabilizeHistoryDetailTargetForJump(id, treeContainer) || target;
+    target = (await stabilizeHistoryDetailTargetForJump(id, treeContainer)) || target;
     if (!target) return false;
 
     if (highlightClass) {
@@ -5929,7 +5920,7 @@ async function activateHistoryDetailSearchResult(index, modalContainer) {
         }
         await activateHistoryDetailSearchItem(item, modalContainer);
     } catch (error) {
-        console.warn('[Search] Phase 2.5 activate result failed:', error);
+        
     }
 }
 
@@ -5959,7 +5950,6 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
 
     // 检查是否有变化可搜索
     if (!changeMap || changeMap.size === 0) {
-        console.log('[Search] Phase 2.5: No changes to search for record:', recordTime);
         // 隐藏搜索按钮或显示禁用状态
         const searchBtn = modalContainer.querySelector('.detail-search-btn');
         if (searchBtn) searchBtn.style.display = 'none';
@@ -5972,7 +5962,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
     const resultsPanel = modalContainer.querySelector('.detail-search-results-panel');
 
     if (!searchInput || !resultsPanel) {
-        console.warn('[Search] Phase 2.5: Search elements not found in modal');
+        
         return;
     }
 
@@ -6184,8 +6174,6 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         modalContainer.removeEventListener('click', handleOutsideClick);
         delete modalContainer._historyDetailSearchBuildDb;
     };
-
-    console.log('[Search] Phase 2.5 initialized for record:', recordTime, 'changes:', changeMap.size);
 }
 
 /**
@@ -6226,8 +6214,6 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
     historyDetailSearchState.expandedDomainGroups = new Set();
     historyDetailSearchState.domainGroupHostFilters = new Map();
     historyDetailSearchState.isActive = false;
-
-    console.log('[Search] Phase 2.5 cleanup completed for:', recordTime);
 }
 
 /**

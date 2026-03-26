@@ -28,7 +28,7 @@ function shouldAllowBookmarkOpen(actionKey) {
 
     // 如果是相同的操作且时间间隔小于防抖延迟，则忽略
     if (bookmarkOpenDebounce.lastActionKey === actionKey && timeSinceLastAction < bookmarkOpenDebounce.debounceDelay) {
-        console.log(`[防抖] 忽略重复的书签打开操作: ${actionKey}, 距离上次 ${timeSinceLastAction}ms`);
+        
         return false;
     }
 
@@ -154,7 +154,7 @@ try {
 // 读取持久化默认打开方式（超链接系统）
 (async function initHyperlinkSettings() {
     try {
-        console.log('[超链接初始化] 开始加载持久化设置...');
+        
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             const data = await chrome.storage.local.get([
                 'hyperlinkDefaultOpenMode',
@@ -162,52 +162,47 @@ try {
                 'hyperlinkSpecificGroupId',
                 'hyperlinkSpecificGroupWindowId'
             ]);
-            console.log('[超链接初始化] 从 chrome.storage 读取:', data);
+            
             if (data && typeof data.hyperlinkDefaultOpenMode === 'string') {
                 hyperlinkDefaultOpenMode = data.hyperlinkDefaultOpenMode;
-                console.log('[超链接初始化] 设置 hyperlinkDefaultOpenMode =', hyperlinkDefaultOpenMode);
+                
             }
             if (data && Number.isInteger(data.hyperlinkSpecificWindowId)) {
                 hyperlinkSpecificWindowId = data.hyperlinkSpecificWindowId;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificWindowId =', hyperlinkSpecificWindowId);
+                
             }
             if (data && Number.isInteger(data.hyperlinkSpecificGroupId)) {
                 hyperlinkSpecificTabGroupId = data.hyperlinkSpecificGroupId;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificTabGroupId =', hyperlinkSpecificTabGroupId);
+                
             }
             if (data && Number.isInteger(data.hyperlinkSpecificGroupWindowId)) {
                 hyperlinkSpecificGroupWindowId = data.hyperlinkSpecificGroupWindowId;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificGroupWindowId =', hyperlinkSpecificGroupWindowId);
+                
             }
         } else {
-            console.log('[超链接初始化] 使用 localStorage');
+            
             const mode = localStorage.getItem('hyperlinkDefaultOpenMode');
             if (mode) {
                 hyperlinkDefaultOpenMode = mode;
-                console.log('[超链接初始化] 设置 hyperlinkDefaultOpenMode =', hyperlinkDefaultOpenMode);
+                
             }
             const winId = parseInt(localStorage.getItem('hyperlinkSpecificWindowId') || '', 10);
             if (Number.isInteger(winId)) {
                 hyperlinkSpecificWindowId = winId;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificWindowId =', hyperlinkSpecificWindowId);
+                
             }
             const gid = parseInt(localStorage.getItem('hyperlinkSpecificGroupId') || '', 10);
             if (Number.isInteger(gid)) {
                 hyperlinkSpecificTabGroupId = gid;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificTabGroupId =', hyperlinkSpecificTabGroupId);
+                
             }
             const gwid = parseInt(localStorage.getItem('hyperlinkSpecificGroupWindowId') || '', 10);
             if (Number.isInteger(gwid)) {
                 hyperlinkSpecificGroupWindowId = gwid;
-                console.log('[超链接初始化] 设置 hyperlinkSpecificGroupWindowId =', hyperlinkSpecificGroupWindowId);
+                
             }
         }
-        console.log('[超链接初始化] 完成。当前状态:', {
-            hyperlinkDefaultOpenMode,
-            hyperlinkSpecificWindowId,
-            hyperlinkSpecificTabGroupId,
-            hyperlinkSpecificGroupWindowId
-        });
+        
         try { window.hyperlinkDefaultOpenMode = hyperlinkDefaultOpenMode; } catch (_) { }
     } catch (err) {
         console.error('[超链接初始化] 失败:', err);
@@ -551,14 +546,14 @@ function queryAllTabGroups(filter = {}) {
         try {
             chrome.tabGroups.query(filter, (groups) => {
                 if (chrome.runtime && chrome.runtime.lastError) {
-                    console.warn('[tabGroups.query] failed:', chrome.runtime.lastError);
+                    
                     resolve([]);
                     return;
                 }
                 resolve(Array.isArray(groups) ? groups : []);
             });
         } catch (err) {
-            console.warn('[tabGroups.query] exception:', err);
+            
             resolve([]);
         }
     });
@@ -589,7 +584,7 @@ async function getLiveGroupSeeds(force = false) {
             }
         });
     } catch (err) {
-        console.warn('[LiveGroupSeeds] query failed:', err);
+        
     }
     liveGroupSeedCache = seeds;
     liveGroupSeedCacheTs = Date.now();
@@ -672,7 +667,7 @@ async function refreshTrackedOpenTargets() {
             }
         }
     } catch (refreshError) {
-        console.warn('[OpenTargets] refresh failed:', refreshError);
+        
     }
 }
 
@@ -694,17 +689,17 @@ async function handleTrackedWindowRemoved(windowId) {
         if (hyperlinkSpecificWindowId === windowId) {
             await resetHyperlinkSpecificWindowId();
             // 注意：不重置计数器，计数器由注册表系统管理
-            console.log('[超链接 LifecycleGuards] 窗口已关闭，重置 ID');
+            
         }
         if (hyperlinkSpecificGroupWindowId === windowId) {
             await resetHyperlinkSpecificGroupInfo();
             hyperlinkGroupCounter = 0; // 重置分组计数器
-            console.log('[超链接 LifecycleGuards] 分组所在窗口已关闭，重置分组信息和计数器');
+            
         }
         if (hyperlinkSameWindowSpecificGroupWindowId === windowId) {
             hyperlinkSameWindowSpecificGroupWindowId = null;
             hyperlinkSameWindowSpecificGroupScopes = {};
-            console.log('[超链接 LifecycleGuards] 同窗特定组窗口已关闭，重置');
+            
         }
 
         const scopedWindowEntries = Object.entries(scopedWindows || {});
@@ -727,7 +722,7 @@ async function handleTrackedWindowRemoved(windowId) {
         }
         invalidateLiveGroupSeeds();
     } catch (err) {
-        console.warn('[LifecycleGuards] windowRemoved handler failed:', err);
+        
     }
 }
 
@@ -751,7 +746,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
             hyperlinkSpecificTabGroupId = null;
             hyperlinkSpecificGroupWindowId = null;
             hyperlinkGroupCounter = 0; // 重置分组计数器
-            console.log('[超链接 LifecycleGuards] 分组已关闭，重置 ID 和计数器');
+            
         }
 
         // 检查超链接的同窗特定组作用域
@@ -759,7 +754,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
         for (const [scopeKey, entry] of hyperlinkScopeEntries) {
             if (entry && entry.groupId === groupId) {
                 delete hyperlinkSameWindowSpecificGroupScopes[scopeKey];
-                console.log(`[超链接 LifecycleGuards] 作用域 ${scopeKey} 的分组已关闭`);
+                
             }
         }
 
@@ -777,7 +772,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
         }
         invalidateLiveGroupSeeds();
     } catch (err) {
-        console.warn('[LifecycleGuards] groupRemoved handler failed:', err);
+        
     }
 }
 
@@ -797,7 +792,7 @@ function registerLifecycleGuards() {
         }
         lifecycleGuardsRegistered = true;
     } catch (err) {
-        console.warn('[LifecycleGuards] 注册失败:', err);
+        
     }
 }
 
@@ -1788,11 +1783,7 @@ function attachHyperlinkContextMenu() {
             e.preventDefault();
             e.stopPropagation();
 
-            console.log('[右键菜单] 检测到超链接右键:', {
-                url: linkElement.href,
-                text: linkElement.textContent,
-                inPermanentTip: !!inPermanentTip
-            });
+            
 
             // 显示超链接专用菜单
             if (typeof showHyperlinkContextMenu === 'function') {
@@ -1834,7 +1825,7 @@ function attachHyperlinkContextMenu() {
                 sectionId: null
             };
 
-            console.log('[超链接] 左键点击，使用模式:', hyperlinkDefaultOpenMode);
+            
 
             try {
                 await openHyperlinkWithDefaultMode(url, { context });
@@ -1845,7 +1836,7 @@ function attachHyperlinkContextMenu() {
         }
     }, true); // 使用捕获阶段
 
-    console.log('[右键菜单] 超链接右键菜单和左键点击已绑定');
+    
 }
 
 // 初始化右键菜单
@@ -1922,7 +1913,7 @@ function initContextMenu() {
     // Resize时不调整菜单位置（保持嵌入式相对定位）
     // 嵌入式菜单会随DOM自然调整，无需手动处理
 
-    console.log('[右键菜单] 初始化完成');
+    
 }
 
 function getNodeContext(node) {
@@ -1955,18 +1946,18 @@ function getNodeContext(node) {
 
 // 显示超链接右键菜单（用于描述中的链接）
 async function showHyperlinkContextMenu(e, linkElement) {
-    console.log('[超链接菜单] ========== 开始显示超链接菜单 ==========');
-    console.log('[超链接菜单] linkElement:', linkElement);
-    console.log('[超链接菜单] event:', e);
+    
+    
+    
 
     e.preventDefault();
     e.stopPropagation();
 
     const url = linkElement.href;
-    console.log('[超链接菜单] URL:', url);
+    
 
     if (!url) {
-        console.warn('[右键菜单] 超链接URL无效');
+        
         return;
     }
 
@@ -1984,7 +1975,7 @@ async function showHyperlinkContextMenu(e, linkElement) {
         sectionId: PERMANENT_SECTION_ANCHOR_ID
     };
 
-    console.log('[右键菜单] 显示超链接菜单:', context);
+    
 
     // 刷新跟踪的打开目标
     await refreshTrackedOpenTargets();
@@ -2044,10 +2035,10 @@ async function showHyperlinkContextMenu(e, linkElement) {
                         await openHyperlinkInSpecificWindow(context.url, { forceNew: true });
                         break;
                     default:
-                        console.warn('[超链接菜单] 未知的 sub-action:', subAction);
+                        
                 }
             } catch (badgeError) {
-                console.warn('[超链接菜单] sub-badge 操作失败:', badgeError);
+                
             }
             hideContextMenu();
         });
@@ -2132,14 +2123,7 @@ function positionHyperlinkContextMenu(event, linkElement) {
     contextMenu.style.right = 'auto';
     contextMenu.style.bottom = 'auto';
 
-    console.log('[超链接菜单] 使用固定定位:', {
-        clickX,
-        clickY,
-        menuWidth: menuRect.width,
-        menuHeight: menuRect.height,
-        finalLeft: left,
-        finalTop: top
-    });
+    
 }
 
 // 构建超链接菜单项（独立系统，6个选项 - 与书签系统隔离）
@@ -2276,7 +2260,7 @@ async function handleHyperlinkMenuAction(action, context) {
                 break;
 
             default:
-                console.warn('[超链接菜单] 未处理的操作:', action);
+                
         }
     } catch (error) {
         console.error('[超链接菜单] 操作失败:', error);
@@ -2286,16 +2270,16 @@ async function handleHyperlinkMenuAction(action, context) {
 
 // 设置超链接默认打开方式（独立于书签系统）
 async function setHyperlinkDefaultOpenMode(mode) {
-    console.log('[超链接] setHyperlinkDefaultOpenMode:', mode);
+    
     hyperlinkDefaultOpenMode = mode;
     try { window.hyperlinkDefaultOpenMode = mode; } catch (_) { }
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             await chrome.storage.local.set({ hyperlinkDefaultOpenMode: mode });
-            console.log('[超链接] 已保存到 chrome.storage');
+            
         } else {
             localStorage.setItem('hyperlinkDefaultOpenMode', mode);
-            console.log('[超链接] 已保存到 localStorage');
+            
         }
     } catch (err) {
         console.error('[超链接] 保存失败:', err);
@@ -2334,7 +2318,7 @@ async function openHyperlinkWithDefaultMode(url, options = {}) {
                 await openHyperlinkNewTab(url);
         }
     } catch (err) {
-        console.warn('[超链接] openHyperlinkWithDefaultMode 失败，回退 window.open:', err);
+        
         window.open(url, '_blank');
     }
 }
@@ -2361,12 +2345,12 @@ async function showContextMenu(e, node) {
     // 获取节点信息
     const context = getNodeContext(node);
     if (!context || !context.nodeId) {
-        console.warn('[右键菜单] 节点上下文无效');
+        
         return;
     }
 
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
-    console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder, treeType: context.treeType, sectionId: context.sectionId });
+    
 
     // 菜单展示前刷新一次所有受管理的窗口/分组指针，避免引用失效对象
     await refreshTrackedOpenTargets();
@@ -2522,10 +2506,10 @@ async function showContextMenu(e, node) {
                         await setDefaultOpenMode('scoped-window');
                         break;
                     default:
-                        console.warn('[右键菜单] unknown sub-action:', subAction);
+                        
                 }
             } catch (badgeError) {
-                console.warn('[右键菜单] sub-badge 操作失败:', badgeError);
+                
             }
             hideContextMenu();
         });
@@ -2770,11 +2754,7 @@ function embedContextMenu(node) {
         margin-bottom: 5px !important;
     `;
 
-    console.log('[右键菜单] 嵌入到DOM:', {
-        parent: parent.className,
-        position: 'relative',
-        note: '嵌入式菜单，跟随元素滚动'
-    });
+    
 }
 
 // 隐藏菜单
@@ -2802,7 +2782,7 @@ function showPasteButton() {
     if (pasteBtn) {
         pasteBtn.style.display = 'inline-flex';
         pasteBtn.classList.remove('paste-hidden');
-        console.log('[右键菜单] 已显示粘贴按钮');
+        
     }
 }
 
@@ -2812,7 +2792,7 @@ function hidePasteButton() {
     if (pasteBtn) {
         pasteBtn.style.display = 'none';
         pasteBtn.classList.add('paste-hidden');
-        console.log('[右键菜单] 已隐藏粘贴按钮');
+        
     }
 }
 
@@ -2891,7 +2871,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
                     openedTabIds.push(tab.id);
                 }
             } catch (error) {
-                console.warn('[打开标签] 失败:', error);
+                
             }
         }
 
@@ -2902,7 +2882,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
                     await chrome.tabGroups.update(groupId, { title: 'Bookmarks' });
                 }
             } catch (error) {
-                console.warn('[标签页组] 创建失败:', error);
+                
             }
         }
     } else {
@@ -2923,7 +2903,7 @@ function serializeBookmarkNode(node) {
 async function handleMenuAction(action, context) {
     if (!context) return;
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
-    console.log('[右键菜单] 执行操作:', action, { nodeId, nodeTitle, isFolder });
+    
 
     try {
         switch (action) {
@@ -3098,7 +3078,7 @@ async function handleMenuAction(action, context) {
                 break;
 
             default:
-                console.warn('[右键菜单] 未知操作:', action);
+                
         }
     } catch (error) {
         console.error('[右键菜单] 操作失败:', error);
@@ -3251,7 +3231,7 @@ async function openInSameGroup(url, opts = {}) {
                 localStorage.setItem(HYPERLINK_GROUP_KEY, String(groupId));
             }
         } catch (error) {
-            console.warn('[超链接标签组] 打开失败:', error);
+            
             window.open(url, '_blank');
         }
     } else {
@@ -3355,7 +3335,7 @@ async function openInSpecificTabGroup(url, options = {}) {
         }
         await registerPluginGroup(groupId, tab.windowId || null, nextNumber);
     } catch (error) {
-        console.warn('[特定标签组] 打开失败:', error);
+        
         // 兜底回退
         try { window.open(url, '_blank'); } catch (_) { }
     }
@@ -3455,7 +3435,7 @@ async function openInScopedTabGroup(url, opts = {}) {
         await setScopedCurrentGroup(scope.key, groupId, windowId);
         await registerScopedGroup(scope.key, groupId, windowId, nextNumber);
     } catch (error) {
-        console.warn('[分栏特定标签组] 打开失败:', error);
+        
         try { window.open(url, '_blank'); } catch (_) { }
     }
 }
@@ -4052,7 +4032,7 @@ async function copyUrl(url) {
     try {
         await navigator.clipboard.writeText(url);
         const lang = currentLang || 'zh_CN';
-        console.log(lang === 'zh_CN' ? 'URL已复制' : 'URL copied');
+        
         // 可以显示一个toast提示
     } catch (err) {
         console.error('复制失败:', err);
@@ -4092,7 +4072,7 @@ async function cutBookmark(nodeId, nodeTitle, isFolder) {
         };
         clipboardOperation = 'cut';
 
-        console.log('[剪切] 已剪切:', nodeTitle);
+        
 
         markCutNode(nodeId);
 
@@ -4122,7 +4102,7 @@ async function copyBookmark(nodeId, nodeTitle, isFolder) {
         clipboardOperation = 'copy';
         showPasteButton();
 
-        console.log('[复制] 已复制:', nodeTitle);
+        
 
     } catch (error) {
         console.error('[复制] 失败:', error);
@@ -4273,7 +4253,7 @@ async function openAllInTabGroup(folderId) {
             }
         }
 
-        console.log('[标签页组] 已创建:', groupTitle, tabIds.length, '个标签页');
+        
 
     } catch (error) {
         console.error('[标签页组] 打开失败:', error);
@@ -4329,7 +4309,7 @@ function toggleNodeSelection(nodeId, nodeElement) {
         }
     }
 
-    console.log('[多选] 当前选中:', selectedNodes.size, '个');
+    
 }
 
 // 范围选择（Shift+Click）
@@ -4360,7 +4340,7 @@ function selectRange(startNodeId, endNodeId) {
     updateBatchToolbar();
     updateBatchPanelCount();
 
-    console.log('[多选] 范围选择:', selectedNodes.size, '个');
+    
 }
 
 // 全选
@@ -4380,7 +4360,7 @@ function selectAll() {
     updateBatchToolbar();
     updateBatchPanelCount();
 
-    console.log('[多选] 全选:', selectedNodes.size, '个');
+    
 }
 
 // 取消全选
@@ -4395,7 +4375,7 @@ function deselectAll() {
     updateBatchToolbar();
     updateBatchPanelCount();
 
-    console.log('[多选] 已取消全选');
+    
 }
 
 // 打开选中的书签
@@ -4423,7 +4403,7 @@ async function openSelectedBookmarks() {
         // 打开所有URL
         await openUrlList(urls, {});
 
-        console.log('[多选] 已打开:', urls.length, '个书签');
+        
 
     } catch (error) {
         console.error('[多选] 打开失败:', error);
@@ -4453,7 +4433,7 @@ async function openSelectedInTabGroup() {
         }
 
         await openUrlList(urls, { tabGroup: true });
-        console.log('[多选] 已在标签页组中打开:', urls.length, '个书签');
+        
 
     } catch (error) {
         console.error('[多选] 打开失败:', error);
@@ -4495,7 +4475,7 @@ async function copySelected() {
         unmarkCutNode();
         showPasteButton();
         flashBatchActionStatus('batch-copy');
-        console.log('[多选] 已复制:', permanentIds.length, '个');
+        
     } catch (error) {
         console.error('[多选] 复制失败:', error);
     }
@@ -4531,12 +4511,12 @@ async function getSelectedUrls(nodeIdList) {
 
 // 刷新书签树（批量操作后专用，不显示变更标记）
 async function refreshBookmarkTree() {
-    console.log('[批量操作] 开始刷新书签树（无diff模式）');
+    
 
     if (typeof renderTreeView === 'function') {
         // 临时清空旧数据，避免显示变更标记
         await chrome.storage.local.set({ lastBookmarkData: null });
-        console.log('[批量操作] 已临时清除旧数据，避免diff');
+        
 
         // 渲染当前书签树（不会检测变更）
         await renderTreeView(true);
@@ -4545,10 +4525,10 @@ async function refreshBookmarkTree() {
         if (chrome && chrome.bookmarks) {
             const bookmarkTree = await chrome.bookmarks.getTree();
             await chrome.storage.local.set({ lastBookmarkData: bookmarkTree });
-            console.log('[批量操作] 已将当前状态设为新的基准数据，避免后续误标记为moved');
+            
         }
     } else {
-        console.warn('[批量操作] renderTreeView 函数不存在');
+        
     }
 }
 
@@ -4566,7 +4546,7 @@ function enterSelectMode() {
     const toolbar = document.getElementById('batch-toolbar');
     if (toolbar) {
         toolbar.style.display = 'none';
-        console.log('[Select模式] 隐藏顶部工具栏');
+        
     }
 
     // 更新批量工具栏（但不显示，因为我们要显示批量菜单）
@@ -4582,7 +4562,7 @@ function enterSelectMode() {
             const state = JSON.parse(savedState);
             if (state.visible === false) {
                 // 上次是隐藏状态，显示工具栏
-                console.log('[Select模式] 恢复上次状态：显示工具栏');
+                
                 updateBatchToolbar();
                 if (toolbar) {
                     toolbar.style.display = 'flex';
@@ -4598,10 +4578,10 @@ function enterSelectMode() {
     setTimeout(() => {
         const fakeEvent = { preventDefault: () => { }, stopPropagation: () => { } };
         showBatchContextMenu(fakeEvent);
-        console.log('[Select模式] 自动显示批量菜单');
+        
     }, 100);
 
-    console.log('[Select模式] 已进入');
+    
 }
 
 // 退出Select模式
@@ -4619,7 +4599,7 @@ function exitSelectMode() {
     deselectAll();
     updateBatchToolbar();
 
-    console.log('[Select模式] 已退出');
+    
 }
 
 // 隐藏批量操作面板
@@ -4627,7 +4607,7 @@ function hideBatchActionPanel() {
     const batchPanel = document.getElementById('batch-action-panel');
     if (batchPanel) {
         batchPanel.style.display = 'none';
-        console.log('[批量面板] 已隐藏');
+        
     }
 }
 
@@ -4711,7 +4691,7 @@ function showBatchContextMenu(e) {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log('[批量菜单] 显示固定面板');
+    
 
     let anchorInfo = resolveBatchPanelAnchorInfo(e);
     if (!anchorInfo) {
@@ -4741,7 +4721,7 @@ function showBatchContextMenu(e) {
         }
         restoreBatchPanelState(batchPanel, anchorInfo);
         try { updateBatchPanelCount(); } catch (_) { }
-        console.log('[批量菜单] 面板已存在，直接显示并更新定位');
+        
         return;
     }
 
@@ -4857,7 +4837,7 @@ function showBatchContextMenu(e) {
             e.stopPropagation();
             if (item.classList && item.classList.contains('disabled')) return;
             const action = item.dataset.action;
-            console.log('[批量菜单] 点击操作:', action);
+            
 
             if (action === 'exit-select-mode') {
                 exitSelectMode();
@@ -4906,7 +4886,7 @@ function showBatchContextMenu(e) {
                 try { if (typeof deselectAll === 'function') deselectAll(); } catch (_) { }
                 try { updateBatchToolbar(); } catch (_) { }
             }
-            console.log('[批量菜单] 点击标题栏退出按钮');
+            
         });
     }
 
@@ -4931,7 +4911,7 @@ function showBatchContextMenu(e) {
     // 始终挂载到 body，避免祖先 transform 影响定位
     if (batchPanel.parentNode !== document.body) {
         document.body.appendChild(batchPanel);
-        console.log('[批量菜单] 固定面板已添加到body');
+        
     }
 
     // 恢复保存的位置和大小，或设置初始定位
@@ -4945,7 +4925,7 @@ function toggleSelectItem(nodeId, nodeElement) {
     const nodeElements = Array.from(document.querySelectorAll(`.tree-item[data-node-id="${nodeId}"]`));
     const referenceEl = nodeElement || nodeElements[0] || null;
     if (!referenceEl) {
-        console.log('[批量] 未找到节点元素:', nodeId);
+        
         return;
     }
 
@@ -4992,7 +4972,7 @@ function toggleSelectItem(nodeId, nodeElement) {
         selectedNodes.delete(nodeId);
         selectedNodeMeta.delete(nodeId);
         applySelectedClass(false, existingMeta);
-        console.log('[批量] 取消选中:', nodeId);
+        
         if (selectedNodes.size === 0) {
             lastBatchSelectionInfo = null;
         }
@@ -5009,12 +4989,12 @@ function toggleSelectItem(nodeId, nodeElement) {
         selectedNodeMeta.set(nodeId, meta);
         applySelectedClass(true, meta);
         rememberBatchSelection(referenceEl);
-        console.log('[批量] 选中:', nodeId);
+        
     }
 
     updateBatchToolbar();
     updateBatchPanelCount(); // 实时更新批量面板计数
-    console.log('[批量] 选中状态:', selectedNodes.size, '个');
+    
 }
 
 // 批量打开
@@ -5050,7 +5030,7 @@ async function batchOpen() {
         await chrome.tabs.create({ url: url, active: false });
     }
 
-    console.log('[批量] 已打开:', urls.length, '个书签');
+    
 }
 
 // 批量打开（新窗口）
@@ -5112,7 +5092,7 @@ async function batchOpenTabGroup() {
             }
         }
 
-        console.log('[批量] 已在标签页组中打开:', urls.length, '个书签');
+        
     } catch (error) {
         console.error('[批量] 打开失败:', error);
         alert(lang === 'zh_CN' ? `打开失败: ${error.message}` : `Failed to open: ${error.message}`);
@@ -5121,7 +5101,7 @@ async function batchOpenTabGroup() {
 
 // 批量打开（手动选择窗口/组）
 async function batchOpenWithManualSelection() {
-    console.log('[批量手动选择] 开始执行 batchOpenWithManualSelection');
+    
 
     if (!chrome || !chrome.tabs) {
         alert('此功能需要Chrome扩展环境');
@@ -5479,7 +5459,7 @@ function setupBatchSelectorEventsV2(overlay, selectionInfo, lang, getSelection) 
         const selection = getSelection();
         const { windowId, groupId, includeSubfolders, depthLevel } = selection;
 
-        console.log('[批量手动选择器] 确认打开:', { windowId, groupId, includeSubfolders, depthLevel });
+        
 
         // 关闭选择器
         overlay.remove();
@@ -5538,7 +5518,7 @@ async function batchOpenWithSmartGrouping(selectionInfo, windowId, groupId, incl
                                 collapsed: false
                             });
                         }
-                        console.log('[批量手动选择器] 创建标签组:', folder.title, '包含', tabIds.length, '个标签');
+                        
                     }
                 }
             }
@@ -5548,7 +5528,7 @@ async function batchOpenWithSmartGrouping(selectionInfo, windowId, groupId, incl
                 await chrome.tabs.create({ url: bookmark.url, windowId: targetWindowId, active: false });
             }
 
-            console.log('[批量手动选择器] 已打开:', selectionInfo.folders.length, '个文件夹组,', selectionInfo.bookmarks.length, '个独立书签');
+            
         }
 
     } catch (error) {
@@ -5852,7 +5832,7 @@ function setupBatchSelectorEvents(overlay, urls, lang, getSelection) {
         const selection = getSelection();
         const { windowId, groupId } = selection;
 
-        console.log('[批量手动选择器] 确认打开, 窗口:', windowId, ', 组:', groupId, ', 书签数:', urls.length);
+        
 
         // 关闭选择器
         overlay.remove();
@@ -5890,7 +5870,7 @@ async function batchOpenUrlsWithSelection(urls, windowId, groupId, lang) {
                 }
 
             } catch (error) {
-                console.warn('[批量手动选择器] 组不存在，在窗口中创建新标签组:', error);
+                
                 // 在窗口中创建新标签和组
                 for (const url of urls) {
                     const tab = await chrome.tabs.create({ url, windowId, active: false });
@@ -5925,7 +5905,7 @@ async function batchOpenUrlsWithSelection(urls, windowId, groupId, lang) {
                     await chrome.tabs.group({ groupId, tabIds });
                 }
             } catch (error) {
-                console.warn('[批量手动选择器] 组不存在，在新标签中打开:', error);
+                
                 for (const url of urls) {
                     await chrome.tabs.create({ url, active: false });
                 }
@@ -5938,7 +5918,7 @@ async function batchOpenUrlsWithSelection(urls, windowId, groupId, lang) {
             }
         }
 
-        console.log('[批量手动选择器] 已打开:', urls.length, '个书签');
+        
 
     } catch (error) {
         console.error('[批量手动选择器] 打开书签失败:', error);
@@ -5970,7 +5950,7 @@ async function batchCut() {
         permanentIds.forEach(id => markCutNode(id));
         showPasteButton();
         flashBatchActionStatus('batch-cut');
-        console.log('[批量] 剪切节点:', permanentIds.length);
+        
     } catch (error) {
         console.error('[批量] 剪切失败:', error);
     }
@@ -6040,7 +6020,7 @@ async function batchDelete() {
                 tempDeletedParents: Array.from(affectedParentIds),
                 tempDeleteTimestamp: Date.now()
             });
-            console.log('[批量删除] 已记录受影响的父文件夹:', Array.from(affectedParentIds));
+            
         }
 
         // 不调用 refreshBookmarkTree()，让 onRemoved 事件触发增量更新
@@ -6050,7 +6030,7 @@ async function batchDelete() {
         if (affectedParentIds.size > 0) {
             setTimeout(async () => {
                 await chrome.storage.local.remove(['tempDeletedParents', 'tempDeleteTimestamp']);
-                console.log('[批量删除] 已清除临时标记');
+                
             }, 5000);
         }
 
@@ -6059,7 +6039,7 @@ async function batchDelete() {
             : `Deleted ${successCount} items${failCount > 0 ? `, failed ${failCount}` : ''}`;
 
         alert(result);
-        console.log('[批量] 删除完成:', { successCount, failCount });
+        
 
     } catch (error) {
         console.error('[批量] 删除失败:', error);
@@ -6109,7 +6089,7 @@ async function batchRename() {
         // 不调用 refreshBookmarkTree()，让 onChanged 事件触发增量更新
         if (shouldRenamePermanent && permanentIds.length) {
             alert(lang === 'zh_CN' ? `已重命名 ${count} 项` : `Renamed ${count} items`);
-            console.log('[批量] 重命名完成:', count);
+            
         }
 
     } catch (error) {
@@ -6216,7 +6196,7 @@ async function batchExportHTML() {
         }
 
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
-        console.log('[批量] 导出HTML完成');
+        
 
     } catch (error) {
         console.error('[批量] 导出HTML失败:', error);
@@ -6298,7 +6278,7 @@ async function batchExportJSON() {
         }
 
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
-        console.log('[批量] 导出JSON完成');
+        
 
     } catch (error) {
         console.error('[批量] 导出JSON失败:', error);
@@ -6344,7 +6324,7 @@ async function batchMergeFolder() {
         // 不调用 refreshBookmarkTree()，让 onCreated/onMoved 事件触发增量更新
 
         alert(lang === 'zh_CN' ? `已将 ${count} 项合并到新文件夹` : `Merged ${count} items to new folder`);
-        console.log('[批量] 合并完成:', count);
+        
 
     } catch (error) {
         console.error('[批量] 合并失败:', error);
@@ -6361,11 +6341,11 @@ function initBatchToolbar() {
         document.querySelector('#treeView h2') ||
         document.querySelector('h2');
     if (!pageTitle) {
-        console.warn('[批量工具栏] 未找到页面标题');
+        
         return;
     }
 
-    console.log('[批量工具栏] 找到标题:', pageTitle.textContent);
+    
 
     // 创建工具栏容器（在标题同一行）
     const titleContainer = pageTitle.parentElement;
@@ -6413,14 +6393,14 @@ function initBatchToolbar() {
         });
     });
 
-    console.log('[批量工具栏] 初始化完成');
+    
 }
 
 // 更新批量操作工具栏
 function updateBatchToolbar() {
     const toolbar = document.getElementById('batch-toolbar');
     if (!toolbar) {
-        console.warn('[批量工具栏] 未找到工具栏元素');
+        
         return;
     }
 
@@ -6445,14 +6425,14 @@ function updateBatchToolbar() {
         }
     } catch (_) { }
 
-    console.log('[批量工具栏] 更新:', { selectMode, count });
+    
 
     // 在Select模式下，默认不显示工具栏（显示批量菜单）
     // 除非用户点击了"隐藏批量菜单"按钮
     // 如果不在Select模式，也隐藏
     if (!selectMode) {
         toolbar.style.display = 'none';
-        console.log('[批量工具栏] 已隐藏（非Select模式）');
+        
         return;
     }
 
@@ -6463,7 +6443,7 @@ function updateBatchToolbar() {
         countElement.textContent = countText;
     }
 
-    console.log('[批量工具栏] 已更新计数:', countText);
+    
 }
 
 // ==================== 快捷键支持 ====================
@@ -6487,12 +6467,12 @@ function initKeyboardShortcuts() {
         }
     });
 
-    console.log('[快捷键] 初始化完成');
+    
 }
 
 // 初始化点击选择 - 现在改为在overlay上处理，不需要这个函数了
 function initClickSelect() {
-    console.log('[点击选择] 初始化完成（点击事件现在在overlay上处理）');
+    
 }
 
 // 更新批量面板的选择计数
@@ -6507,7 +6487,7 @@ function updateBatchPanelCount() {
     const count = selectedNodes.size;
     countElement.textContent = `${count} ${lang === 'zh_CN' ? '项已选' : 'selected'}`;
 
-    console.log('[批量面板] 更新计数:', count);
+    
 
     try {
         const hasSelection = selectedNodes.size > 0;
@@ -6587,7 +6567,7 @@ function initBatchPanelDrag(panel) {
             cancelAnimationFrame(rafId);
             rafId = null;
         }
-        console.log('[批量面板] 拖动完成');
+        
     };
 
     header.addEventListener('pointerdown', (e) => {
@@ -6616,7 +6596,7 @@ function initBatchPanelDrag(panel) {
         header.style.cursor = 'grabbing';
         applyDragPosition();
         e.preventDefault();
-        console.log('[批量面板] 开始拖动');
+        
     });
 
     header.addEventListener('pointermove', (e) => {
@@ -6635,7 +6615,7 @@ function initBatchPanelDrag(panel) {
     header.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('pointerup', onPointerUp);
 
-    console.log('[批量面板] 拖拽移动功能已初始化');
+    
 }
 
 // 根据高度更新tall-layout类（横向布局专用）
@@ -6645,12 +6625,12 @@ function updateTallLayoutClass(panel, height) {
     if (height >= threshold) {
         if (!panel.classList.contains('tall-layout')) {
             panel.classList.add('tall-layout');
-            console.log('[批量面板] 高度>=200px，切换到纵向单列布局');
+            
         }
     } else {
         if (panel.classList.contains('tall-layout')) {
             panel.classList.remove('tall-layout');
-            console.log('[批量面板] 高度<200px，切换到横向多列布局');
+            
         }
     }
 }
@@ -6682,7 +6662,7 @@ function initBatchPanelResize(panel) {
             e.preventDefault();
             e.stopPropagation();
 
-            console.log('[批量面板] 开始调整大小:', direction);
+            
         });
     });
 
@@ -6748,11 +6728,11 @@ function initBatchPanelResize(panel) {
 
             // 保存大小
             saveBatchPanelState(panel);
-            console.log('[批量面板] 调整大小完成，当前高度:', panel.style.height);
+            
         }
     });
 
-    console.log('[批量面板] 四边四角调整大小功能已初始化');
+    
 }
 
 // 初始化窗口大小变化监听器（横向布局自适应）
@@ -6773,7 +6753,7 @@ function initBatchPanelWindowResize(panel) {
                 const currentWidth = parseFloat(batchPanel.style.width) || 1000;
                 if (currentWidth > maxPanelWidth) {
                     batchPanel.style.width = `${maxPanelWidth}px`;
-                    console.log('[批量面板] 窗口缩小，自动调整宽度:', maxPanelWidth);
+                    
                 }
                 // 不使用 translateX(-50%)，避免拖动/fit 时跳动
                 const margin = 16;
@@ -6786,7 +6766,7 @@ function initBatchPanelWindowResize(panel) {
         }, 200); // 防抖延迟200ms
     });
 
-    console.log('[批量面板] 窗口大小变化监听器已初始化');
+    
 }
 
 // 切换批量面板布局（横向/纵向）
@@ -6837,7 +6817,7 @@ function toggleBatchPanelLayout() {
         // 横向布局：贴底时不要保存/恢复 translateX，避免后续 restore 时跳
         batchPanel.dataset.manualPosition = wasManual ? 'true' : 'false';
 
-        console.log('[批量面板] 切换到横向布局');
+        
         // 更新按钮文字
         const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
         if (btn) {
@@ -6874,7 +6854,7 @@ function toggleBatchPanelLayout() {
         batchPanel.style.top = 'auto';
         applyBatchPanelTransform(batchPanel, { baseTransform: 'none' });
 
-        console.log('[批量面板] 切换到纵向布局');
+        
         // 更新按钮文字
         const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
         if (btn) {
@@ -6958,7 +6938,7 @@ function saveBatchPanelState(panel, anchorInfo) {
         stateMap[anchorKey] = state;
         localStorage.setItem(BATCH_PANEL_STATE_MAP_KEY, JSON.stringify(stateMap));
         localStorage.setItem(BATCH_PANEL_LEGACY_KEY, JSON.stringify(state));
-        console.log('[批量面板] 状态已保存:', anchorKey, state);
+        
     } catch (e) {
         console.error('[批量面板] 保存状态失败:', e);
     }
@@ -6970,7 +6950,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
         if (!panel) return;
         const info = anchorInfo || currentBatchPanelAnchorInfo || getBatchPanelAnchorInfoFromSelection();
         if (!info) {
-            console.warn('[批量面板] 缺少定位信息，维持默认位置');
+            
             return;
         }
 
@@ -7057,7 +7037,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
                 const stateMap = JSON.parse(stateMapRaw);
                 state = stateMap ? stateMap[anchorKey] : null;
             } catch (err) {
-                console.warn('[批量面板] 状态映射解析失败，忽略:', err);
+                
             }
         }
 
@@ -7070,13 +7050,13 @@ function restoreBatchPanelState(panel, anchorInfo) {
                         state = legacyState;
                     }
                 } catch (err) {
-                    console.warn('[批量面板] 兼容状态解析失败，忽略:', err);
+                    
                 }
             }
         }
 
         if (state) {
-            console.log('[批量面板] 恢复状态:', anchorKey, state);
+            
             const storedWidth = parseFloat(state.width);
             const storedHeight = parseFloat(state.height);
             const storedBaseTransform = state.baseTransform || 'none';
@@ -7206,7 +7186,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
             return;
         }
 
-        console.log('[批量面板] 没有保存的状态，使用默认定位');
+        
         const storedLayout = getStoredBatchPanelLayout();
         batchPanelHorizontal = storedLayout === 'horizontal';
         panel.classList.remove('horizontal-batch-layout', 'vertical-batch-layout', 'tall-layout');
@@ -7251,7 +7231,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
             applyBatchPanelTransform(panel, { baseTransform: 'none' });
         }
 
-        console.log('[批量面板] 默认定位完成:', { anchorKey });
+        
         fitBatchPanelToContent(panel, { delay: 0, shrink: true });
     } catch (e) {
         console.error('[批量面板] 恢复状态失败:', e);
@@ -7274,7 +7254,7 @@ function hideBatchPanel() {
         toolbar.style.display = 'flex';
     }
 
-    console.log('[批量面板] 已隐藏，显示顶部工具栏');
+    
 }
 
 // 显示批量面板，隐藏顶部工具栏
@@ -7285,7 +7265,7 @@ function showBatchPanel() {
     if (!batchPanel) {
         const fakeEvent = { preventDefault: () => { }, stopPropagation: () => { } };
         showBatchContextMenu(fakeEvent);
-        console.log('[批量面板] 重新创建批量菜单');
+        
     } else {
         // 如果面板已存在，直接显示
         batchPanel.style.display = 'block';
@@ -7294,7 +7274,7 @@ function showBatchPanel() {
             currentBatchPanelAnchorInfo = anchorInfo;
             restoreBatchPanelState(batchPanel, anchorInfo);
         }
-        console.log('[批量面板] 显示已有面板');
+        
         // 保存显示状态
         saveBatchPanelState(batchPanel);
         fitBatchPanelToContent(batchPanel, { delay: 0 });
@@ -7306,7 +7286,7 @@ function showBatchPanel() {
         toolbar.style.display = 'none';
     }
 
-    console.log('[批量面板] 已显示，隐藏顶部工具栏');
+    
 }
 
 // 切换右键菜单布局（横向/纵向）
@@ -7320,10 +7300,10 @@ function toggleContextMenuLayout() {
 
     if (contextMenuHorizontal) {
         contextMenu.classList.add('horizontal-layout');
-        console.log('[右键菜单] 切换到横向布局');
+        
     } else {
         contextMenu.classList.remove('horizontal-layout');
-        console.log('[右键菜单] 切换到纵向布局');
+        
     }
 
     // 保存“按类型”的状态到localStorage
@@ -7344,11 +7324,11 @@ function restoreContextMenuLayout() {
         if (savedLayout === 'vertical') {
             contextMenuHorizontal = false;
             contextMenu.classList.remove('horizontal-layout');
-            console.log('[右键菜单] 恢复纵向布局（scope=', scope, ')');
+            
         } else if (savedLayout === 'horizontal') {
             contextMenuHorizontal = true;
             contextMenu.classList.add('horizontal-layout');
-            console.log('[右键菜单] 恢复横向布局（scope=', scope, ')');
+            
         } else {
             // 未指定，保持当前（由自动阈值决定）
         }
@@ -7691,10 +7671,10 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
                     });
                 }
 
-                console.log(`[超链接] 在现有分组中打开: ${url}`);
+                
                 return;
             } catch (error) {
-                console.warn('[超链接] 分组已失效，创建新分组');
+                
                 await resetHyperlinkSpecificGroupInfo();
             }
         }
@@ -7719,7 +7699,7 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
 
             await setHyperlinkSpecificGroupInfo(groupId, currentWindow.id);
 
-            console.log(`[超链接] 创建新分组"${groupTitle}": ${url}`);
+            
         }
     } catch (error) {
         console.error('[超链接] 分组打开失败:', error);
@@ -7751,11 +7731,11 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                             active: true
                         });
                         await chrome.windows.update(hyperlinkSpecificWindowId, { focused: true });
-                        console.log('[超链接] 在现有窗口中打开:', url);
+                        
                         return;
                     }
                 } catch (error) {
-                    console.warn('[超链接] 窗口已失效，创建新窗口');
+                    
                     await resetHyperlinkSpecificWindowId();
                 }
             }
@@ -7774,7 +7754,7 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
             // 注册到超链接窗口注册表
             await registerHyperlinkWindow(created.id, nextNumber);
 
-            console.log(`[超链接] 创建新窗口"${windowTitle}": ${url}`);
+            
         } else {
             window.open(url, '_blank');
         }
@@ -7824,7 +7804,7 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
                 }
                 groupId = scopeEntry.groupId;
             } catch (error) {
-                console.warn('[超链接] 分组已失效');
+                
                 groupId = null;
             }
         }
@@ -7860,7 +7840,7 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
             }
         }
 
-        console.log(`[超链接] 同窗特定组打开: ${url}`);
+        
     } catch (error) {
         console.error('[超链接] 同窗特定组打开失败:', error);
         window.open(url, '_blank');
@@ -8343,7 +8323,7 @@ async function saveManualSelection() {
             manualSelectedGroupId,
             customWindowNames
         });
-        console.log('[手动选择器] 已保存:', { windowId: manualSelectedWindowId, groupId: manualSelectedGroupId });
+        
     } catch (error) {
         console.error('[手动选择器] 保存失败:', error);
     }
@@ -8516,7 +8496,7 @@ async function openBookmarkWithManualSelection(url) {
         const windowId = manualSelectedWindowId;
         const groupId = manualSelectedGroupId;
 
-        console.log('[手动选择器] 打开书签:', { url, windowId, groupId });
+        
 
         // 情况1: 窗口 + 组
         if (windowId && groupId) {
@@ -8535,7 +8515,7 @@ async function openBookmarkWithManualSelection(url) {
                 }
 
             } catch (error) {
-                console.warn('[手动选择器] 组不存在，在窗口中创建新标签:', error);
+                
                 const tab = await chrome.tabs.create({ url, windowId, active: true });
                 if (tab && tab.id != null) {
                     await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
@@ -8559,7 +8539,7 @@ async function openBookmarkWithManualSelection(url) {
                     await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
                 }
             } catch (error) {
-                console.warn('[手动选择器] 组不存在，在新标签页打开:', error);
+                
                 const tab = await chrome.tabs.create({ url, active: true });
                 if (tab && tab.id != null) {
                     await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });

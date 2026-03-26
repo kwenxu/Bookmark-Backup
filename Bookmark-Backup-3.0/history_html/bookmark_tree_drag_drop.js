@@ -86,7 +86,7 @@ function scheduleFolderExpand(targetNode) {
                             loadPermanentFolderChildrenLazy(nodeId, children, 0, null);
                         }
                     } catch (loadErr) {
-                        console.warn('[拖拽展开] 永久栏目懒加载失败:', loadErr);
+                        
                     }
                 }
 
@@ -110,8 +110,6 @@ function initDragDrop() {
     dropIndicator.className = 'drop-indicator';
     dropIndicator.style.display = 'none';
     document.body.appendChild(dropIndicator);
-
-    console.log('[拖拽] 初始化完成');
 }
 
 // 为树节点绑定拖拽事件
@@ -148,8 +146,6 @@ function attachDragEvents(treeContainer) {
         node.addEventListener('dragend', handleDragEnd);
     });
 
-    console.log('[拖拽] 绑定拖拽事件:', draggableNodes.length, '个节点');
-
     // 额外：在滚动容器层面也监听 dragover，用于容器空白区域的自动滚动
     try {
         const scrollContainer = treeContainer.closest('.permanent-section-body');
@@ -160,7 +156,6 @@ function attachDragEvents(treeContainer) {
                 updateAutoScroll(e);
             });
             scrollContainer.__autoScrollHooked = true;
-            console.log('[拖拽] 已在滚动容器绑定 dragover 自动滚动监听');
         }
     } catch (_) { }
 }
@@ -202,12 +197,6 @@ function handleDragStart(e) {
 
     // 添加拖拽样式
     draggedNode.classList.add('dragging');
-
-    console.log('[拖拽] ===== 开始拖拽 =====');
-    console.log('[拖拽] 被拖动节点ID:', draggedNodeId);
-    console.log('[拖拽] 被拖动节点标题:', draggedNode?.dataset?.nodeTitle);
-    console.log('[拖拽] 上一个同级节点ID:', draggedNodePrev?.dataset?.nodeId);
-    console.log('[拖拽] 下一个同级节点ID:', draggedNodeNext?.dataset?.nodeId);
 
     // 启动自动滚动检测
     startAutoScroll();
@@ -329,8 +318,6 @@ function handleDragEnd(e) {
         __hoverExpandState.lastDragEndTime = Date.now();
         __hoverExpandState.lastAt.clear();
     } catch (_) { }
-
-    console.log('[拖拽] 拖拽结束');
 }
 
 // 显示拖拽指示器
@@ -437,7 +424,7 @@ async function computePermanentInsertion(targetId, targetIsFolder, position) {
         const index = targetIndex === null ? null : (position === 'before' ? targetIndex : targetIndex + 1);
         return { parentId, index };
     } catch (error) {
-        console.warn('[拖拽] 计算插入位置失败:', error);
+        
         return { parentId: targetId, index: null };
     }
 }
@@ -451,20 +438,13 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
     const { position = 'inside' } = context || {};
     try {
         if (!chrome || !chrome.bookmarks) {
-            console.warn('[拖拽] Chrome扩展环境不可用');
+            
             return;
         }
 
         const [sourceNode] = await chrome.bookmarks.get(sourceId);
         const [targetNode] = await chrome.bookmarks.get(targetId);
         const insertInfo = await computePermanentInsertion(targetId, targetIsFolder, position);
-
-        console.log('[拖拽] 永久栏目内移动:', {
-            source: sourceNode?.title,
-            target: targetNode?.title,
-            position,
-            insertInfo
-        });
 
         // 【测试】只执行Chrome API，完全依赖 onMoved 事件来更新视觉
         // 先标记
@@ -479,9 +459,6 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
             parentId: insertInfo.parentId,
             index: insertInfo.index
         });
-
-        console.log('[拖拽] Chrome API 移动成功，等待 onMoved 事件更新视觉');
-
     } catch (error) {
         console.error('[拖拽] 移动操作失败:', error);
     }

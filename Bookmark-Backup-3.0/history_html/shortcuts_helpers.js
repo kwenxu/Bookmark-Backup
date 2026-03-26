@@ -68,7 +68,7 @@ function updateShortcutsDisplay() {
                         : 'chrome://extensions/shortcuts';
                     browserAPI.tabs.create({ url });
                 } catch (e) {
-                    console.warn('[Shortcuts] 打开浏览器快捷键设置页面失败:', e);
+                    
                 }
             });
         }
@@ -92,7 +92,7 @@ function updateShortcutsDisplay() {
                 });
             });
         } catch (e) {
-            console.warn('[Shortcuts] 读取快捷键失败，使用默认值:', e);
+            
             render({});
         }
     } else {

@@ -30,7 +30,6 @@ async function safeCreateTab(createProperties, maxRetries = 3, retryDelay = 150)
             
             // 如果是拖拽错误且还有重试机会，等待后重试
             if (isDraggingError && attempt < maxRetries) {
-                console.log(`[safeCreateTab] 检测到标签页拖拽冲突，等待 ${retryDelay}ms 后重试 (${attempt + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 continue;
             }

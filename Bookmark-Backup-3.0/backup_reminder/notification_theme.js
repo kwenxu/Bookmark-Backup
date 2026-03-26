@@ -28,16 +28,14 @@
         // 获取实际要应用的主题
         const actualTheme = themeType === ThemeType.SYSTEM ? 
             getSystemThemePreference() : themeType;
-        
+
         // 移除所有可能的主题类
         document.documentElement.removeAttribute('data-theme');
-        
+
         // 应用深色主题（浅色是默认，不需要特别设置）
         if (actualTheme === ThemeType.DARK) {
             document.documentElement.setAttribute('data-theme', 'dark');
         }
-        
-        console.log('已应用主题:', actualTheme);
     }
 
     // 监听系统主题变化
@@ -68,11 +66,9 @@
         // 应用保存的主题
         const savedTheme = loadThemePreference();
         applyTheme(savedTheme);
-        
+
         // 监听系统主题变化
         watchSystemThemeChanges();
-        
-        console.log('通知窗口主题初始化完成');
     }
 
     // 在文档加载完成后初始化

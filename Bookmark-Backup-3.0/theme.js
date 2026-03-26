@@ -24,7 +24,7 @@
             const localLang = localStorage.getItem('preferredLang');
             if (localLang) return localLang;
         } catch (e) {
-            console.warn('从 chrome.storage.local 或 localStorage 获取语言设置失败:', e);
+            
         }
         return 'zh_CN'; // 默认语言
     }
@@ -56,9 +56,7 @@
                 chrome.storage.local.set({ currentTheme: actualTheme }, () => {
                     if (chrome.runtime.lastError) {
                         console.error('无法保存主题到chrome.storage:', chrome.runtime.lastError);
-                    } else {
-                        console.log('[主UI] 主题已保存到storage:', actualTheme);
-                    }
+                    } else {}
                 });
             }
         } catch (e) {

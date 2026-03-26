@@ -22,7 +22,6 @@ try {
     const saved = localStorage.getItem('historyViewerCustomLang');
     if (saved === 'en' || saved === 'zh_CN') {
         currentLang = saved;
-        // console.log('[History Viewer] Restored language:', currentLang);
     } else {
         try {
             const ui = (chrome?.i18n?.getUILanguage?.() || '').toLowerCase();
@@ -82,7 +81,7 @@ async function loadHistoryViewSettings() {
     return new Promise(resolve => {
         const browserAPI = (typeof chrome !== 'undefined' && chrome.storage) ? chrome : (typeof browser !== 'undefined' ? browser : null);
         if (!browserAPI || !browserAPI.storage) {
-            console.warn('[历史视图设置] 无法访问 storage API');
+            
             historyViewSettings = { defaultMode: 'collection', recordModes: {}, recordExpandedStates: {} };
             historyDetailMode = 'collection';
             resolve(historyViewSettings);
@@ -106,11 +105,7 @@ async function loadHistoryViewSettings() {
                     : {}
             };
             historyDetailMode = historyViewSettings.defaultMode || 'collection';
-            console.log('[历史视图设置] 已加载:', {
-                defaultMode: historyDetailMode,
-                recordModesCount: Object.keys(historyViewSettings.recordModes || {}).length,
-                expandedStatesCount: Object.keys(historyViewSettings.recordExpandedStates || {}).length
-            });
+            
             resolve(historyViewSettings);
         });
     });
@@ -134,7 +129,7 @@ async function saveHistoryViewSettings() {
             await new Promise(r => {
                 browserAPI.storage.local.set({ historyViewSettings }, r);
             });
-            console.log('[历史视图设置] 已保存到 chrome.storage.local');
+            
             resolve();
         }, 300);
     });
@@ -154,11 +149,11 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
     });
 
     if (result.historyViewSettingsMigrated) {
-        console.log('[迁移] 历史视图设置已迁移，跳过');
+        
         return;
     }
 
-    console.log('[迁移] 开始迁移 localStorage 中的历史视图设置...');
+    
 
     const newSettings = {
         defaultMode: 'collection',
@@ -211,12 +206,8 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
         historyViewSettings = newSettings;
         historyDetailMode = normalizeHistoryDetailMode(newSettings.defaultMode);
 
-        console.log('[迁移] 历史视图设置迁移完成');
-        console.log('[迁移] 迁移的数据:', {
-            defaultMode: newSettings.defaultMode,
-            recordModesCount: Object.keys(newSettings.recordModes).length,
-            recordExpandedStatesCount: Object.keys(newSettings.recordExpandedStates).length
-        });
+        
+        
 
     } catch (error) {
         console.error('[迁移] 迁移失败:', error);
@@ -344,9 +335,9 @@ async function restoreExplicitMovedIdsFromStorage() {
             if (!entry || typeof entry.id === 'undefined' || entry.id === null) return;
             explicitMovedIds.set(String(entry.id), Infinity);
         });
-        console.log('[移动标识] 已从storage恢复显式移动ID数量:', explicitMovedIds.size);
+        
     } catch (e) {
-        console.warn('[移动标识] 从storage恢复显式移动ID失败:', e);
+        
     }
 }
 // 从 localStorage 立即恢复视图，避免页面闪烁
@@ -358,13 +349,13 @@ let currentView = (() => {
         const params = new URLSearchParams(window.location.search);
         const viewFromUrl = params.get('view');
         if (viewFromUrl) {
-            console.log('[全局初始化] URL 参数中的视图:', viewFromUrl);
+            
             return viewFromUrl;
         }
 
         // 2. 其次尝试从 localStorage 获取
         const saved = localStorage.getItem('lastActiveView');
-        console.log('[全局初始化] localStorage中的视图:', saved);
+        
         return saved || 'current-changes';
     } catch (e) {
         console.error('[全局初始化] 读取视图失败:', e);
@@ -444,12 +435,12 @@ function resetPermanentSectionChangeMarkers() {
             }
         });
 
-        console.log('[ChangesPreview] 预览颜色标识已清理完毕');
+        
     } catch (e) {
-        console.warn('[ChangesPreview] 清理预览标识时出错:', e);
+        
     }
 }
-console.log('[全局初始化] currentView初始值:', currentView);
+
 let currentFilter = 'all';
 let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
 let allBookmarks = [];
@@ -951,7 +942,7 @@ async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
         try {
             await loadAllData({ skipRender: true });
         } catch (error) {
-            console.warn('[bulk mute] loadAllData after mute failed:', trigger, error);
+            
         }
     }
 
@@ -959,7 +950,7 @@ async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
         try {
             await renderCurrentChangesViewWithRetry(2, true);
         } catch (error) {
-            console.warn('[bulk mute] refresh current-changes after mute failed:', trigger, error);
+            
         }
     }
 
@@ -967,12 +958,12 @@ async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
         try {
             await refreshHistoryIndexPage({ page: currentHistoryPage });
         } catch (pageError) {
-            console.warn('[bulk mute] refresh history page after mute failed:', trigger, pageError);
+            
         }
         try {
             await renderHistoryView();
         } catch (renderError) {
-            console.warn('[bulk mute] render history after mute failed:', trigger, renderError);
+            
         }
     }
 
@@ -980,7 +971,7 @@ async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
         try {
             await renderTreeView(true);
         } catch (treeError) {
-            console.warn('[bulk mute] renderTreeView after mute failed:', trigger, treeError);
+            
         }
     }
 
@@ -988,7 +979,7 @@ async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
         try {
             await processAnalysisUpdatedMessage(deferredAnalysisMessage);
         } catch (messageError) {
-            console.warn('[bulk mute] deferred analysis message failed:', trigger, messageError);
+            
         }
     }
 
@@ -1928,7 +1919,7 @@ window.i18n = i18n; // 暴露给其他模块使用
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('历史查看器初始化...');
+    
 
     // ========================================================================
     // 【关键步骤 -1】检测是否需要清除 localStorage（"恢复到初始状态"功能触发）
@@ -1939,7 +1930,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (resetCheck && resetCheck.needClearLocalStorage === true) {
-            console.log('[初始化] 检测到重置标志，正在清除 localStorage...');
+            
 
             // 清除当前页面上下文的所有 localStorage
             localStorage.clear();
@@ -1949,10 +1940,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 browserAPI.storage.local.remove(['needClearLocalStorage'], resolve);
             });
 
-            console.log('[初始化] localStorage 已清除，重置标志已移除');
+            
         }
     } catch (error) {
-        console.warn('[初始化] 检测重置标志时出错:', error);
+        
     }
 
     // ========================================================================
@@ -1962,7 +1953,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await migrateHistoryViewSettingsFromLocalStorage();
         await loadHistoryViewSettings();
     } catch (error) {
-        console.warn('[初始化] 加载历史视图设置失败:', error);
+        
     }
 
     // ========================================================================
@@ -1987,27 +1978,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 优先级：URL参数 > localStorage > 默认值
     if (viewParam && ALLOWED_VIEWS.includes(viewParam)) {
         currentView = viewParam;
-        console.log('[初始化] 从URL参数设置视图:', currentView);
+        
 
         // 【关键】应用 URL 参数后，立即从 URL 中移除 view 参数
         // 这样刷新页面时就会使用 localStorage，实现持久化
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.delete('view');
         window.history.replaceState({}, '', newUrl.toString());
-        console.log('[初始化] 已从URL中移除view参数，刷新时将使用localStorage');
+        
     } else {
         const lastView = localStorage.getItem('lastActiveView');
         if (lastView && ALLOWED_VIEWS.includes(lastView)) {
             currentView = lastView;
-            console.log('[初始化] 从localStorage恢复视图:', currentView);
+            
         } else {
             currentView = DEFAULT_VIEW;
-            console.log('[初始化] 使用默认视图:', currentView);
+            
         }
     }
 
     // 立即应用视图状态到DOM
-    console.log('[初始化] >>>立即应用视图状态<<<:', currentView);
+    
     document.querySelectorAll('.nav-tab').forEach(tab => {
         if (tab.dataset.view === currentView) {
             tab.classList.add('active');
@@ -2024,7 +2015,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     localStorage.setItem('lastActiveView', currentView);
-    console.log('[初始化] 视图状态已应用完成');
+    
 
     // [Search Context Boot] 首次加载时同步 SearchContextManager 的 view/tab/subTab。
     // 这里不能依赖 switchView()，因为初始化阶段是直接改 DOM 来显示视图。
@@ -2049,15 +2040,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             cleanUrl.searchParams.delete('action');
             window.history.replaceState({}, '', cleanUrl.toString());
             if (tag) {
-                console.log(`[初始化] 已清除 URL 中的 action 参数(${tag})`);
+                
             }
         } catch (e) {
-            console.warn(`[初始化] 清除 action 参数${tag ? `(${tag})` : ''}失败:`, e);
+            
         }
     };
 
-    console.log('[URL参数] 完整URL:', window.location.href);
-    console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
+    
+    
 
     // 加载用户设置
     await loadUserSettings();
@@ -2099,15 +2090,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 初始化批量操作相关功能
     if (typeof initBatchToolbar === 'function') {
         initBatchToolbar();
-        console.log('[主程序] 批量工具栏已初始化');
+        
     }
     if (typeof initKeyboardShortcuts === 'function') {
         initKeyboardShortcuts();
-        console.log('[主程序] 快捷键已初始化');
+        
     }
     if (typeof initClickSelect === 'function') {
         initClickSelect();
-        console.log('[主程序] 点击选择已初始化');
+        
     }
 
     // 注册消息监听
@@ -2119,7 +2110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await restoreExplicitMovedIdsFromStorage();
 
     // 先加载基础数据
-    console.log('[初始化] 加载基础数据...');
+    
     await loadAllData();
     setTimeout(() => {
         maybePromptRestoreRecoveryTransactionInHistory().catch(() => { });
@@ -2129,16 +2120,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             await refreshHistoryIndexPage({ page: currentHistoryPage });
         } catch (e) {
-            console.warn('[初始化] 预加载历史分页索引失败，使用已有数据回退:', e);
+            
         }
     }
 
     // 如果有 recordTime 参数，按 action 打开对应二级UI（在UI渲染之前）
     if (recordTime) {
-        console.log('[初始化] 快速打开条目动作，recordTime:', recordTime, 'action:', recordAction || 'detail');
+        
         const record = syncHistory.find(r => r.time == recordTime);
         if (record) {
-            console.log('[初始化] 找到记录，立即打开动作面板');
+            
 
             // 立即打开，不等待UI渲染
             setTimeout(() => {
@@ -2172,15 +2163,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cleanUrl.searchParams.delete('record');
                 cleanUrl.searchParams.delete('action');
                 window.history.replaceState({}, '', cleanUrl.toString());
-                console.log('[初始化] 已清除 URL 中的 record/action 参数');
+                
             } catch (e) {
-                console.warn('[初始化] 清除 record/action 参数失败:', e);
+                
             }
         }
     }
 
     // 使用智能等待：优先复用缓存；若首轮结果不完整，重试流程会自动转为强制刷新
-    console.log('[初始化] 开始渲染当前视图:', currentView);
+    
 
     // 根据当前视图渲染
     if (currentView === 'current-changes') {
@@ -2197,7 +2188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             await handleRevertAll('url');
         } catch (e) {
-            console.warn('[初始化] 自动打开全部撤销面板失败:', e);
+            
         }
 
         clearActionParamFromUrl('revert-all');
@@ -2213,7 +2204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 clearBtn.click();
             }
         } catch (e) {
-            console.warn('[初始化] 自动打开删除二级UI失败:', e);
+            
         }
 
         clearActionParamFromUrl('open-clear-history');
@@ -2226,7 +2217,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             showGlobalExportModal();
         } catch (e) {
-            console.warn('[初始化] 自动打开导出二级UI失败:', e);
+            
         }
 
         clearActionParamFromUrl('open-global-export');
@@ -2237,7 +2228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         preloadAllViews(),
         preloadCommonIcons()
     ]).then(() => {
-        console.log('[初始化] 所有资源预加载完成');
+        
     }).catch(error => {
         console.error('[初始化] 预加载失败:', error);
     });
@@ -2255,7 +2246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         handleAnalysisUpdatedMessage(pendingMessage);
     }
 
-    console.log('历史查看器初始化完成');
+    
 });
 
 // =============================================================================
@@ -2313,20 +2304,20 @@ async function loadUserSettings() {
             // 优先使用覆盖设置，否则使用主UI设置
             if (hasThemeOverride()) {
                 currentTheme = getThemeOverride() || mainUITheme;
-                console.log('[加载用户设置] 使用History Viewer的主题覆盖:', currentTheme);
+                
             } else {
                 currentTheme = mainUITheme;
-                console.log('[加载用户设置] 跟随主UI主题:', currentTheme);
+                
             }
 
             if (hasLangOverride()) {
                 currentLang = getLangOverride() || mainUILang;
                 window.currentLang = currentLang; // 同步到 window
-                console.log('[加载用户设置] 使用History Viewer的语言覆盖:', currentLang);
+                
             } else {
                 currentLang = mainUILang;
                 window.currentLang = currentLang; // 同步到 window
-                console.log('[加载用户设置] 跟随主UI语言:', currentLang);
+                
             }
 
             historyDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
@@ -2684,7 +2675,7 @@ function initializeUI() {
     initHistoryDetailModeToggle();
     initDetailModalActions();
 
-    console.log('[initializeUI] UI事件监听器初始化完成，当前视图:', currentView);
+    
 }
 
 function clearBackupHistoryRecordsInBackground() {
@@ -3072,7 +3063,7 @@ function initClearBackupHistoryModal() {
                     });
                     syncHistory = data.syncHistory || [];
                 } catch (e) {
-                    console.warn('[executeDelete] Failed to reload syncHistory');
+                    
                     syncHistory = syncHistory.slice(deletedCount);
                 }
 
@@ -3080,7 +3071,7 @@ function initClearBackupHistoryModal() {
                     await refreshHistoryIndexPage({ page: currentHistoryPage });
                     renderHistoryView();
                 } catch (e) {
-                    console.warn('[executeDelete] 历史分页索引刷新/渲染失败，使用本地倒序回退:', e);
+                    
                     const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
                     const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                     const totalRecords = sortedLocal.length;
@@ -3092,7 +3083,7 @@ function initClearBackupHistoryModal() {
                     try {
                         renderHistoryView();
                     } catch (renderError) {
-                        console.warn('[executeDelete] renderHistoryView failed:', renderError);
+                        
                     }
                 }
 
@@ -3292,12 +3283,12 @@ function initClearBackupHistoryModal() {
 function clearBackupHistoryPartial(deleteCount) {
     return new Promise((resolve) => {
         try {
-            console.log('[clearBackupHistoryPartial] Sending request to delete', deleteCount, 'records');
+            
 
             // 确保 deleteCount 是数字
             const count = parseInt(deleteCount, 10);
             if (isNaN(count) || count <= 0) {
-                console.warn('[clearBackupHistoryPartial] Invalid deleteCount:', deleteCount);
+                
                 resolve({ success: true, deleted: 0 });
                 return;
             }
@@ -3312,10 +3303,10 @@ function clearBackupHistoryPartial(deleteCount) {
                     return;
                 }
 
-                console.log('[clearBackupHistoryPartial] Response:', response);
+                
 
                 if (!response) {
-                    console.warn('[clearBackupHistoryPartial] No response received');
+                    
                     resolve({ success: false, error: 'no response' });
                     return;
                 }
@@ -4316,7 +4307,7 @@ async function executeRevert(strategy) {
                     try {
                         await refreshHistoryIndexPage({ page: currentHistoryPage });
                     } catch (pageError) {
-                        console.warn('[executeRevert] 历史分页索引刷新失败，使用本地倒序回退:', pageError);
+                        
                         const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
                         const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                         const totalRecords = sortedLocal.length;
@@ -4450,7 +4441,7 @@ function showRevertToast(isSuccess, message) {
 
 async function loadAllData(options = {}) {
     const { skipRender = false } = options;
-    console.log('[loadAllData] 开始加载所有数据...');
+    
 
     try {
         // 并行加载所有数据
@@ -4465,17 +4456,14 @@ async function loadAllData(options = {}) {
 
         // 注意：不再清理 bookmarkTree，保留所有记录的详细数据
         // 用户存储空间无限制
-        console.log('[loadAllData] 保留所有历史记录的详细数据');
+        
 
         // 将 ISO 字符串格式转换为时间戳（毫秒）
         lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
         allBookmarks = flattenBookmarkTree(bookmarkTree);
         cachedBookmarkTree = bookmarkTree;
 
-        console.log('[loadAllData] 数据加载完成:', {
-            历史记录数: syncHistory.length,
-            书签总数: allBookmarks.length
-        });
+        
 
         // NOTE:
         // loadAllData 只负责数据准备，不在这里触发 current-changes 的渲染。
@@ -4532,9 +4520,9 @@ async function ensureSyncHistorySeqNumbersPersisted(historyRecords) {
         await new Promise((resolve) => {
             browserAPI.storage.local.set({ syncHistory: updated }, resolve);
         });
-        console.log('[ensureSyncHistorySeqNumbersPersisted] Migrated seqNumber for syncHistory records');
+        
     } catch (e) {
-        console.warn('[ensureSyncHistorySeqNumbersPersisted] Failed to persist seqNumber migration:', e);
+        
     }
 
     return updated;
@@ -4545,22 +4533,22 @@ async function preloadAllViews() {
     if (isPreloading) return;
     isPreloading = true;
 
-    console.log('[预加载] 开始预加载所有视图...');
+    
 
     try {
         // 预加载书签树（后台准备）
         if (!cachedBookmarkTree) {
             cachedBookmarkTree = await loadBookmarkTree();
-            console.log('[预加载] 书签树已缓存');
+            
         }
 
         // 预加载当前变化数据（后台准备）
         if (!cachedCurrentChanges) {
             cachedCurrentChanges = await getDetailedChanges();
-            console.log('[预加载] 当前变化数据已缓存');
+            
         }
 
-        console.log('[预加载] 所有视图数据预加载完成');
+        
     } catch (error) {
         console.error('[预加载] 预加载失败:', error);
     } finally {
@@ -4570,7 +4558,7 @@ async function preloadAllViews() {
 
 // 预加载常见网站的图标
 async function preloadCommonIcons() {
-    console.log('[图标预加载] 开始预加载常见图标...');
+    
 
     try {
         // 获取当前所有书签的 URL，过滤掉无效的
@@ -4579,7 +4567,7 @@ async function preloadCommonIcons() {
             .filter(url => url && url.trim() && (url.startsWith('http://') || url.startsWith('https://')));
 
         if (urls.length === 0) {
-            console.log('[图标预加载] 没有有效的 URL 需要预加载');
+            
             return;
         }
 
@@ -4592,7 +4580,7 @@ async function preloadCommonIcons() {
             await Promise.all(batch.map(url => preloadIcon(url)));
         }
 
-        console.log('[图标预加载] 完成，已预加载', maxPreload, '个图标');
+        
     } catch (error) {
         console.error('[图标预加载] 失败:', error);
     }
@@ -4609,7 +4597,7 @@ async function preloadIcon(url) {
         // 使用缓存系统获取favicon（会自动缓存）
         await FaviconCache.fetch(url);
     } catch (error) {
-        console.warn('[图标预加载] URL 预加载失败:', url, error.message);
+        
     }
 }
 
@@ -4619,7 +4607,7 @@ async function warmupFaviconCache(bookmarkUrls) {
     if (!bookmarkUrls || bookmarkUrls.length === 0) return;
 
     try {
-        console.log('[Favicon预热] 开始预热内存缓存，书签数量:', bookmarkUrls.length);
+        
 
         // 初始化 IndexedDB（如果还没初始化）
         if (!FaviconCache.db) {
@@ -4641,7 +4629,7 @@ async function warmupFaviconCache(bookmarkUrls) {
 
         if (domains.size === 0) return;
 
-        console.log('[Favicon预热] 需要预热的域名数:', domains.size);
+        
 
         // 批量读取
         const transaction = FaviconCache.db.transaction([FaviconCache.storeName], 'readonly');
@@ -4669,9 +4657,9 @@ async function warmupFaviconCache(bookmarkUrls) {
             }
         }
 
-        console.log('[Favicon预热] 完成，从IndexedDB加载了', loaded, '个favicon到内存');
+        
     } catch (error) {
-        console.warn('[Favicon预热] 失败:', error);
+        
     }
 }
 
@@ -4995,7 +4983,7 @@ function initSidebarToggle() {
     const toggleBtn = document.getElementById('sidebarToggle');
 
     if (!sidebar || !toggleBtn) {
-        console.warn('[侧边栏] 找不到侧边栏或切换按钮');
+        
         return;
     }
 
@@ -5013,7 +5001,7 @@ function initSidebarToggle() {
     const savedState = localStorage.getItem('sidebarCollapsed');
     if (savedState === 'true') {
         sidebar.classList.add('collapsed');
-        console.log('[侧边栏] 恢复收起状态');
+        
     }
     // 恢复完状态后，同步一次真实宽度
     syncSidebarWidth();
@@ -5032,7 +5020,7 @@ function initSidebarToggle() {
         syncSidebarWidth();
         // 无需处理小组件刷新
 
-        console.log('[侧边栏]', isCollapsed ? '已收起' : '已展开');
+        
     });
 
     // 窗口尺寸变化时，侧边栏可能被 CSS 自动收缩/展开，这里也同步一次宽度
@@ -5046,7 +5034,7 @@ function initSidebarToggle() {
 // =============================================================================
 
 function switchView(view) {
-    console.log('[switchView] 切换视图到:', view);
+    
 
     const previousView = currentView;
 
@@ -5124,7 +5112,7 @@ function switchView(view) {
 
     // 保存到 localStorage
     localStorage.setItem('lastActiveView', view);
-    console.log('[switchView] 已保存视图到localStorage:', view);
+    
 
     // 渲染当前视图
     renderCurrentView();
@@ -5147,7 +5135,7 @@ function renderCurrentView() {
                         renderHistoryView();
                     }
                 }).catch((error) => {
-                    console.warn('[renderCurrentView] history page refresh failed, local fallback remains active:', error);
+                    
                 });
             }
             renderHistoryView();
@@ -5794,7 +5782,7 @@ function scheduleCurrentChangesRerender(reason = '') {
     if (currentView !== 'current-changes') return;
     if (isHistoryBookmarkUiMuted()) {
         historyPendingMutedCurrentChangesRefresh = true;
-        console.log('[当前变化缓存] 当前处于批量静音，延后刷新:', reason);
+        
         return;
     }
     if (pendingCurrentChangesEventTimer) clearTimeout(pendingCurrentChangesEventTimer);
@@ -5834,7 +5822,7 @@ function markCurrentChangesDataStale(reason = '') {
         pendingCurrentChangesEventTimer = null;
     }
     if (reason) {
-        console.log('[当前变化缓存] 已标记失效:', reason);
+        
     }
 
     // 页面处于可见且当前就在“当前变化”视图时，走实时刷新。
@@ -6268,7 +6256,7 @@ function saveChangesPreviewExpandedState(nodeId, isExpanded) {
 
         __setChangesPreviewExpandedStateByKey(storageKey, expandedIds);
     } catch (e) {
-        console.warn('[书签树预览] 保存展开状态失败:', e);
+        
     }
 }
 
@@ -6289,7 +6277,7 @@ function saveChangesPreviewScrollTop(scrollTop) {
         const value = typeof scrollTop === 'number' && !Number.isNaN(scrollTop) ? scrollTop : 0;
         localStorage.setItem(__getChangesPreviewScrollStorageKey(), String(value));
     } catch (e) {
-        console.warn('[书签树预览] 保存滚动位置失败:', e);
+        
     }
 }
 
@@ -6501,7 +6489,7 @@ async function renderChangesTreePreview(changeData) {
     try { targetContainer.style.visibility = 'hidden'; } catch (_) { }
 
     try {
-        console.log('[书签树映射预览] 开始...');
+        
 
         if (__getChangesPreviewMode() === 'collection') {
             await renderCurrentChangesCollectionPreview(changeData, targetContainer);
@@ -6536,7 +6524,7 @@ async function renderChangesTreePreview(changeData) {
         const shouldReloadPreviewData = !cachedCurrentTree || !treeChangeMap || mapEmptyWithChanges;
 
         if (shouldReloadPreviewData) {
-            console.log('[书签树映射预览] 数据未就绪，准备变化预览数据...');
+            
             // 先给用户一个可见的占位，避免长时间空白
             try {
                 targetContainer.innerHTML = `<div class="loading" style="padding:10px 12px;">${i18n.loading?.[currentLang] || (currentLang === 'zh_CN' ? '加载中...' : 'Loading...')}</div>`;
@@ -6553,7 +6541,7 @@ async function renderChangesTreePreview(changeData) {
         }
 
         // 3. 构建预览容器（只克隆外壳）
-        console.log('[书签树映射预览] 构建独立渲染容器...');
+        
         let previewSection = document.getElementById('changesPreviewPermanentSection');
 
         if (!previewSection) {
@@ -6720,7 +6708,7 @@ async function renderChangesTreePreview(changeData) {
             } catch (_) { }
         }
 
-        console.log('[书签树映射预览] 完成 (独立内核模式)');
+        
 
         // Show only after initial DOM settles (prevents post-render "jump").
         try {
@@ -6796,7 +6784,7 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
         pendingCurrentChangesRender = pendingCurrentChangesRender || { maxRetries: 0, forceRefresh: false };
         pendingCurrentChangesRender.maxRetries = Math.max(pendingCurrentChangesRender.maxRetries, maxRetries);
         pendingCurrentChangesRender.forceRefresh = pendingCurrentChangesRender.forceRefresh || forceRefresh;
-        console.log('[渲染重试] 已有渲染在进行中，合并请求:', pendingCurrentChangesRender);
+        
         return;
     }
 
@@ -6807,7 +6795,7 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
         let finalForceRefresh = forceRefresh;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            console.log(`[渲染重试] 第 ${attempt}/${maxRetries} 次尝试`);
+            
 
             // 默认不强制刷新：允许复用 background 的缓存，避免每次都重算。
             // 若第一次结果缺少详细列表，再在后续重试中强制刷新。
@@ -6824,22 +6812,16 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
                 (changeData.deleted && changeData.deleted.length > 0) ||
                 (changeData.moved && changeData.moved.length > 0);
 
-            console.log(`[渲染重试] 检查结果:`, {
-                attempt,
-                hasQuantityChange,
-                hasDetailedList,
-                bookmarkDiff: changeData.diffMeta?.bookmarkDiff,
-                deletedCount: changeData.deleted?.length || 0
-            });
+            
 
             // 如果有变化且有详细列表，或者没有变化，或者是最后一次尝试，则停止
             if (!hasQuantityChange || hasDetailedList || attempt === maxRetries) {
-                console.log(`[渲染重试] 完成，不再重试（即将一次性渲染 UI）`);
+                
                 break;
             }
 
             // 等待 300ms 后重试
-            console.log(`[渲染重试] 等待 300ms 后重试...`);
+            
             await new Promise(resolve => setTimeout(resolve, 300));
         }
 
@@ -6852,7 +6834,7 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
         if (pendingCurrentChangesRender) {
             const next = pendingCurrentChangesRender;
             pendingCurrentChangesRender = null;
-            console.log('[渲染重试] 处理挂起的渲染请求:', next);
+            
             // 不递归阻塞：异步延迟一段时间再执行，防抖动
             setTimeout(() => {
                 renderCurrentChangesViewWithRetry(next.maxRetries, next.forceRefresh);
@@ -6871,18 +6853,18 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
         container.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     }
 
-    console.log('[当前变化视图] 开始加载...', forceRefresh ? '(强制刷新)' : '');
+    
 
     try {
         // 从 background 获取详细变化数据（如果上游已预取，则复用）
         const changeData = prefetchedChangeData || await getDetailedChanges(forceRefresh);
 
-        console.log('[当前变化视图] 获取到的数据:', changeData);
+        
 
         if (!changeData || !changeData.hasChanges) {
             const isMutedState = changeData?.uiMuted === true;
             // 没有变化
-            console.log('[当前变化视图] 无变化/静音态');
+            
             // 清理缓存，避免搜索/定位使用旧数据
             try { treeChangeMap = new Map(); } catch (_) { }
             try {
@@ -7101,7 +7083,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                         const selector = changeClasses.join(', ');
                         const changedItems = treePreviewContainer.querySelectorAll(selector);
 
-                        console.log('[详略切换] 找到变化节点数:', changedItems.length);
+                        
 
                         const isCompactMode = treePreviewContainer.classList.contains('compact-mode');
                         const isChangedFolderItem = (item) => {
@@ -7344,7 +7326,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                         }
                     } catch (_) { }
                 } catch (err) {
-                    console.warn('[CurrentChanges] Tree preview render error:', err);
+                    
                 }
 
             });
@@ -7416,16 +7398,16 @@ async function getDetailedChanges(forceRefresh = false) {
                 payload.meta.lastBookmarkChangeTime === lastChangeTime;
 
             if (metaOk) {
-                console.log('[getDetailedChanges] 命中持久缓存');
+                
                 return payload.data;
             }
         } catch (e) {
-            console.warn('[getDetailedChanges] 读取持久缓存失败，回退到计算:', e);
+            
         }
     }
 
     return new Promise((resolve) => {
-        console.log('[getDetailedChanges] 开始获取数据...', forceRefresh ? '(强制刷新)' : '(使用缓存)');
+        
 
         // 使用和 popup.js 完全相同的逻辑：并行获取三个数据源
         Promise.all([
@@ -7465,15 +7447,10 @@ async function getDetailedChanges(forceRefresh = false) {
                 ? backupResponse.stats
                 : {};
 
-            console.log('[getDetailedChanges] 获取到的完整数据:', {
-                backupResponse,
-                'stats对象': safeStats,
-                syncHistoryLength: syncHistory.length,
-                hasCachedRecord: !!cachedRecordFromStorage
-            });
+            
 
             if (!backupResponse || typeof backupResponse.stats !== 'object' || !backupResponse.stats) {
-                console.warn('[getDetailedChanges] getBackupStats 返回缺失 stats，已自动降级到安全默认值');
+                
             }
 
             const diffResult = calculateBookmarkFolderDiffs(
@@ -7501,23 +7478,15 @@ async function getDetailedChanges(forceRefresh = false) {
                 safeStats.bookmarkModified ||
                 safeStats.folderModified;
 
-            console.log('[getDetailedChanges] ✅ 直接使用 background 返回的差异（不再自己计算）:', {
-                bookmarkDiff,
-                folderDiff,
-                hasStructuralChanges,
-                '原始stats': {
-                    bookmarkDiff: safeStats.bookmarkDiff,
-                    folderDiff: safeStats.folderDiff
-                }
-            });
+            
 
             // 检查是否有变化
             const hasChanges = hasQuantityChange || hasStructuralChanges;
 
-            console.log('[getDetailedChanges] 是否有变化:', hasChanges);
+            
 
             if (!hasChanges) {
-                console.log('[getDetailedChanges] 无变化，返回');
+                
                 const out = {
                     hasChanges: false,
                     stats: { ...safeStats, bookmarkDiff, folderDiff, hasNumericalChange: false },
@@ -7560,16 +7529,11 @@ async function getDetailedChanges(forceRefresh = false) {
             browserAPI.storage.local.get(['lastBookmarkData'], async (data) => {
                 const lastData = data.lastBookmarkData;
 
-                console.log('[getDetailedChanges] lastBookmarkData:', {
-                    exists: !!lastData,
-                    hasPrints: !!(lastData && lastData.bookmarkPrints),
-                    printsCount: lastData?.bookmarkPrints?.length || 0,
-                    timestamp: lastData?.timestamp || 'unknown'
-                });
+                
 
                 if (!lastData || !lastData.bookmarkPrints) {
                     // 只有数量变化，无法获取详细列表
-                    console.warn('[getDetailedChanges] 没有 lastBookmarkData，无法获取详细列表');
+                    
                     resolve({
                         hasChanges: true,
                         stats: stats,
@@ -7659,12 +7623,7 @@ async function getDetailedChanges(forceRefresh = false) {
                             if (b) deleted.push(b);
                         }
 
-                        console.log('变化分析结果:', {
-                            added: added.length,
-                            deleted: deleted.length,
-                            moved: moved.length,
-                            stats
-                        });
+                        
 
                         const out = {
                             hasChanges: true,
@@ -8734,7 +8693,7 @@ function renderHistoryView() {
     const nextBtn = document.getElementById('historyNextPage');
 
     if (!syncHistoryPageRecords.length && Array.isArray(syncHistory) && syncHistory.length > 0) {
-        console.log('[renderHistoryView] syncHistoryPageRecords empty, hydrating from local syncHistory fallback');
+        
         hydrateHistoryPageFromLocalRecords(currentHistoryPage);
     }
 
@@ -12691,7 +12650,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 restoreBaselineCaptured = true;
             }
         } catch (baselineError) {
-            console.warn('[executeRestore] 捕获恢复前基线失败:', baselineError);
+            
         }
 
         const executeHistoryRestoreInBackground = async (nextStrategy) => {
@@ -12933,7 +12892,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 try {
                     await refreshHistoryIndexPage({ page: currentHistoryPage });
                 } catch (pageError) {
-                    console.warn('[executeRestore] 历史分页索引刷新失败，使用本地倒序回退:', pageError);
+                    
                     const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
                     const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                     const totalRecords = sortedLocal.length;
@@ -13036,7 +12995,7 @@ async function executeOverwriteRestore(bookmarkTree) {
                     await browserAPI.bookmarks.removeTree(child.id);
                     deletedCount++;
                 } catch (e) {
-                    console.warn('[executeOverwriteRestore] 删除节点失败:', child.id, e);
+                    
                 }
             }
         }
@@ -13083,7 +13042,7 @@ async function executeOverwriteRestore(bookmarkTree) {
 
                 const targetContainer = isBookmarkBarFolder ? bookmarkBar : otherBookmarks;
                 if (!targetContainer) {
-                    console.warn('[executeOverwriteRestore] 目标容器不存在，跳过:', topFolder.title);
+                    
                     continue;
                 }
                 const targetId = targetContainer.id;
@@ -13094,7 +13053,7 @@ async function executeOverwriteRestore(bookmarkTree) {
                         setRestoreProgress(40 + Math.min(45, (createdCount / 100) * 45),
                             isZh ? `已创建 ${createdCount} 个节点...` : `Created ${createdCount} nodes...`);
                     } catch (e) {
-                        console.warn('[executeOverwriteRestore] 创建节点失败:', child, e);
+                        
                     }
                 }
             }
@@ -13273,7 +13232,7 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
                 }
             }
         } catch (e) {
-            console.warn('[executeMergeRestore] Build diff view failed, fallback to snapshot import:', e);
+            
             treeToImport = bookmarkTree;
         }
     } else {
@@ -13621,7 +13580,7 @@ function clearTreeCache() {
     lastTreeSnapshotVersion = null;
     cachedCurrentTreeIndex = null;
     cachedRenderTreeIndex = null;
-    console.log('[树缓存] 已清除');
+    
 }
 window.clearTreeCache = clearTreeCache;
 
@@ -13668,7 +13627,7 @@ function clearCanvasLazyChangeHints(reason = '') {
         deletedCount: 0,
         hasAny: false
     };
-    if (reason) console.log('[Canvas变化提示] 已清空:', reason);
+    if (reason) ;
 }
 
 function buildFingerprintKeyFromChangeItem(item) {
@@ -13763,7 +13722,7 @@ async function ensureCanvasLazyChangeHints(forceRefresh = false) {
             };
             return canvasLazyChangeHints;
         } catch (e) {
-            console.warn('[Canvas变化提示] 生成失败，回退为空:', e);
+            
             canvasLazyChangeHints = {
                 updatedAt: Date.now(),
                 added: new Set(),
@@ -13850,7 +13809,7 @@ async function getBookmarkTreeSnapshot() {
             }
         }
     } catch (e) {
-        console.warn('[TreeSnapshot] 获取后台快照失败，回退直连:', e);
+        
     }
     const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
     return { tree, version: null };
@@ -13879,10 +13838,10 @@ async function refreshCachedCurrentTreeSnapshot(reason = '') {
             if (typeof snapshot.version !== 'undefined') {
                 lastTreeSnapshotVersion = snapshot.version;
             }
-            console.log('[TreeSnapshot] 已刷新 cachedCurrentTree（Canvas懒加载）', reason || '');
+            
         }
     } catch (e) {
-        console.warn('[TreeSnapshot] 刷新 cachedCurrentTree 失败:', e);
+        
     } finally {
         treeSnapshotRefreshing = false;
         if (treeSnapshotRefreshQueued) {
@@ -14220,7 +14179,7 @@ async function loadPermanentFolderChildrenLazy(parentId, childrenContainer, star
             }
         } catch (_) { }
     } catch (e) {
-        console.warn('[Canvas Tree Lazy] load children failed:', e);
+        
     }
 }
 // 导出到全局，供拖拽模块在悬浮展开时调用
@@ -14342,7 +14301,7 @@ let pendingRenderRequest = null;
 
 // 同步版本的树渲染（真正可 await，用于 Current Changes 预览）
 async function renderTreeViewSync() {
-    console.log('[renderTreeViewSync] 开始同步渲染...');
+    
 
     const treeContainer = document.getElementById('bookmarkTree');
     if (!treeContainer) {
@@ -14378,7 +14337,7 @@ async function renderTreeViewSync() {
         // 检测变动
         if (oldTree && oldTree[0]) {
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
-            console.log('[renderTreeViewSync] 检测到变动数量:', treeChangeMap.size);
+            
         } else {
             treeChangeMap = new Map();
         }
@@ -14431,7 +14390,7 @@ async function renderTreeViewSync() {
         // 绑定事件
         attachTreeEvents(treeContainer);
 
-        console.log('[renderTreeViewSync] 渲染完成');
+        
 
     } catch (error) {
         console.error('[renderTreeViewSync] 渲染失败:', error);
@@ -14486,32 +14445,32 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
                         try { window.__canvasRenderTreeIndex = null; } catch (_) { }
                         lastTreeSnapshotVersion = null;
                         treeChangeMap = liveMap;
-                        console.log('[ensureChangesPreviewTreeDataLoaded] fallback to live tree map size:', liveMap.size);
+                        
                     }
                 }
             } catch (liveError) {
-                console.warn('[ensureChangesPreviewTreeDataLoaded] live-tree fallback failed:', liveError);
+                
             }
         }
     } catch (e) {
-        console.warn('[ensureChangesPreviewTreeDataLoaded] Failed:', e);
+        
         try { treeChangeMap = new Map(); } catch (_) { }
     }
 }
 
 async function renderTreeView(forceRefresh = false) {
-    console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);
+    
 
     if (isHistoryBookmarkUiMuted()) {
         historyPendingMutedTreeRenderForceRefresh = historyPendingMutedTreeRenderForceRefresh || forceRefresh === true;
         pendingRenderRequest = pendingRenderRequest === null ? forceRefresh : (pendingRenderRequest || forceRefresh);
-        console.log('[renderTreeView] 当前处于批量静音，延后整树渲染');
+        
         return;
     }
 
     // 如果正在渲染中，合并请求，避免重复渲染导致闪烁
     if (isRenderingTree) {
-        console.log('[renderTreeView] 已有渲染进行中，合并请求');
+        
         pendingRenderRequest = forceRefresh;
         return;
     }
@@ -14576,12 +14535,12 @@ async function renderTreeView(forceRefresh = false) {
         lastTreeFingerprint = null;
         lastTreeSnapshotVersion = null;
         cachedCurrentTreeIndex = null;
-        console.log('[renderTreeView] 强制刷新，已清除缓存');
+        
     }
 
     // 如果已有缓存且不强制刷新，直接使用（快速路径）
     if (!forceRefresh && cachedTreeData && cachedTreeData.treeFragment) {
-        console.log('[renderTreeView] 使用现有缓存（快速显示）');
+        
         if (currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
             await ensureCanvasLazyChangeHints(false);
         }
@@ -14598,7 +14557,7 @@ async function renderTreeView(forceRefresh = false) {
         // 重新绑定事件
         attachTreeEvents(treeContainer);
 
-        console.log('[renderTreeView] 缓存显示完成');
+        
         // 恢复滚动位置（延迟确保展开状态恢复后再恢复滚动位置）
         if (permBody && permScrollTop !== null) {
             const restoreScroll = () => {
@@ -14656,11 +14615,11 @@ async function renderTreeView(forceRefresh = false) {
                             }
                         });
 
-                        console.log('[renderTreeView] 快速路径预热完成，已更新图标');
+                        
                     }
                 }
             } catch (e) {
-                console.warn('[renderTreeView] 快速路径预热失败:', e);
+                
             }
         })();
 
@@ -14669,7 +14628,7 @@ async function renderTreeView(forceRefresh = false) {
         if (pendingRenderRequest !== null) {
             const pending = pendingRenderRequest;
             pendingRenderRequest = null;
-            console.log('[renderTreeView] 处理待处理的渲染请求（快速路径）');
+            
             renderTreeView(pending);
         }
         return;
@@ -14678,7 +14637,7 @@ async function renderTreeView(forceRefresh = false) {
     // 没有缓存，开始加载数据
     // 注意：不清空容器，保持原有内容，避免闪烁和滚动位置丢失
     // 只有在容器为空时才显示加载状态
-    console.log('[renderTreeView] 无缓存，开始加载数据');
+    
     if (!treeContainer.children.length || treeContainer.querySelector('.loading') || treeContainer.querySelector('.empty-state') || treeContainer.querySelector('.error')) {
         treeContainer.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     }
@@ -14713,7 +14672,7 @@ async function renderTreeView(forceRefresh = false) {
 
         // 如果版本/指纹相同，直接使用缓存（树没有变化）
         if (cachedTreeData && ((canUseVersion && snapshotVersion === lastTreeSnapshotVersion) || (!canUseVersion && currentFingerprint === lastTreeFingerprint))) {
-            console.log('[renderTreeView] 使用缓存（书签未变化）');
+            
 
             if (currentView === 'current-changes' && treeContainer.children.length) {
                 cachedCurrentTree = currentTree;
@@ -14731,7 +14690,7 @@ async function renderTreeView(forceRefresh = false) {
                 if (pendingRenderRequest !== null) {
                     const pending = pendingRenderRequest;
                     pendingRenderRequest = null;
-                    console.log('[renderTreeView] 处理待处理的渲染请求（Canvas无变化）');
+                    
                     renderTreeView(pending);
                 }
                 return;
@@ -14769,14 +14728,14 @@ async function renderTreeView(forceRefresh = false) {
             if (pendingRenderRequest !== null) {
                 const pending = pendingRenderRequest;
                 pendingRenderRequest = null;
-                console.log('[renderTreeView] 处理待处理的渲染请求（指纹一致）');
+                
                 renderTreeView(pending);
             }
             return;
         }
 
         // 树有变化，重新渲染
-        console.log('[renderTreeView] 检测到书签变化，重新渲染');
+        
 
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
@@ -14805,36 +14764,36 @@ async function renderTreeView(forceRefresh = false) {
                 try {
                     await warmupFaviconCache(allBookmarkUrls);
                 } catch (e) {
-                    console.warn('[renderTreeView] favicon缓存预热失败，继续渲染:', e);
+                    
                 }
             }
         }
 
         // 快速检测变动（只在有备份数据时才检测）
-        console.log('[renderTreeView] oldTree 存在:', !!oldTree);
-        console.log('[renderTreeView] oldTree[0] 存在:', !!(oldTree && oldTree[0]));
+        
+        
 
         if (currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
             // [Modified] In lazy mode, we still need diff detection to show "Add/Reduce/Modify/Move" indicators
             // previously we skipped it for performance, now we keep it but optimize rendering
             // treeChangeMap = new Map(); // Don't skip!
-            console.log('[renderTreeView] Canvas lazy mode: executing diff detection to show indicators');
+            
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
         } else if (oldTree && oldTree[0]) {
-            console.log('[renderTreeView] 开始检测变动...');
+            
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
-            console.log('[renderTreeView] 检测到的变动数量:', treeChangeMap.size);
+            
 
             // 打印前5个变动
             let count = 0;
             for (const [id, change] of treeChangeMap) {
                 if (count++ < 5) {
-                    console.log('[renderTreeView] 变动:', id, change);
+                    
                 }
             }
         } else {
             treeChangeMap = new Map(); // 无备份数据，不显示任何变化标记
-            console.log('[renderTreeView] 无上次备份数据，不显示变化标记');
+            
         }
 
         let canvasHints = null;
@@ -14854,7 +14813,7 @@ async function renderTreeView(forceRefresh = false) {
                 }
             }
             if (hasDeletedNodes) {
-                console.log('[renderTreeView] 检测到删除节点，合并旧树和新树');
+                
                 try {
                     treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
                 } catch (error) {
@@ -14863,7 +14822,7 @@ async function renderTreeView(forceRefresh = false) {
                 }
             }
         }
-        console.log('[renderTreeView] 使用树:', treeToRender === currentTree ? 'currentTree' : 'rebuiltTree');
+        
 
         // 否则当 treeToRender 是 rebuiltTree（包含 deleted）时，展开文件夹仍会按 currentTreeIndex 取 children，导致 deleted 永远看不到。
         try {
@@ -14912,9 +14871,9 @@ async function renderTreeView(forceRefresh = false) {
 
             try {
                 hintSet = computeChangesHintSetFast(treeChangeMap, explicitSet);
-                console.log('[renderTreeView] Changes hint nodes count:', hintSet.size);
+                
             } catch (e) {
-                console.warn('[renderTreeView] build hintSet failed:', e);
+                
                 hintSet = null;
             }
 
@@ -14977,7 +14936,7 @@ async function renderTreeView(forceRefresh = false) {
                 setTimeout(restoreScroll, 500); // 最终确保
             }
 
-            console.log('[renderTreeView] 渲染完成');
+            
         });
 
         // 重置渲染标志
@@ -14987,7 +14946,7 @@ async function renderTreeView(forceRefresh = false) {
         if (pendingRenderRequest !== null) {
             const pending = pendingRenderRequest;
             pendingRenderRequest = null;
-            console.log('[renderTreeView] 处理待处理的渲染请求');
+            
             renderTreeView(pending);
         }
     }).catch(error => {
@@ -15138,18 +15097,14 @@ function attachTreeEvents(treeContainer) {
             // 找到包含这个tree-item的tree-node
             const node = treeItem.closest('.tree-node');
             if (!node) {
-                console.log('[树事件] 未找到tree-node');
+                
                 return;
             }
 
             const children = node.querySelector(':scope > .tree-children');
             const toggle = treeItem.querySelector(':scope > .tree-toggle');
 
-            console.log('[树事件] 点击节点:', {
-                hasChildren: !!children,
-                hasToggle: !!toggle,
-                nodeHTML: node.outerHTML.substring(0, 200)
-            });
+            
 
             if (children && toggle) {
                 e.stopPropagation();
@@ -15157,7 +15112,7 @@ function attachTreeEvents(treeContainer) {
                 toggle.classList.toggle('expanded');
 
                 const expanded = children.classList.contains('expanded');
-                console.log('[树事件] 切换展开状态:', expanded);
+                
 
                 // 视觉同步：文件夹图标随展开状态切换
                 try {
@@ -15239,10 +15194,10 @@ function attachTreeEvents(treeContainer) {
     // 绑定指针拖拽事件（只读树禁用）
     if (!isReadOnlyTree && typeof attachPointerDragEvents === 'function') {
         attachPointerDragEvents(treeContainer);
-        console.log('[树事件] 指针拖拽事件已绑定');
+        
     }
 
-    console.log('[树事件] 事件绑定完成');
+    
 
     // 恢复展开状态
     restoreTreeExpandState(treeContainer);
@@ -15273,7 +15228,7 @@ async function jumpToNextChangeType(type, container) {
     if (!treeChangeMap || treeChangeMap.size === 0) {
         const msg = currentLang === 'zh_CN' ? '当前没有变动' : 'No changes detected';
         // 使用简单的提示，或者 custom toast
-        console.log(msg);
+        
         return;
     }
 
@@ -15354,7 +15309,7 @@ async function jumpToNextChangeType(type, container) {
     }
     const targetId = targetIds[_changeTypeIndices[type]];
 
-    console.log(`[JumpToChange] Type: ${type}, Index: ${_changeTypeIndices[type]}/${targetIds.length}, ID: ${targetId}`);
+    
 
     // 如果节点未渲染（在懒加载的折叠文件夹中），需要先展开父级
     // 我们复用 computeForceExpandSet 的逻辑思想，但这里针对单个节点
@@ -15468,9 +15423,9 @@ async function jumpToNextChangeType(type, container) {
             }
         });
 
-        console.log(`[JumpToChange] Scrolled to ${targetId}, Highlighted ${highlightCount} items`);
+        
     } else {
-        console.warn(`[JumpToChange] Element ${targetId} not found in DOM even after force expand check.`);
+        
         // fallback?
     }
 }
@@ -15482,7 +15437,7 @@ function saveJSONScrollPosition(jsonContainer) {
         if (content) {
             const scrollTop = content.scrollTop;
             localStorage.setItem('jsonScrollPosition', scrollTop.toString());
-            console.log('[JSON状态] 保存滚动位置:', scrollTop);
+            
         }
     } catch (e) {
         console.error('[JSON状态] 保存滚动位置失败:', e);
@@ -15497,7 +15452,7 @@ function restoreJSONScrollPosition(jsonContainer) {
             const content = jsonContainer.querySelector('.json-diff-content');
             if (content) {
                 content.scrollTop = parseInt(savedPosition, 10);
-                console.log('[JSON状态] 恢复滚动位置:', savedPosition);
+                
             }
         }
     } catch (e) {
@@ -15521,12 +15476,12 @@ function __saveTreeExpandStateToStorage(treeContainer) {
         const key = __getTreeExpandStateStorageKey(treeContainer);
         if (__isChangesPreviewExpandedStorageKey(key)) {
             __setChangesPreviewExpandedStateByKey(key, expandedIds);
-            console.log('[树状态] 保存展开节点(会话):', expandedIds.length, 'key:', key);
+            
             return;
         }
 
         localStorage.setItem(key, JSON.stringify(expandedIds));
-        console.log('[树状态] 保存展开节点:', expandedIds.length, 'key:', key);
+        
     } catch (e) {
         console.error('[树状态] 保存失败:', e);
     }
@@ -15610,20 +15565,20 @@ function restoreTreeExpandState(treeContainer) {
 
         // 预览懒加载：批量加载需要展开的文件夹的子节点
         if (nodesToLazyLoad.length > 0) {
-            console.log('[树状态] 预览懒加载：需要加载', nodesToLazyLoad.length, '个文件夹的子节点');
+            
             // 延迟加载，避免阻塞渲染
                 setTimeout(() => {
                     nodesToLazyLoad.forEach(({ parentId, children }) => {
                         try {
                             loadPermanentFolderChildrenLazy(parentId, children, 0, null, isReadOnlyChangesPreview);
                         } catch (e) {
-                            console.warn('[树状态] 懒加载子节点失败:', parentId, e);
+                            
                         }
                     });
                 }, 50);
         }
 
-        console.log('[树状态] 恢复展开节点:', expandedIds.length);
+        
     } catch (e) {
         console.error('[树状态] 恢复失败:', e);
     }
@@ -16126,7 +16081,7 @@ function renderJSONDiff(container, oldTree, newTree) {
                 if (savedPosition) {
                     // 恢复上次的滚动位置
                     content.scrollTop = parseInt(savedPosition, 10);
-                    console.log('[JSON渲染] 恢复滚动位置:', savedPosition);
+                    
                 } else {
                     // 没有保存的位置，自动定位到第一个diff
                     const firstDiff = content.querySelector('.json-diff-line.added, .json-diff-line.deleted');
@@ -16284,10 +16239,10 @@ function mergeTreesForDisplay(oldTree, newTree) {
 
 // 重建树结构，包含删除的节点（以新树顺序为主，仅为 deleted 插入占位）
 function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
-    console.log('[树重建] 开始重建树结构');
+    
 
     if (!oldTree || !oldTree[0] || !newTree || !newTree[0]) {
-        console.log('[树重建] 缺少树数据，返回新树');
+        
         return newTree;
     }
 
@@ -16299,19 +16254,19 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
     function rebuildNode(oldNode, newNodes, depth = 0) {
         // 安全检查
         if (!oldNode || typeof oldNode.id === 'undefined') {
-            console.log('[树重建] 跳过无效节点:', oldNode);
+            
             return null;
         }
 
         // 深度限制
         if (depth > MAX_DEPTH) {
-            console.warn('[树重建] 超过最大深度限制:', depth);
+            
             return null;
         }
 
         // 循环引用检测
         if (visitedIds.has(oldNode.id)) {
-            console.warn('[树重建] 检测到循环引用:', oldNode.id);
+            
             return null;
         }
         visitedIds.add(oldNode.id);
@@ -16322,7 +16277,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
 
         if (change && change.type === 'deleted') {
             // 节点被删除，保留但标记
-            console.log('[树重建] 保留删除节点:', oldNode.title);
+            
             const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
 
             // 递归处理子节点
@@ -16365,7 +16320,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
                         const rebuiltChild = rebuildNode(oldChild, newChildren, depth + 1);
                         if (rebuiltChild) rebuiltChildren.push(rebuiltChild);
                     } else {
-                        console.log('[树重建] 添加新节点:', newChild.title);
+                        
                         rebuiltChildren.push(newChild);
                     }
                 });
@@ -16411,7 +16366,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             return nodeCopy;
         } else if (newNodes === null && change && change.type === 'deleted') {
             // 父节点已删除，这个子节点也视为删除，保留但标记
-            console.log('[树重建] 保留已删除节点的子节点:', oldNode.title);
+            
             const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
 
             // 递归处理子节点
@@ -16422,7 +16377,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             return deletedNodeCopy;
         } else {
             // 节点在新树中不存在，不是删除，跳过它
-            console.log('[树重建] 节点在新树中不存在，跳过:', oldNode.title);
+            
             return null;
         }
     }
@@ -16430,7 +16385,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
     // 重建根节点
     const rebuiltRoot = rebuildNode(oldTree[0], [newTree[0]]);
 
-    console.log('[树重建] 重建完成');
+    
     return [rebuiltRoot];
 }
 
@@ -16638,7 +16593,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     if (!node) return '';
     if (level > MAX_DEPTH) {
         if (!suppressLimitWarning) {
-            console.warn('[renderTreeNodeWithChanges] 超过最大深度限制:', level);
+            
         }
         return '';
     }
@@ -16646,7 +16601,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     // 检测循环引用
     if (visitedIds.has(node.id)) {
         if (!suppressLimitWarning) {
-            console.warn('[renderTreeNodeWithChanges] 检测到循环引用:', node.id);
+            
         }
         return '';
     }
@@ -16654,7 +16609,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
 
     if (visitedIds.size > MAX_NODES) {
         if (!suppressLimitWarning) {
-            console.warn('[renderTreeNodeWithChanges] 超过最大节点限制');
+            
         }
         return '';
     }
@@ -16986,7 +16941,7 @@ function ensureTreeLegendExists(container) {
     // 绑定点击事件
     setupLegendClickHandlers(container);
 
-    console.log('[增量更新] 图例已创建');
+    
 }
 
 // ===== 增量更新：创建 =====
@@ -17142,7 +17097,7 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
         return;
     }
 
-    console.log('[applyIncrementalChangeToTree] 修改书签:', id, changeInfo);
+    
 
     // 添加修改类
     if (!item.classList.contains('tree-change-modified')) {
@@ -17153,17 +17108,17 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     const labelLink = item.querySelector('.tree-bookmark-link');
     const labelSpan = item.querySelector('.tree-label');
 
-    console.log('[applyIncrementalChangeToTree] labelLink:', !!labelLink, 'labelSpan:', !!labelSpan);
+    
 
     if (labelLink) {
         labelLink.style.setProperty('color', '#fd7e14', 'important');
         labelLink.style.setProperty('font-weight', '500', 'important');
-        console.log('[applyIncrementalChangeToTree] 已设置labelLink样式');
+        
     }
     if (labelSpan) {
         labelSpan.style.setProperty('color', '#fd7e14', 'important');
         labelSpan.style.setProperty('font-weight', '500', 'important');
-        console.log('[applyIncrementalChangeToTree] 已设置labelSpan样式');
+        
     }
 
     // 修改内容
@@ -17171,7 +17126,7 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
         if (labelLink) labelLink.textContent = changeInfo.title;
         if (labelSpan) labelSpan.textContent = changeInfo.title;
         item.setAttribute('data-node-title', escapeHtml(changeInfo.title));
-        console.log('[applyIncrementalChangeToTree] 已修改标题:', changeInfo.title);
+        
     }
     if (changeInfo.url !== undefined) {
         const link = item.querySelector('.tree-bookmark-link');
@@ -17197,7 +17152,7 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
 
 // ===== 增量更新：移动 =====
 async function applyIncrementalMoveToTree(id, moveInfo) {
-    console.log('[增量移动] 开始处理:', id, moveInfo);
+    
 
     const permBody = document.querySelector('.permanent-section-body');
     const permScrollTop = permBody ? permBody.scrollTop : null;
@@ -17226,18 +17181,18 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
     if (!newParentChildren) {
         // 如果找不到新父容器但节点有移动标记，说明即时更新已处理，只需添加徽标
         if (item.classList.contains('tree-change-moved')) {
-            console.log('[增量移动] 节点已有移动标记，跳过DOM操作');
+            
             if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
             return;
         }
-        console.warn('[增量移动] 找不到新父容器，跳过');
+        
         return;
     }
 
     // 关键修复：同一父级内的“排序移动”时，node 仍在 newParentChildren 里，但位置需要更新。
     // 之前的 alreadyInPlace 逻辑会直接跳过，导致移动后视觉不跟随（只能依赖全量 renderTreeView 修正）。
     if (!node) {
-        console.warn('[增量移动] 找不到tree-node容器，跳过');
+        
         return;
     }
     // 从旧位置移除并插入新父下（即使同父级也需要重排）
@@ -17279,7 +17234,7 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 
     // 如果已经有移动标记（由即时更新处理），跳过徽标添加
     if (item.classList.contains('tree-change-moved') && item.querySelector('.change-badge.moved')) {
-        console.log('[增量移动] 节点已有移动徽标，跳过');
+        
         if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
         return;
     }
@@ -17982,14 +17937,14 @@ function renderDetailModalContent(record, mode) {
                         const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
 
                         if (!treeToSearch) {
-                            console.log('[Search] Phase 2.5: No bookmarkTree in record');
+                            
                             searchBtn.style.display = 'none';
                             return;
                         }
 
                         // 检查是否有变化可搜索
                         if (changeMap.size === 0) {
-                            console.log('[Search] Phase 2.5: No changes to search');
+                            
                             searchBtn.style.display = 'none';
                             return;
                         }
@@ -18284,7 +18239,7 @@ async function getBackupDataLazy(recordTime) {
             if (response && response.success) {
                 resolve(response.bookmarkTree);
             } else {
-                console.warn('[getBackupDataLazy] Failed or data missing:', response?.error);
+                
                 resolve(null);
             }
         });
@@ -19419,40 +19374,40 @@ function truncateUrl(url, maxLength) {
 
 // 生成详细变化的 HTML（Git diff 风格）
 async function generateDetailedChanges(record) {
-    console.log('[详细变化] ========== 开始生成详细变化 ==========');
-    console.log('[详细变化] 记录时间:', record.time);
-    console.log('[详细变化] 记录状态:', record.status);
-    console.log('[详细变化] 记录有 bookmarkTree:', !!record.bookmarkTree);
-    console.log('[详细变化] bookmarkTree 类型:', typeof record.bookmarkTree);
+    
+    
+    
+    
+    
 
     await ensureRecordBookmarkTree(record);
 
     if (record.bookmarkTree) {
-        console.log('[详细变化] bookmarkTree 是数组:', Array.isArray(record.bookmarkTree));
-        console.log('[详细变化] bookmarkTree 长度:', record.bookmarkTree.length);
-        console.log('[详细变化] bookmarkTree[0] 存在:', !!record.bookmarkTree[0]);
+        
+        
+        
         if (record.bookmarkTree[0]) {
-            console.log('[详细变化] bookmarkTree[0] 的 children 数量:', record.bookmarkTree[0].children?.length || 0);
+            
         }
     }
 
     // 检查当前记录是否有 bookmarkTree
     if (!record.bookmarkTree) {
-        console.log('[详细变化] ❌ 当前记录没有 bookmarkTree（可能是旧记录或保存失败）');
+        
         return null;
     }
 
     // 找到上一条记录
     const recordIndex = syncHistory.findIndex(r => r.time === record.time);
-    console.log('[详细变化] 记录索引:', recordIndex);
+    
 
     if (recordIndex <= 0) {
         // 第一条记录，显示所有书签为新增
         if (record.isFirstBackup) {
-            console.log('[详细变化] 第一次备份，显示所有书签为新增');
+            
             return generateFirstBackupDiff(record.bookmarkTree);
         }
-        console.log('[详细变化] 第一条记录但不是首次备份');
+        
         return null;
     }
 
@@ -19473,22 +19428,22 @@ async function generateDetailedChanges(record) {
     }
 
     if (!previousRecord || !previousRecord.bookmarkTree) {
-        console.log('[详细变化] 没有找到上一条有效的备份记录');
+        
         return null;
     }
 
-    console.log('[详细变化] 找到上一条记录:', previousRecord.time);
+    
 
     // 生成 diff（对比这次备份和上次备份）
     const oldLines = bookmarkTreeToLines(previousRecord.bookmarkTree);
     const newLines = bookmarkTreeToLines(record.bookmarkTree);
 
-    console.log('[详细变化] oldLines 数量:', oldLines.length);
-    console.log('[详细变化] newLines 数量:', newLines.length);
+    
+    
 
     const groupedHunks = generateDiffByPath(oldLines, newLines);
 
-    console.log('[详细变化] groupedHunks 数量:', groupedHunks.length);
+    
 
     return renderDiffHtml(groupedHunks);
 }
@@ -19741,7 +19696,7 @@ function performSearch(query) {
                 searchBackupHistoryAndRender(query);
             } else {
                 // 回退到旧的过滤方式（不应该发生）
-                console.warn('[Search] searchBackupHistoryAndRender not available, falling back to filter');
+                
                 hideSearchResultsPanel();
                 searchHistoryLegacy(query);
             }
@@ -19788,7 +19743,7 @@ function toggleTheme() {
     try {
         localStorage.setItem('historyViewerHasCustomTheme', 'true');
         localStorage.setItem('historyViewerCustomTheme', currentTheme);
-        console.log('[History Viewer] 设置主题覆盖:', currentTheme);
+        
     } catch (e) {
         console.error('[History Viewer] 无法保存主题覆盖:', e);
     }
@@ -19808,7 +19763,7 @@ function toggleLanguage() {
     try {
         localStorage.setItem('historyViewerHasCustomLang', 'true');
         localStorage.setItem('historyViewerCustomLang', currentLang);
-        console.log('[History Viewer] 设置语言覆盖:', currentLang);
+        
     } catch (e) {
         console.error('[History Viewer] 无法保存语言覆盖:', e);
     }
@@ -19889,13 +19844,13 @@ function handleStorageChange(changes, namespace) {
             !changes.lastSyncTime &&
             !changes.lastBookmarkData;
         if (marker && onlySyncHistoryChanged && (Date.now() - (marker.at || 0) < 15000)) {
-            console.log('[存储监听] 跳过 seqNumber 迁移触发的 syncHistory 刷新');
+            
             window.__skipNextSyncHistoryStorageRefresh = null;
             return;
         }
     } catch (_) { }
 
-    console.log('[存储监听] 检测到变化:', Object.keys(changes));
+    
 
     if (Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.yellow)
         || Object.prototype.hasOwnProperty.call(changes, HISTORY_DELETE_WARN_SETTING_KEYS.red)) {
@@ -19937,7 +19892,7 @@ function handleStorageChange(changes, namespace) {
                 } catch (_) { }
             }
         } catch (e) {
-            console.warn('[存储监听] 清空备份历史后的 UI 清理失败:', e);
+            
         }
     }
 
@@ -19961,12 +19916,12 @@ function handleStorageChange(changes, namespace) {
             }
         }
     } catch (e) {
-        console.warn('[存储监听] 备份后清理永久栏目标识失败:', e);
+        
     }
 
     // 如果正在撤销过程中，不执行自动刷新，让后台完全完成
     if (revertInProgress) {
-        console.log('[存储监听] 正在撤销过程中，暂时跳过自动刷新');
+        
         return;
     }
 
@@ -19979,13 +19934,13 @@ function handleStorageChange(changes, namespace) {
         !changes.lastSyncTime &&
         !changes.lastBookmarkData;
     if (isCurrentChangesOpsOnly) {
-        console.log('[存储监听] Current Changes下仅 lastSyncOperations 变化，跳过自动刷新以避免滚动抖动');
+        
         return;
     }
 
     // 检查相关数据是否变化 - 实时更新
     if (changes.syncHistory || changes.lastSyncTime || changes.lastBookmarkData || changes.lastSyncOperations) {
-        console.log('[存储监听] 书签数据变化，立即重新加载...');
+        
 
         clearDetailChangeCache();
 
@@ -20003,7 +19958,7 @@ function handleStorageChange(changes, namespace) {
         jsonDiffRendered = false; // 重置JSON渲染标志
 
         if (isHistoryBookmarkUiMuted()) {
-            console.log('[存储监听] 当前处于批量静音，延后数据刷新');
+            
             historyPendingMutedStorageReload = true;
             if (currentView === 'current-changes') {
                 historyPendingMutedCurrentChangesRefresh = true;
@@ -20022,17 +19977,17 @@ function handleStorageChange(changes, namespace) {
         if (historyOnlySyncHistoryUpdate) {
             refreshHistoryIndexPage({ page: currentHistoryPage }).then(() => {
                 if (currentView === 'history') {
-                    console.log('[存储监听] 历史视图增量刷新（仅重拉分页索引）');
+                    
                     renderHistoryView();
                 }
             }).catch((e) => {
-                console.warn('[存储监听] 历史增量刷新失败，回退全量刷新:', e);
+                
                 loadAllData({ skipRender: true }).then(async () => {
                     if (currentView === 'history') {
                         try {
                             await refreshHistoryIndexPage({ page: currentHistoryPage });
                         } catch (pageError) {
-                            console.warn('[存储监听] 历史增量回退分页失败，使用本地倒序回退:', pageError);
+                            
                             const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
                             const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                             const totalRecords = sortedLocal.length;
@@ -20051,21 +20006,21 @@ function handleStorageChange(changes, namespace) {
 
         // 立即重新加载数据
         loadAllData({ skipRender: true }).then(async () => {
-            console.log('[存储监听] 数据重新加载完成');
+            
 
             // 如果当前在 current-changes 视图，使用重试机制刷新
             if (currentView === 'current-changes') {
-                console.log('[存储监听] 刷新当前变化视图（带重试，强制刷新）');
+                
                 await renderCurrentChangesViewWithRetry(3, true);
             }
 
             // 如果当前在 history 视图，刷新历史记录视图
             if (currentView === 'history') {
-                console.log('[存储监听] 刷新历史记录视图');
+                
                 try {
                     await refreshHistoryIndexPage({ page: currentHistoryPage });
                 } catch (pageError) {
-                    console.warn('[存储监听] 历史视图分页刷新失败，使用本地倒序回退:', pageError);
+                    
                     const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
                     const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                     const totalRecords = sortedLocal.length;
@@ -20088,7 +20043,7 @@ function handleStorageChange(changes, namespace) {
     // 主题变化（只在没有覆盖设置时跟随主UI）
     if (changes.currentTheme && !hasThemeOverride()) {
         const newTheme = changes.currentTheme.newValue;
-        console.log('[存储监听] 主题变化，跟随主UI:', newTheme);
+        
         currentTheme = newTheme;
         document.documentElement.setAttribute('data-theme', currentTheme);
 
@@ -20102,7 +20057,7 @@ function handleStorageChange(changes, namespace) {
     // 语言变化（只在没有覆盖设置时跟随主UI）
     if (changes.preferredLang && !hasLangOverride()) {
         const newLang = changes.preferredLang.newValue;
-        console.log('[存储监听] 语言变化，跟随主UI:', newLang);
+        
         currentLang = newLang;
         window.currentLang = currentLang; // 同步到 window
 
@@ -20160,7 +20115,7 @@ function scheduleAddRemoveEventFlush() {
     pendingAddRemoveTimer = setTimeout(() => {
         pendingAddRemoveTimer = null;
         flushPendingAddRemoveEvents('quiet-window').catch((e) => {
-            console.warn('[书签监听] 批处理 flush 失败:', e);
+            
         });
     }, BULK_ADD_REMOVE_QUIET_MS);
 }
@@ -20200,7 +20155,7 @@ async function flushPendingAddRemoveEvents(reason = '') {
         const isBulk = batch.length >= BULK_ADD_REMOVE_THRESHOLD;
 
         if (isBulk) {
-            console.log(`[书签监听][批处理] 新增/删除事件数=${batch.length}，触发批处理 (${reason || 'unknown'})`);
+            
 
             batch.forEach((event) => {
                 if (event.type !== 'removed') return;
@@ -20229,7 +20184,7 @@ async function flushPendingAddRemoveEvents(reason = '') {
         if (addRemoveFlushQueued) {
             addRemoveFlushQueued = false;
             flushPendingAddRemoveEvents('queued').catch((e) => {
-                console.warn('[书签监听] queued flush 失败:', e);
+                
             });
         }
     }
@@ -20237,15 +20192,15 @@ async function flushPendingAddRemoveEvents(reason = '') {
 
 function setupBookmarkListener() {
     if (!browserAPI.bookmarks) {
-        console.warn('[书签监听] 书签API不可用');
+        
         return;
     }
 
-    console.log('[书签监听] 设置书签API监听器');
+    
 
     // 书签创建
 browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
-        console.log('[书签监听] 书签创建:', bookmark.title);
+        
         try {
             if (isHistoryBookmarkUiMuted()) {
                 clearCanvasLazyChangeHints('onCreated-muted');
@@ -20260,13 +20215,13 @@ browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
             });
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
-            console.warn('[书签监听] onCreated 处理异常:', e);
+            
         }
     });
 
     // 书签删除
 browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
-        console.log('[书签监听] 书签删除:', id);
+        
         try {
             if (isHistoryBookmarkUiMuted()) {
                 clearCanvasLazyChangeHints('onRemoved-muted');
@@ -20281,13 +20236,13 @@ browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
             });
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
-            console.warn('[书签监听] onRemoved 处理异常:', e);
+            
         }
     });
 
     // 书签修改
 browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
-        console.log('[书签监听] 书签修改:', changeInfo);
+        
         try {
             if (isHistoryBookmarkUiMuted()) {
                 clearCanvasLazyChangeHints('onChanged-muted');
@@ -20304,13 +20259,13 @@ browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
             markCurrentChangesDataStale('onChanged');
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
-            console.warn('[书签监听] onChanged 处理异常:', e);
+            
         }
     });
 
     // 书签移动
 browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
-        console.log('[书签监听] 书签移动:', id);
+        
 
         try {
             if (isHistoryBookmarkUiMuted()) {
@@ -20332,7 +20287,7 @@ browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
             markCurrentChangesDataStale('onMoved');
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
-            console.warn('[书签监听] onMoved 处理异常:', e);
+            
         }
     });
 }
@@ -20381,12 +20336,12 @@ function setupRealtimeMessageListener() {
             explicitMovedIds.set(message.id, Date.now() + Infinity);
         } else if (message.action === 'clearLocalStorage') {
             // 收到来自 background.js 的清除 localStorage 请求（"恢复到初始状态"功能）
-            console.log('[history.js] 收到清除 localStorage 请求');
+            
             try {
                 localStorage.clear();
-                console.log('[history.js] localStorage 已清除');
+                
             } catch (e) {
-                console.warn('[history.js] 清除 localStorage 失败:', e);
+                
             }
         }
     });
@@ -20401,7 +20356,7 @@ function setupEventDelegation() {
         if (!button) return;
 
         const action = button.dataset.action;
-        console.log('[事件委托] 处理按钮点击:', action);
+        
 
         try {
             switch (action) {
@@ -20409,7 +20364,7 @@ function setupEventDelegation() {
                     await copyJSONDiff();
                     break;
                 default:
-                    console.warn('[事件委托] 未知的action:', action);
+                    
             }
         } catch (error) {
             console.error('[事件委托] 处理按钮点击失败:', action, error);
@@ -20445,18 +20400,7 @@ async function processAnalysisUpdatedMessage(message) {
         return;
     }
 
-    console.log('[消息监听] 收到 analysisUpdated 消息:', {
-        bookmarkDiff: message.bookmarkDiff,
-        folderDiff: message.folderDiff,
-        bookmarkAdded: message.bookmarkAdded,
-        bookmarkDeleted: message.bookmarkDeleted,
-        folderAdded: message.folderAdded,
-        folderDeleted: message.folderDeleted,
-        movedCount: message.movedCount,
-        modifiedCount: message.modifiedCount,
-        bookmarkCount: message.bookmarkCount,
-        folderCount: message.folderCount
-    });
+    
 
     const analysisSignature = JSON.stringify({
         bookmarkDiff: message.bookmarkDiff,
@@ -20476,7 +20420,7 @@ async function processAnalysisUpdatedMessage(message) {
     });
 
     if (analysisSignature === lastAnalysisSignature) {
-        console.log('[消息监听] 数据未变化，跳过刷新');
+        
         return;
     }
 
@@ -21192,7 +21136,7 @@ async function maybePromptRestoreRecoveryTransactionInHistory() {
         }
         await showRestoreRecoveryBlockingOverlayInHistory(status);
     } catch (error) {
-        console.warn('[history] restore recovery prompt failed:', error);
+        
     }
 }
 
@@ -21859,15 +21803,15 @@ function buildExportChangesModeGuideHtml() {
 
 // 显示导出变化模态框
 function showExportChangesModal(changeData) {
-    console.log('[showExportChangesModal] 接收到的 changeData:', changeData);
-    console.log('[showExportChangesModal] changeData 的所有属性:', Object.keys(changeData || {}));
-    console.log('[showExportChangesModal] hasChanges:', changeData?.hasChanges);
-    console.log('[showExportChangesModal] stats:', changeData?.stats);
-    console.log('[showExportChangesModal] diffMeta:', changeData?.diffMeta);
-    console.log('[showExportChangesModal] added:', changeData?.added?.length || 0, changeData?.added);
-    console.log('[showExportChangesModal] deleted:', changeData?.deleted?.length || 0, changeData?.deleted);
-    console.log('[showExportChangesModal] modified:', changeData?.modified?.length || 0, changeData?.modified);
-    console.log('[showExportChangesModal] moved:', changeData?.moved?.length || 0, changeData?.moved);
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     currentExportChangeData = changeData;
     currentExportHistoryRecord = null;
@@ -21922,7 +21866,7 @@ function showExportChangesModal(changeData) {
 
 // 显示备份历史的导出变化模态框
 async function showHistoryExportChangesModal(recordTime, options = {}) {
-    console.log('[showHistoryExportChangesModal] 记录时间:', recordTime);
+    
     const { preferredMode, useDomTreeContainer, treeContainer } = options;
 
     // 查找记录
@@ -21943,7 +21887,7 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
     const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
     const treeToExport = prepared?.treeToExport || record.bookmarkTree;
 
-    console.log('[showHistoryExportChangesModal] 变化统计:', changeMap.size);
+    
 
     // 保存当前导出数据（现在是 Map 格式）
     currentExportChangeData = changeMap;
@@ -22287,7 +22231,7 @@ async function executeExportChanges() {
                     conflictAction: 'uniquify'
                 }, (downloadId) => {
                     if (chrome.runtime.lastError) {
-                        console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
+                        
                         // 降级方案
                         const a = document.createElement('a');
                         a.href = url;
@@ -23353,7 +23297,7 @@ async function requestCurrentChangesManualExportFromBackground({ mode, format, c
         currentChangesManualExportLastFileName = String(response.fileName || '').trim();
         return response.content;
     } catch (error) {
-        console.warn('[requestCurrentChangesManualExportFromBackground] fallback to local builder:', error);
+        
         return await buildCurrentChangesManualExportFallback({ mode, format, changeData });
     }
 }
@@ -23837,7 +23781,7 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expande
 
     html += '</DL><p>\n';
 
-    console.log('[generateHistoryChangesHTML] 生成的 HTML 长度:', html.length);
+    
 
     return html;
 }
@@ -24019,35 +23963,35 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expande
 function collectChangesForExport(changeData, mode, depth) {
     let changes = [];
 
-    console.log('[导出变化] changeData:', changeData);
-    console.log('[导出变化] mode:', mode, 'depth:', depth);
+    
+    
 
     if (!changeData) {
-        console.warn('[导出变化] changeData 为空');
+        
         return changes;
     }
 
     // 添加基本变化
     if (changeData.added && Array.isArray(changeData.added)) {
-        console.log('[导出变化] added 数量:', changeData.added.length);
+        
         for (const item of changeData.added) {
             changes.push({ ...item, changeType: 'added' });
         }
     }
     if (changeData.deleted && Array.isArray(changeData.deleted)) {
-        console.log('[导出变化] deleted 数量:', changeData.deleted.length);
+        
         for (const item of changeData.deleted) {
             changes.push({ ...item, changeType: 'deleted' });
         }
     }
     if (changeData.modified && Array.isArray(changeData.modified)) {
-        console.log('[导出变化] modified 数量:', changeData.modified.length);
+        
         for (const item of changeData.modified) {
             changes.push({ ...item, changeType: 'modified' });
         }
     }
     if (changeData.moved && Array.isArray(changeData.moved)) {
-        console.log('[导出变化] moved 数量:', changeData.moved.length);
+        
         for (const item of changeData.moved) {
             changes.push({ ...item, changeType: 'moved' });
         }
@@ -24055,13 +23999,13 @@ function collectChangesForExport(changeData, mode, depth) {
 
     // 如果变化数组为空，尝试从 DOM 提取变化
     if (changes.length === 0) {
-        console.log('[导出变化] 变化数组为空，尝试从 DOM 提取');
+        
         changes = collectChangesFromDOM();
     }
 
-    console.log('[导出变化] 收集到的变化总数:', changes.length);
+    
     if (changes.length > 0) {
-        console.log('[导出变化] 第一个变化项示例:', changes[0]);
+        
     }
 
     // 如果是详细模式，扩展上下文
@@ -24069,7 +24013,7 @@ function collectChangesForExport(changeData, mode, depth) {
         // TODO: 实现上下文扩展逻辑
         // 这里需要获取变化项的父级和同级书签
         // 暂时只返回变化项本身
-        console.log('[导出变化] 详细模式，扩展层级:', depth);
+        
     }
 
     return changes;
@@ -24080,7 +24024,7 @@ function collectChangesFromDOM() {
     const treeContainer = document.getElementById('changesTreePreviewInline');
 
     if (!treeContainer) {
-        console.warn('[导出变化] 未找到书签树容器');
+        
         return [];
     }
 
@@ -24145,13 +24089,13 @@ function collectChangesFromDOM() {
         // 尝试直接从容器开始
         const directNodes = treeContainer.querySelectorAll('.tree-node');
         if (directNodes.length === 0) {
-            console.warn('[导出变化] 书签树为空');
+            
             return [];
         }
     }
 
     const tree = extractTreeNode(treeContainer, 0);
-    console.log('[导出变化] 从 DOM 提取的书签树:', tree);
+    
 
     // 展平树结构为变化列表（保留路径信息）
     const flatChanges = [];
@@ -24178,7 +24122,7 @@ function collectChangesFromDOM() {
     }
 
     flattenTree(tree);
-    console.log('[导出变化] 展平后的变化列表:', flatChanges.length, '项');
+    
 
     return flatChanges;
 }
@@ -25909,7 +25853,7 @@ function downloadBlob(url, filename) {
             conflictAction: 'uniquify'
         }, (downloadId) => {
             if (chrome.runtime.lastError) {
-                console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
+                
                 // 降级方案
                 const a = document.createElement('a');
                 a.href = url;

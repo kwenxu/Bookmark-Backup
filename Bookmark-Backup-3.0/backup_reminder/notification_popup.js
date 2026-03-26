@@ -633,7 +633,6 @@ async function saveReminderSettingsFunc() {
         };
 
         await browserAPI.storage.local.set({ reminderSettings: settings });
-        console.log('发送更新设置消息 (不重置计时器)');
         await browserAPI.runtime.sendMessage({
             action: "updateReminderSettings",
             settings: settings,
@@ -957,7 +956,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 获取当前语言设置
     try {
         const result = await browserAPI.storage.local.get('preferredLang');
-        if (result && result.preferredLang) { currentLang = result.preferredLang; console.log('从存储中获取的语言设置:', currentLang); }
+        if (result && result.preferredLang) {
+            currentLang = result.preferredLang;
+        }
         else {
             const browserLang = navigator.language.toLowerCase();
             if (browserLang.startsWith('zh')) { currentLang = 'zh_CN'; }
@@ -987,10 +988,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isTestNotification) {
         if (currentLang === 'zh_CN') { notificationTitle.textContent = '书签备份提醒(测试)'; }
         else { notificationTitle.textContent = 'Bookmark Backup Reminder(Test)'; }
-        browserAPI.runtime.sendMessage({ action: "notificationUserAction" }).catch(error => { console.log('发送测试通知标记失败，但不影响功能:', error); });
+        browserAPI.runtime.sendMessage({ action: "notificationUserAction" }).catch(error => {});
     }
     else if (timeLabel) {
-        browserAPI.runtime.sendMessage({ action: "notificationUserAction", type: "fixed_time" }).catch(error => { console.log('发送准点定时提醒标记失败，但不影响功能:', error); });
+        browserAPI.runtime.sendMessage({ action: "notificationUserAction", type: "fixed_time" }).catch(error => {});
     }
 
     // 加载备份信息
@@ -1068,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     manualBackupBtn.addEventListener('click', async () => {
         operationStatusElement.style.display = 'none';
 
-        browserAPI.runtime.sendMessage({ action: "notificationUserAction", button: "manualBackup", alarmName: alarmName, windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => console.warn("发送手动备份用户操作信号失败:", error));
+        browserAPI.runtime.sendMessage({ action: "notificationUserAction", button: "manualBackup", alarmName: alarmName, windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(() => { });
 
         toggleAutoBackupBtn.disabled = true;
         manualBackupBtn.disabled = true;
@@ -1079,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             operationCompleted = true;
             setTimeout(() => {
                 window.isClosing = true;
-                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => { console.log('发送readyToClose消息失败，直接关闭窗口:', error); });
+                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => {});
                 setTimeout(() => window.close(), 200);
             }, 500);
         };
@@ -1103,9 +1104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 fromNotification: true
             });
             await sendMessagePromise({ action: "manualBackupCompleted" });
-        } catch (e) {
-            console.log('发送备份完成消息失败，但继续关闭窗口:', e);
-        }
+        } catch (e) {}
 
         finishAndClose();
     });
@@ -1131,7 +1130,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 关闭设置对话框按钮点击事件
     if (closeReminderSettings) {
         closeReminderSettings.addEventListener('click', async () => {
-            if (reminderSettingsDialog) { reminderSettingsDialog.style.display = 'none'; console.log('设置对话框已关闭'); }
+            if (reminderSettingsDialog) {
+                reminderSettingsDialog.style.display = 'none';
+            }
             await resumeNotificationAutoCloseTimer();
         });
     }

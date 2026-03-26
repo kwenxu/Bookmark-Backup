@@ -1,17 +1,9 @@
-// =============================================================================
-// 模块导入 (Module Imports)
-// =============================================================================
-
-console.log('🔵 [popup.js] 开始加载...');
-
 import {
     createAutoBackupTimerUI,
     initializeUIEvents as initializeAutoBackupTimerUIEvents,
     loadAutoBackupSettings,
     applyLanguageToUI as applyAutoBackupTimerLanguage
 } from './auto_backup_timer/index.js';
-
-console.log('🟢 [popup.js] 模块导入成功!', { createAutoBackupTimerUI, initializeAutoBackupTimerUIEvents, loadAutoBackupSettings });
 
 // =============================================================================
 // 全局状态变量和常量 (Global State Variables and Constants)
@@ -1168,7 +1160,7 @@ async function maybePromptRestoreRecoveryTransaction() {
         }
         await showRestoreRecoveryBlockingOverlay(status);
     } catch (error) {
-        console.warn('[popup] restore recovery prompt failed:', error);
+        
     }
 }
 
@@ -3426,7 +3418,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                             canCalculateDiff: recordHasAnyExplicitDiff
                         });
                     } catch (statsError) {
-                        console.warn('[updateSyncHistory] 统计解析失败，降级为空变化展示:', statsError);
+                        
                     }
                     const {
                         bookmarkAddedCount: recordBookmarkAdded,
@@ -4467,7 +4459,7 @@ function updateBookmarkCountDisplay(passedLang) {
                             if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiffManual = backupResponse.stats.bookmarkDiff;
                             if (backupResponse.stats.folderDiff !== undefined) folderDiffManual = backupResponse.stats.folderDiff;
                             if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
-                            else console.warn("历史记录中没有可用统计，且 backupResponse 未提供 diff。");
+                            else ;
                         }
                     } else if (cachedRecordFromStorage) {
                         const cachedStats = cachedRecordFromStorage.bookmarkStats;
@@ -4484,13 +4476,15 @@ function updateBookmarkCountDisplay(passedLang) {
                             if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiffManual = backupResponse.stats.bookmarkDiff;
                             if (backupResponse.stats.folderDiff !== undefined) folderDiffManual = backupResponse.stats.folderDiff;
                             if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
-                            else console.warn("缓存的记录缺少必要的统计信息，无法精确计算数量差异，也无法从backupResponse获取。");
+                            else ;
                         }
                     } else { // No history, no cache, rely on backupResponse for diff
                         if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiffManual = backupResponse.stats.bookmarkDiff;
                         if (backupResponse.stats.folderDiff !== undefined) folderDiffManual = backupResponse.stats.folderDiff;
-                        if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
-                        else console.log("手动模式下无历史、无缓存、backupResponse无diff，不显示数量差异。");
+                        if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined)
+                            canCalculateDiff = true;
+                        else
+                            ;
                     }
 
                     const {
@@ -4523,7 +4517,7 @@ function updateBookmarkCountDisplay(passedLang) {
                     }
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
                 }).catch(manualError => {
-                    console.warn('updateBookmarkCountDisplay(manual) failed:', manualError);
+                    
                     showSoftUnavailableState({
                         detailText: currentLang === 'en' ? 'Temporarily unavailable' : '暂时不可用',
                         statusText: currentLang === 'en' ? 'Change details temporarily unavailable' : '变动详情暂时不可用'
@@ -4581,7 +4575,7 @@ function updateBookmarkCountDisplay(passedLang) {
                 }
             }, BOOKMARK_STATUS_ERROR_GRACE_MS);
 
-            console.warn('updateBookmarkCountDisplay(initial) failed:', initialError);
+            
         });
 }
 
@@ -8986,7 +8980,7 @@ function triggerLocalRestorePicker(mode = 'folder') {
         try {
             fileInput.click();
         } catch (_) {
-            console.warn('[Local Restore] picker requires user activation:', error);
+            
         }
     }
 }
@@ -9604,7 +9598,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 });
             }
         } catch (err) {
-            console.warn('[Local Restore] Read file failed:', name, err);
+            
         }
     }
 
@@ -9830,7 +9824,7 @@ function showRestoreModal(versions, source) {
         );
 
     if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyMergeGroup || !strategyAutoRadio || !strategyOverwriteRadio || !strategyMergeRadio || !strategyPatchRadio || !cancelBtn || !closeBtn) {
-        console.warn('[showRestoreModal] Missing modal DOM nodes');
+        
         return;
     }
 
@@ -10706,7 +10700,7 @@ function showRestoreModal(versions, source) {
     };
 
     const toggleRestoreSearch = async (forceOpen = null) => {
-        const lang = cachedLang || await getPreferredLang();
+        const lang = cachedLang || (await getPreferredLang());
         const nextOpen = forceOpen == null ? !isRestoreSearchOpen : !!forceOpen;
         if (!nextOpen && String(restoreSearchQuery || '').trim()) {
             restoreSearchQuery = '';
@@ -15546,7 +15540,7 @@ function showRestoreModal(versions, source) {
                 alert(`${isEn ? 'Failed: ' : '失败：'}${formatRestoreUiError(restoreRes, lang)}`);
             }
         } catch (e) {
-            const errorLang = cachedLang || await getPreferredLang();
+            const errorLang = cachedLang || (await getPreferredLang());
             alert(`${errorLang === 'en' ? 'Error: ' : '错误：'}${formatRestoreUiError(e, errorLang)}`);
         } finally {
             if (activeRestoreLocalPayloadToken) {
@@ -17332,7 +17326,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 加载自动备份状态并设置界面
-    chrome.storage.local.get(['autoSync', 'initialized', ACTIVE_BACKUP_PROGRESS_KEY], function (result) { // 使用 chrome.storage
+    chrome.storage.local.get(['autoSync', 'initialized', ACTIVE_BACKUP_PROGRESS_KEY], function (result) {
+        // 使用 chrome.storage
         // 默认值：如果从未设置过，则默认为true (开启)
         const autoSyncEnabled = result.autoSync !== undefined ? result.autoSync : true;
         const initialized = result.initialized === true;
@@ -17398,8 +17393,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 autoBackupSettingsBtnInit.classList.add('disabled');
             }
         }
-
-        console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualButtonsContainer.style.display : 'element not found');
 
         // 更新整体UI状态（例如备份状态区域的显示）
         const { shouldShowSyncStatus } = applyPopupSyncStatusVisibility({
@@ -17483,9 +17476,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     try {
                         localStorage.clear();
                         sessionStorage.clear();
-                        console.log('[resetAllData] popup localStorage 已清除');
                     } catch (e) {
-                        console.warn('[resetAllData] 清除页面存储失败:', e);
+                        
                     }
 
                     // 重置完成后，直接刷新整个页面，确保UI和状态完全重建
@@ -18490,10 +18482,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (autoBackupSettingsBtnEl && autoBackupSettingsDialog) {
         autoBackupSettingsBtnEl.addEventListener('click', async function () {
-            // 初始化自动备份定时器UI（首次打开时）
-            console.log('[自动备份设置] 开始初始化UI...');
             const container = document.getElementById('autoBackupTimerUIContainer');
-            console.log('[自动备份设置] 容器元素:', container);
 
             if (!container) {
                 console.error('[自动备份设置] 找不到容器元素 autoBackupTimerUIContainer');
@@ -18503,34 +18492,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 const alreadyInitialized = container.querySelector('#autoBackupTimerContainer');
 
                 if (!alreadyInitialized) {
-                    console.log('[自动备份设置] 首次初始化，开始创建UI');
                     try {
                         const lang = await new Promise(resolve => {
                             chrome.storage.local.get(['preferredLang'], result => {
                                 resolve(result.preferredLang || 'zh_CN');
                             });
                         });
-                        console.log('[自动备份设置] 当前语言:', lang);
 
                         // 清空容器（移除测试内容）
                         container.innerHTML = '';
 
-                        // 创建并插入UI
-                        console.log('[自动备份设置] 调用 createAutoBackupTimerUI...');
                         const ui = createAutoBackupTimerUI(lang);
-                        console.log('[自动备份设置] UI创建成功:', ui);
 
                         container.appendChild(ui);
-                        console.log('[自动备份设置] UI已插入到容器');
-
-                        // 初始化UI事件
-                        console.log('[自动备份设置] 初始化UI事件...');
                         await initializeAutoBackupTimerUIEvents();
 
-                        // 加载设置
-                        console.log('[自动备份设置] 加载设置...');
                         await loadAutoBackupSettings();
-                        console.log('[自动备份设置] 初始化完成！');
                     } catch (error) {
                         console.error('[自动备份设置] 初始化失败:', error);
                         console.error('[自动备份设置] 错误堆栈:', error.stack);
@@ -18550,7 +18527,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         container.appendChild(wrapper);
                     }
                 } else {
-                    console.log('[自动备份设置] 已初始化，重新加载设置');
                     // 已初始化，重新加载设置
                     await loadAutoBackupSettings();
                 }

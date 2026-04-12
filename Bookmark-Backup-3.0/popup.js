@@ -75,6 +75,7 @@ const HISTORY_DELETE_WARN_SETTING_KEYS = {
     yellow: 'backupHistoryDeleteWarnYellowThreshold',
     red: 'backupHistoryDeleteWarnRedThreshold'
 };
+const HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY = 'historyOverwriteRevertMarkerTime';
 const HISTORY_DELETE_WARN_DEFAULTS = {
     yellow: 50,
     red: 100
@@ -595,6 +596,22 @@ function isRestoreRecoveryLockedResponse(response) {
     return !!(response && response.errorCode === 'restore_recovery_locked');
 }
 
+function isRestoreRecoveryRelatedAction(action) {
+    const normalized = String(action || '').trim();
+    return normalized === 'restoreSelectedVersion'
+        || normalized === 'restoreToHistoryRecord'
+        || normalized === 'revertAllToLastBackup'
+        || normalized === 'continueRestoreRecoveryTransaction'
+        || normalized === 'rollbackRestoreRecoveryTransaction';
+}
+
+function shouldPromptRestoreRecoveryOnResponse(action, response) {
+    if (!isRestoreRecoveryRelatedAction(action)) return false;
+    if (isRestoreRecoveryLockedResponse(response)) return true;
+    if (!response || response.success === true) return false;
+    return true;
+}
+
 function promptRestoreRecoveryTransactionFromPopup() {
     Promise.resolve().then(() => maybePromptRestoreRecoveryTransaction().catch(() => { }));
 }
@@ -615,6 +632,8 @@ async function callBackgroundFunction(action, data = {}) {
                         && action !== 'continueRestoreRecoveryTransaction'
                         && action !== 'rollbackRestoreRecoveryTransaction'
                     ) {
+                        promptRestoreRecoveryTransactionFromPopup();
+                    } else if (shouldPromptRestoreRecoveryOnResponse(action, response)) {
                         promptRestoreRecoveryTransactionFromPopup();
                     }
                     resolve(response);
@@ -643,6 +662,9 @@ function formatRestoreRecoveryPhaseLabel(phase, lang) {
     if (normalized === 'destructive_started') return isEn ? 'Destructive Phase' : '破坏性阶段';
     if (normalized === 'apply_started') return isEn ? 'Applying Changes' : '正在应用变更';
     if (normalized === 'finalizing') return isEn ? 'Finalizing' : '正在收尾';
+    if (normalized === 'continue_failed') return isEn ? 'Continue Failed' : '继续失败';
+    if (normalized === 'rollback_failed') return isEn ? 'Rollback Failed' : '回滚失败';
+    if (normalized === 'locked_incident') return isEn ? 'Locked Incident' : '故障锁定';
     if (normalized === 'completed') return isEn ? 'Completed' : '已完成';
     return normalized || (isEn ? 'Unknown' : '未知');
 }
@@ -665,6 +687,9 @@ function closeRestoreRecoveryBlockingOverlay() {
     restoreRecoveryBlockingOverlayState = null;
     if (!state) return;
 
+    if (typeof state.unlockConfirmCleanup === 'function') {
+        state.unlockConfirmCleanup();
+    }
     if (state.timer) {
         window.clearInterval(state.timer);
     }
@@ -736,12 +761,17 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
                     <div style="font-size:18px;font-weight:700;color:var(--theme-text-primary);">${isEn ? 'Resolve Unfinished Restore/Revert' : '处理未完成的恢复/撤销事务'}</div>
                     <div style="font-size:13px;line-height:1.6;color:var(--theme-text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it here now, or dismiss the reminder after repeated prompts.' : '检测到一次未完成的恢复/撤销事务。你可以现在在这里处理，或在多次提醒后关闭本提醒。'}</div>
                 </div>
-                <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:44px;padding:4px 8px;border-radius:999px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:12px;font-weight:700;color:var(--theme-text-secondary);white-space:nowrap;flex-shrink:0;"></div>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <button id="restoreRecoveryQuickExportBtn" style="min-width:128px;padding:6px 10px;border:1px solid var(--theme-border-primary);border-radius:999px;background:transparent;color:var(--theme-text-primary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Export 2-HTML' : '导出2个HTML'}</button>
+                    <button id="restoreRecoveryUnlockBtn" style="min-width:132px;padding:6px 10px;border:1px dashed var(--theme-border-primary);border-radius:999px;background:transparent;color:var(--theme-text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁'}</button>
+                    <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:44px;padding:4px 8px;border-radius:999px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:12px;font-weight:700;color:var(--theme-text-secondary);white-space:nowrap;flex-shrink:0;"></div>
+                </div>
             </div>
             <div id="restoreRecoveryBlockingSummary" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;padding:12px;border-radius:10px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:13px;"></div>
             <div id="restoreRecoveryBlockingMessage" style="padding:10px 12px;border-radius:10px;background:var(--theme-status-info-bg);color:var(--theme-status-info-text);border:1px solid var(--theme-status-info-border);font-size:13px;line-height:1.6;"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
                 <button id="restoreRecoveryDismissBtn" style="display:none;min-width:148px;padding:10px 14px;border:1px dashed var(--theme-border-primary);border-radius:10px;background:transparent;color:var(--theme-text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close Panel Only' : '仅关闭当前面板'}</button>
+                <button id="restoreRecoveryExportBackupBtn" style="min-width:148px;padding:10px 14px;border:1px solid var(--theme-border-primary);border-radius:10px;background:transparent;color:var(--theme-text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Export Backup Package' : '导出备份包（2个HTML）'}</button>
                 <button id="restoreRecoveryRollbackBtn" style="min-width:148px;padding:10px 14px;border:1px solid var(--theme-border-primary);border-radius:10px;background:var(--theme-bg-primary);color:var(--theme-text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
                 <button id="restoreRecoveryContinueBtn" style="min-width:148px;padding:10px 14px;border:none;border-radius:10px;background:var(--theme-accent-color);color:var(--theme-text-on-accent);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
             </div>
@@ -754,7 +784,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
     const summary = panel.querySelector('#restoreRecoveryBlockingSummary');
     const message = panel.querySelector('#restoreRecoveryBlockingMessage');
     const promptCountBadge = panel.querySelector('#restoreRecoveryPromptCountBadge');
+    const quickExportBtn = panel.querySelector('#restoreRecoveryQuickExportBtn');
+    const unlockBtn = panel.querySelector('#restoreRecoveryUnlockBtn');
     const dismissBtn = panel.querySelector('#restoreRecoveryDismissBtn');
+    const exportBackupBtn = panel.querySelector('#restoreRecoveryExportBackupBtn');
     const continueBtn = panel.querySelector('#restoreRecoveryContinueBtn');
     const rollbackBtn = panel.querySelector('#restoreRecoveryRollbackBtn');
 
@@ -764,7 +797,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         summary,
         message,
         promptCountBadge,
+        quickExportBtn,
+        unlockBtn,
         dismissBtn,
+        exportBackupBtn,
         continueBtn,
         rollbackBtn,
         lang,
@@ -774,6 +810,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         lastStatus: null,
         timer: null,
         actionHintTimer: null,
+        unlockConfirmOpen: false,
+        unlockConfirmCleanup: null,
+        thresholdUnlockPromptedSessionId: '',
+        thresholdUnlockPromptedAtCount: 0,
         keydownHandler: null,
         focusHandler: null
     };
@@ -781,20 +821,48 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
 
     const continueIdleText = isEn ? 'Continue to Target' : '继续到目标状态';
     const rollbackIdleText = isEn ? 'Rollback to Start' : '回滚到开始前状态';
+    const exportIdleText = isEn ? 'Export Backup Package' : '导出备份包（2个HTML）';
+    const quickExportIdleText = isEn ? 'Export 2-HTML' : '导出2个HTML';
+    const unlockIdleText = isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁';
 
     const applyActionButtonLabels = (actionType = '') => {
         if (actionType === 'continue') {
             continueBtn.textContent = isEn ? 'Continuing…' : '继续处理中…';
             rollbackBtn.textContent = rollbackIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
             return;
         }
         if (actionType === 'rollback') {
             rollbackBtn.textContent = isEn ? 'Rolling back…' : '回滚处理中…';
             continueBtn.textContent = continueIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
+            return;
+        }
+        if (actionType === 'export') {
+            exportBackupBtn.textContent = isEn ? 'Exporting…' : '导出中…';
+            if (quickExportBtn) quickExportBtn.textContent = isEn ? 'Exporting…' : '导出中…';
+            continueBtn.textContent = continueIdleText;
+            rollbackBtn.textContent = rollbackIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
+            return;
+        }
+        if (actionType === 'unlock') {
+            if (unlockBtn) unlockBtn.textContent = isEn ? 'Unlocking…' : '解锁中…';
+            continueBtn.textContent = continueIdleText;
+            rollbackBtn.textContent = rollbackIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
             return;
         }
         continueBtn.textContent = continueIdleText;
         rollbackBtn.textContent = rollbackIdleText;
+        exportBackupBtn.textContent = exportIdleText;
+        if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+        if (unlockBtn) unlockBtn.textContent = unlockIdleText;
     };
 
     const setMessage = (textValue, tone = 'info') => {
@@ -815,6 +883,142 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         message.style.border = `1px solid ${palette.border}`;
     };
 
+    const showUnlockSecondaryConfirm = (options = {}) => {
+        if (state.unlockConfirmOpen) {
+            return Promise.resolve('cancel');
+        }
+
+        const thresholdReached = options && options.thresholdReached === true;
+        const titleText = thresholdReached
+            ? (isEn ? 'Reminder Threshold Reached' : '已达到提醒阈值')
+            : (isEn ? 'Confirm Unlock' : '确认解锁');
+        const detailText = thresholdReached
+            ? (isEn
+                ? 'This transaction has reached the reminder threshold. It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.'
+                : '该事务已达到提醒阈值。建议先手动备份（导出2个HTML），再解锁并停止后续提醒。')
+            : (isEn
+                ? 'Before unlocking, it is recommended to manually back up first (export 2 HTML files). Unlocking will clear this unfinished transaction.'
+                : '解锁前建议先手动备份（导出2个HTML）。解锁会清理当前未完成事务。');
+        const unlockButtonText = thresholdReached
+            ? (isEn ? 'Stop Prompt & Unlock' : '停止提醒并解锁')
+            : (isEn ? 'Unlock Now' : '直接解锁');
+
+        state.unlockConfirmOpen = true;
+        return new Promise((resolve) => {
+            const layer = document.createElement('div');
+            layer.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                background: rgba(2, 6, 23, 0.36);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 12px;
+                box-sizing: border-box;
+            `;
+
+            const card = document.createElement('div');
+            card.setAttribute('role', 'dialog');
+            card.setAttribute('aria-modal', 'true');
+            card.style.cssText = `
+                width: min(360px, calc(100vw - 32px));
+                background: var(--theme-bg-elevated);
+                color: var(--theme-text-primary);
+                border: 1px solid var(--theme-border-primary);
+                border-radius: 12px;
+                box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+                padding: 14px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            `;
+
+            card.innerHTML = `
+                <div style="font-size:15px;font-weight:700;">${titleText}</div>
+                <div style="font-size:12px;line-height:1.6;color:var(--theme-text-secondary);">${detailText}</div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                    <button id="restoreRecoveryUnlockCancelBtn" style="min-width:92px;padding:8px 10px;border:1px dashed var(--theme-border-primary);border-radius:8px;background:transparent;color:var(--theme-text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Cancel' : '取消'}</button>
+                    <button id="restoreRecoveryUnlockDirectBtn" style="min-width:118px;padding:8px 10px;border:1px solid var(--theme-border-primary);border-radius:8px;background:var(--theme-bg-primary);color:var(--theme-text-primary);font-size:12px;font-weight:600;cursor:pointer;">${unlockButtonText}</button>
+                    <button id="restoreRecoveryUnlockBackupBtn" style="min-width:132px;padding:8px 10px;border:none;border-radius:8px;background:var(--theme-accent-color);color:var(--theme-text-on-accent);font-size:12px;font-weight:700;cursor:pointer;">${isEn ? 'Manual Backup (2-HTML)' : '手动备份（2个HTML）'}</button>
+                </div>
+            `;
+
+            layer.appendChild(card);
+            document.body.appendChild(layer);
+
+            const backupBtn = card.querySelector('#restoreRecoveryUnlockBackupBtn');
+            const unlockDirectBtn = card.querySelector('#restoreRecoveryUnlockDirectBtn');
+            const cancelBtn = card.querySelector('#restoreRecoveryUnlockCancelBtn');
+
+            const cleanup = () => {
+                if (!state.unlockConfirmOpen) return;
+                state.unlockConfirmOpen = false;
+                if (state.unlockConfirmCleanup === cleanup) {
+                    state.unlockConfirmCleanup = null;
+                }
+                document.removeEventListener('keydown', onKeyDown, true);
+                if (layer.parentNode) {
+                    layer.parentNode.removeChild(layer);
+                }
+            };
+            state.unlockConfirmCleanup = cleanup;
+
+            const settle = (choice) => {
+                cleanup();
+                resolve(choice);
+            };
+
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    settle('cancel');
+                }
+            };
+
+            layer.addEventListener('click', (event) => {
+                if (event.target === layer) {
+                    settle('cancel');
+                }
+            });
+            if (cancelBtn) cancelBtn.addEventListener('click', () => settle('cancel'));
+            if (unlockDirectBtn) unlockDirectBtn.addEventListener('click', () => settle('unlock'));
+            if (backupBtn) backupBtn.addEventListener('click', () => settle('export'));
+            document.addEventListener('keydown', onKeyDown, true);
+        });
+    };
+
+    const formatFailureReason = (transaction = {}) => {
+        const action = String(transaction.lastFailureAction || '').trim().toLowerCase();
+        const stage = String(transaction.lastFailureStage || '').trim();
+        const category = String(transaction.lastFailureCategory || '').trim().toLowerCase();
+        const errorMessage = String(transaction.lastFailureMessage || '').trim();
+        const actionLabel = action === 'rollback'
+            ? (isEn ? 'Rollback' : '回滚')
+            : (action === 'continue' ? (isEn ? 'Continue' : '继续') : '');
+        const categoryLabel = category === 'algorithm_error'
+            ? (isEn ? 'Algorithm Error' : '算法错误')
+            : (category === 'browser_or_environment_error'
+                ? (isEn ? 'Browser/Environment Error' : '浏览器限制/环境错误')
+                : (category === 'other_error' ? (isEn ? 'Other Error' : '其他错误') : ''));
+        const parts = [];
+        if (actionLabel) {
+            parts.push(isEn ? `Action=${actionLabel}` : `动作=${actionLabel}`);
+        }
+        if (categoryLabel) {
+            parts.push(isEn ? `Type=${categoryLabel}` : `类型=${categoryLabel}`);
+        }
+        if (stage) {
+            parts.push(isEn ? `Stage=${stage}` : `阶段=${stage}`);
+        }
+        if (errorMessage) {
+            parts.push(errorMessage);
+        }
+        return parts.join(' | ');
+    };
+
     const renderSummary = (status) => {
         const transaction = status?.transaction || {};
         const rows = [
@@ -831,6 +1035,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         const titleText = String(transaction.displayTitle || '').trim();
         if (titleText) {
             rows.push([isEn ? 'Title' : '标题备注', titleText]);
+        }
+        const failureReason = formatFailureReason(transaction);
+        if (failureReason) {
+            rows.push([isEn ? 'Last Failure' : '最近失败', failureReason]);
         }
         summary.innerHTML = '';
         rows.forEach(([label, value]) => {
@@ -859,10 +1067,27 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         const canRollback = transaction.canRollback !== false;
         const isIntentOnly = transaction.intentOnly === true;
         const isActive = status?.active === true;
+        const phase = String(transaction.phase || '').trim().toLowerCase();
+        const lockedIncident = transaction.lockedIncident === true || phase === 'locked_incident';
         const promptCount = Math.max(0, Number(transaction.promptCount) || 0);
         const promptThreshold = Math.max(1, Number(transaction.promptThreshold) || 3);
         const canDismissPanel = transaction.canDismissPanel === true;
+        const canExportBackupPackage = transaction.canExportBackupPackage === true;
+        const canUnlockNow = true;
         const allowDismiss = canDismissPanel || isIntentOnly;
+        const sessionId = String(transaction.sessionId || '').trim();
+        const failureReason = formatFailureReason(transaction);
+        if (state.thresholdUnlockPromptedSessionId !== sessionId) {
+            state.thresholdUnlockPromptedSessionId = sessionId;
+            state.thresholdUnlockPromptedAtCount = 0;
+        }
+        const shouldAutoPromptThresholdUnlock = canDismissPanel
+            && !isIntentOnly
+            && !isActive
+            && !state.actionRunning
+            && !state.unlockConfirmOpen
+            && promptCount === promptThreshold
+            && state.thresholdUnlockPromptedAtCount !== promptCount;
         renderSummary(status);
 
         if (promptCount > 0) {
@@ -877,14 +1102,23 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
 
         continueBtn.disabled = state.actionRunning || isActive || !canContinue;
         rollbackBtn.disabled = state.actionRunning || isActive || !canRollback;
+        exportBackupBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
+        if (quickExportBtn) quickExportBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
+        if (unlockBtn) unlockBtn.disabled = state.actionRunning || isActive || !canUnlockNow;
         dismissBtn.disabled = state.actionRunning || isActive || !allowDismiss;
         dismissBtn.style.display = allowDismiss ? 'inline-flex' : 'none';
 
         continueBtn.style.opacity = continueBtn.disabled ? '0.55' : '1';
         rollbackBtn.style.opacity = rollbackBtn.disabled ? '0.55' : '1';
+        exportBackupBtn.style.opacity = exportBackupBtn.disabled ? '0.55' : '1';
+        if (quickExportBtn) quickExportBtn.style.opacity = quickExportBtn.disabled ? '0.55' : '1';
+        if (unlockBtn) unlockBtn.style.opacity = unlockBtn.disabled ? '0.55' : '1';
         dismissBtn.style.opacity = dismissBtn.disabled ? '0.55' : '1';
         continueBtn.style.cursor = continueBtn.disabled ? 'not-allowed' : 'pointer';
         rollbackBtn.style.cursor = rollbackBtn.disabled ? 'not-allowed' : 'pointer';
+        exportBackupBtn.style.cursor = exportBackupBtn.disabled ? 'not-allowed' : 'pointer';
+        if (quickExportBtn) quickExportBtn.style.cursor = quickExportBtn.disabled ? 'not-allowed' : 'pointer';
+        if (unlockBtn) unlockBtn.style.cursor = unlockBtn.disabled ? 'not-allowed' : 'pointer';
         dismissBtn.style.cursor = dismissBtn.disabled ? 'not-allowed' : 'pointer';
         if (!state.actionRunning) {
             applyActionButtonLabels('');
@@ -906,8 +1140,40 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
             );
             return;
         }
+        if (lockedIncident) {
+            setMessage(
+                isEn
+                    ? `Continue and rollback both failed. Export the backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `继续和回滚都失败，当前已锁定为故障态。请先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
+        if (phase === 'continue_failed') {
+            setMessage(
+                isEn
+                    ? `Continue failed. You can roll back, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `继续失败。你可以先回滚，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
+        if (phase === 'rollback_failed') {
+            setMessage(
+                isEn
+                    ? `Rollback failed. You can continue to target, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `回滚失败。你可以继续到目标状态，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
         if (!canContinue && !canRollback) {
-            setMessage(isEn ? 'Transaction snapshots are temporarily unavailable. Retrying detection automatically…' : '事务快照暂时不可用，正在自动重试检测……', 'error');
+            setMessage(
+                isEn
+                    ? `Transaction snapshots are temporarily unavailable.${failureReason ? ` ${failureReason}` : ''}`
+                    : `事务快照暂时不可用。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
             return;
         }
         if (!canContinue) {
@@ -930,10 +1196,20 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         if (canDismissPanel) {
             setMessage(
                 isEn
-                    ? 'This unfinished transaction has already reopened multiple times. You may close this panel now and continue using the regular actions. If you start a new restore/revert, it will replace this unfinished transaction.'
-                    : '这次未完成事务已经重复弹出多次。你现在可以关闭当前面板并继续使用常规操作；如果你发起新的恢复/撤销，它会替换这次未完成事务。',
+                    ? `Reminder threshold reached (${promptCount}/${promptThreshold}). It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.`
+                    : `已达到提醒阈值（${promptCount}/${promptThreshold}）。建议先手动备份（导出2个HTML），再执行解锁并停止后续提醒。`,
                 'info'
             );
+            if (shouldAutoPromptThresholdUnlock) {
+                state.thresholdUnlockPromptedAtCount = promptCount;
+                window.setTimeout(async () => {
+                    if (restoreRecoveryBlockingOverlayState !== state) return;
+                    if (state.actionRunning || state.unlockConfirmOpen) return;
+                    const decision = await showUnlockSecondaryConfirm({ thresholdReached: true });
+                    if (restoreRecoveryBlockingOverlayState !== state) return;
+                    handleUnlockDecision(decision, 'threshold');
+                }, 0);
+            }
             return;
         }
         setMessage(isEn ? 'Choose one action to resolve this unfinished transaction. The dialog cannot be dismissed.' : '请选择“继续”或“回滚”来处理这次未完成事务；该面板不能关闭。', 'info');
@@ -956,15 +1232,33 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
     };
 
     const runAction = async (action) => {
-        const actionType = action === 'continueRestoreRecoveryTransaction' ? 'continue' : 'rollback';
+        const actionType = action === 'continueRestoreRecoveryTransaction'
+            ? 'continue'
+            : (action === 'rollbackRestoreRecoveryTransaction'
+                ? 'rollback'
+                : (action === 'unlockRestoreRecoveryWriteLock' ? 'unlock' : 'export'));
+        const actionLabel = actionType === 'continue'
+            ? (isEn ? 'Continue' : '继续')
+            : (actionType === 'rollback'
+                ? (isEn ? 'Rollback' : '回滚')
+                : (actionType === 'unlock' ? (isEn ? 'Unlock' : '解锁') : (isEn ? 'Export Backup Package' : '导出备份包')));
+        if (typeof state.unlockConfirmCleanup === 'function') {
+            state.unlockConfirmCleanup();
+        }
         state.actionRunning = true;
         state.actionType = actionType;
         state.actionStartedAt = Date.now();
         continueBtn.disabled = true;
         rollbackBtn.disabled = true;
+        exportBackupBtn.disabled = true;
+        if (quickExportBtn) quickExportBtn.disabled = true;
+        if (unlockBtn) unlockBtn.disabled = true;
         dismissBtn.disabled = true;
         continueBtn.style.opacity = '0.55';
         rollbackBtn.style.opacity = '0.55';
+        exportBackupBtn.style.opacity = '0.55';
+        if (quickExportBtn) quickExportBtn.style.opacity = '0.55';
+        if (unlockBtn) unlockBtn.style.opacity = '0.55';
         dismissBtn.style.opacity = '0.55';
         applyActionButtonLabels(actionType);
 
@@ -979,10 +1273,28 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
                 );
                 return;
             }
+            if (actionType === 'rollback') {
+                setMessage(
+                    isEn
+                        ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
+                        : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
+                    'info'
+                );
+                return;
+            }
+            if (actionType === 'unlock') {
+                setMessage(
+                    isEn
+                        ? `Unlocking and stopping further prompts… (${elapsedSeconds}s)`
+                        : `正在解锁并停止后续弹窗……（${elapsedSeconds}秒）`,
+                    'info'
+                );
+                return;
+            }
             setMessage(
                 isEn
-                    ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
-                    : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
+                    ? `Exporting backup package… (${elapsedSeconds}s)`
+                    : `正在导出备份包……（${elapsedSeconds}秒）`,
                 'info'
             );
         };
@@ -997,7 +1309,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         }, 1000);
 
         try {
-            const result = await callBackgroundFunction(action);
+            const actionPayload = (actionType === 'export' || actionType === 'unlock')
+                ? { sessionId: state.lastStatus?.transaction?.sessionId || '' }
+                : {};
+            const result = await callBackgroundFunction(action, actionPayload);
             if (!result || result.success !== true) {
                 state.actionRunning = false;
                 state.actionType = '';
@@ -1009,8 +1324,8 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
                 await refreshStatus();
                 setMessage(
                     isEn
-                        ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${result && result.error ? result.error : 'Unknown error'}`
-                        : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${result && result.error ? result.error : '未知错误'}`,
+                        ? `${actionLabel} failed: ${result && result.error ? result.error : 'Unknown error'}`
+                        : `${actionLabel}失败：${result && result.error ? result.error : '未知错误'}`,
                     'error'
                 );
                 return;
@@ -1022,7 +1337,31 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
                 state.actionHintTimer = null;
             }
             applyActionButtonLabels('');
-            showStatus(action === 'continueRestoreRecoveryTransaction'
+            if (actionType === 'export') {
+                showStatus(isEn ? 'Backup package exported.' : '备份包已导出。', 'success', 2200);
+                if (Array.isArray(result?.files) && result.files.length > 0) {
+                    const previewText = result.files.slice(0, 2).join(' ; ');
+                    setMessage(
+                        isEn
+                            ? `Export completed: ${previewText}`
+                            : `导出完成：${previewText}`,
+                        'info'
+                    );
+                }
+                await refreshStatus();
+                return true;
+            }
+            if (actionType === 'unlock') {
+                closeRestoreRecoveryBlockingOverlay();
+                showStatus(
+                    isEn ? 'Prompts disabled and lock cleared.' : '已停止弹出并解除写锁。',
+                    'info',
+                    2600
+                );
+                setTimeout(() => window.location.reload(), 120);
+                return true;
+            }
+            showStatus(actionType === 'continue'
                 ? (isEn ? 'Continue completed.' : '继续完成。')
                 : (isEn ? 'Rollback completed.' : '回滚完成。'), 'success', 1800);
             if (action === 'continueRestoreRecoveryTransaction' && result?.restoreRecordWarning) {
@@ -1034,6 +1373,7 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
                 );
             }
             setTimeout(() => window.location.reload(), 250);
+            return true;
         } catch (error) {
             state.actionRunning = false;
             state.actionType = '';
@@ -1045,11 +1385,40 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
             await refreshStatus();
             setMessage(
                 isEn
-                    ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${error?.message || error}`
-                    : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${error?.message || error}`,
+                    ? `${actionLabel} failed: ${error?.message || error}`
+                    : `${actionLabel}失败：${error?.message || error}`,
                 'error'
             );
+            return false;
         }
+    };
+
+    const handleUnlockDecision = (decision, source = 'manual') => {
+        if (decision === 'cancel') {
+            if (source === 'threshold') {
+                setMessage(
+                    isEn
+                        ? 'You can manually back up first, then unlock to stop future prompts.'
+                        : '你可以先手动备份，再解锁并停止后续提醒。',
+                    'info'
+                );
+            }
+            return;
+        }
+        if (decision === 'export') {
+            if (exportBackupBtn.disabled) {
+                setMessage(
+                    isEn
+                        ? 'Backup export is unavailable right now. Please retry after snapshots become available.'
+                        : '当前无法导出备份包，请在快照可用后重试。',
+                    'error'
+                );
+                return;
+            }
+            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+            return;
+        }
+        runAction('unlockRestoreRecoveryWriteLock').catch(() => { });
     };
 
     continueBtn.addEventListener('click', () => {
@@ -1060,6 +1429,23 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         if (rollbackBtn.disabled) return;
         runAction('rollbackRestoreRecoveryTransaction').catch(() => { });
     });
+    exportBackupBtn.addEventListener('click', () => {
+        if (exportBackupBtn.disabled) return;
+        runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+    });
+    if (quickExportBtn) {
+        quickExportBtn.addEventListener('click', () => {
+            if (quickExportBtn.disabled) return;
+            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+        });
+    }
+    if (unlockBtn) {
+        unlockBtn.addEventListener('click', async () => {
+            if (unlockBtn.disabled) return;
+            const decision = await showUnlockSecondaryConfirm();
+            handleUnlockDecision(decision, 'manual');
+        });
+    }
     dismissBtn.addEventListener('click', () => {
         if (dismissBtn.disabled) return;
         const isIntentOnly = state.lastStatus?.transaction?.intentOnly === true;
@@ -1093,13 +1479,14 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
     });
 
     state.keydownHandler = (event) => {
+        if (state.unlockConfirmOpen) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
             return;
         }
         if (event.key === 'Tab') {
-            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length === 0) {
                 event.preventDefault();
                 panel.focus();
@@ -1114,9 +1501,10 @@ async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
         }
     };
     state.focusHandler = (event) => {
+        if (state.unlockConfirmOpen) return;
         if (!overlay.contains(event.target)) {
             event.stopPropagation();
-            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length > 0) {
                 focusable[0].focus();
             } else {
@@ -1156,7 +1544,11 @@ async function maybePromptRestoreRecoveryTransaction() {
             return;
         }
         if (status.transaction.canDismissPanel === true && status.transaction.intentOnly !== true) {
-            return;
+            const promptCount = Math.max(0, Number(status.transaction.promptCount) || 0);
+            const promptThreshold = Math.max(1, Number(status.transaction.promptThreshold) || 1);
+            if (promptCount > promptThreshold) {
+                return;
+            }
         }
         await showRestoreRecoveryBlockingOverlay(status);
     } catch (error) {
@@ -2952,6 +3344,169 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         return list.sort((a, b) => getHistoryRecordTimeMs(b) - getHistoryRecordTimeMs(a));
     }
 
+    function getHistoryMarkerTimeMs(rawValue) {
+        const text = String(rawValue || '').trim();
+        if (!text) return 0;
+        const numeric = Number(text);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+        const parsed = Date.parse(text);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        return 0;
+    }
+
+    function resolveLatestOverwriteRevertLineInsertIndex(records, markerRawValue) {
+        const markerTimeMs = getHistoryMarkerTimeMs(markerRawValue);
+        if (!markerTimeMs || markerTimeMs <= 0) return -1;
+
+        const list = Array.isArray(records) ? records : [];
+        if (list.length === 0) return -1;
+
+        const newestMs = getHistoryRecordTimeMs(list[0]);
+        if (markerTimeMs >= newestMs) return 0;
+
+        for (let i = 1; i < list.length; i += 1) {
+            const recordMs = getHistoryRecordTimeMs(list[i]);
+            if (markerTimeMs >= recordMs) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    function syncHistoryHeaderOpsWithListScrollbar(historyListElement) {
+        if (!historyListElement) return;
+        const syncHistoryPanel = historyListElement.closest('.sync-history');
+        if (!syncHistoryPanel) return;
+
+        const scrollbarWidth = Math.max(0, historyListElement.offsetWidth - historyListElement.clientWidth);
+        syncHistoryPanel.style.setProperty('--history-scrollbar-width', `${scrollbarWidth}px`);
+    }
+
+    function normalizeHistoryOperationStrategyValue(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'patch') return 'patch';
+        if (normalized === 'overwrite') return 'overwrite';
+        if (normalized === 'merge') return 'merge';
+        return '';
+    }
+
+    function inferHistoryOperationStrategyFromNote(note = '') {
+        const text = String(note || '').trim().toLowerCase();
+        if (!text) return '';
+        if (text.includes('补丁恢复') || text.includes('patch restore') || text.includes('patch restored') || text.includes('补丁撤销') || text.includes('patch revert')) {
+            return 'patch';
+        }
+        if (text.includes('覆盖恢复') || text.includes('overwrite restore') || text.includes('overwrite restored') || text.includes('覆盖撤销') || text.includes('overwrite revert')) {
+            return 'overwrite';
+        }
+        if (text.includes('导入合并') || text.includes('import merge') || text.includes('import merged')) {
+            return 'merge';
+        }
+        return '';
+    }
+
+    function resolveHistoryRecordOperationStrategy(record) {
+        if (!record || typeof record !== 'object') return '';
+
+        const byRestoreInfo = normalizeHistoryOperationStrategyValue(record?.restoreInfo?.strategy);
+        if (byRestoreInfo) return byRestoreInfo;
+
+        const byRecoveryInfo = normalizeHistoryOperationStrategyValue(
+            record?.recoveryInfo?.resolvedStrategy || record?.recoveryInfo?.requestedStrategy
+        );
+        if (byRecoveryInfo) return byRecoveryInfo;
+
+        const byTopLevel = normalizeHistoryOperationStrategyValue(record?.resolvedStrategy || record?.requestedStrategy);
+        if (byTopLevel) return byTopLevel;
+
+        const byNote = inferHistoryOperationStrategyFromNote(record?.note || '');
+        if (byNote) return byNote;
+
+        const recordType = String(record?.type || '').trim().toLowerCase();
+        if (recordType === 'restore' && String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite') {
+            return 'overwrite';
+        }
+
+        return '';
+    }
+
+    function formatHistoryNoteTimeText(value) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+
+        if (/^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(text)) {
+            return text.replace(/\//g, '-').replace('T', ' ');
+        }
+
+        const parsed = Date.parse(text);
+        if (Number.isFinite(parsed)) {
+            return formatTime(new Date(parsed)).replace(/\//g, '-');
+        }
+
+        return text;
+    }
+
+    function extractTrailingTimeFromHistoryNote(note) {
+        const text = String(note || '').trim();
+        if (!text) return '';
+        const match = /\(([^()]+)\)\s*$/.exec(text);
+        return match ? String(match[1] || '').trim() : '';
+    }
+
+    function extractSeqFromHistoryNote(note) {
+        const text = String(note || '').trim();
+        if (!text) return '';
+        const match = /#\s*([^\s()]+)/.exec(text);
+        return match ? String(match[1] || '').trim() : '';
+    }
+
+    function buildRestoreOperationDisplayNote(record, strategy, lang) {
+        const isEn = lang === 'en';
+        const recordType = String(record?.type || '').trim().toLowerCase();
+        const rawNote = (record?.note && typeof record.note === 'string') ? record.note.trim() : '';
+        const looksLikeOperationNote = /恢复|撤销|导入合并|patch|overwrite|restored|revert|import\s*merge/i.test(rawNote);
+        if (rawNote && !looksLikeOperationNote) {
+            return rawNote;
+        }
+        const sourceSeqRaw = record?.restoreInfo?.sourceSeqNumber;
+        const sourceTimeRaw = record?.restoreInfo?.sourceTime;
+        const seqText = String(
+            sourceSeqRaw != null && String(sourceSeqRaw).trim() !== ''
+                ? sourceSeqRaw
+                : (extractSeqFromHistoryNote(rawNote) || '-')
+        ).trim() || '-';
+        const normalizedTime = formatHistoryNoteTimeText(sourceTimeRaw || extractTrailingTimeFromHistoryNote(rawNote));
+        const timeSuffix = normalizedTime ? ` (${normalizedTime})` : '';
+
+        if (strategy === 'merge') {
+            return isEn
+                ? `Import merged from #${seqText}${timeSuffix}`
+                : `导入合并自 #${seqText}${timeSuffix}`;
+        }
+
+        if (strategy === 'patch') {
+            const label = recordType === 'revert'
+                ? (isEn ? 'Patch reverted to' : '补丁撤销至')
+                : (isEn ? 'Patch restored to' : '补丁恢复至');
+            return `${label} #${seqText}${timeSuffix}`;
+        }
+
+        if (strategy === 'overwrite') {
+            const label = recordType === 'revert'
+                ? (isEn ? 'Overwrite reverted to' : '覆盖撤销至')
+                : (isEn ? 'Overwrite restored to' : '覆盖恢复至');
+            return `${label} #${seqText}${timeSuffix}`;
+        }
+
+        if (!rawNote) return '';
+        const trailingTime = extractTrailingTimeFromHistoryNote(rawNote);
+        if (!trailingTime) return rawNote;
+        const normalizedTrailing = formatHistoryNoteTimeText(trailingTime);
+        if (!normalizedTrailing || normalizedTrailing === trailingTime) return rawNote;
+        return rawNote.replace(/\(([^()]+)\)\s*$/, `(${normalizedTrailing})`);
+    }
+
     const getLangPromise = passedLang
         ? Promise.resolve(passedLang)
         : new Promise(resolve => chrome.storage.local.get(['preferredLang'], result => resolve(result.preferredLang || 'zh_CN')));
@@ -3011,8 +3566,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 [HISTORY_DELETE_WARN_SETTING_KEYS.yellow, HISTORY_DELETE_WARN_SETTING_KEYS.red],
                 result => resolve(result || {})
             );
+        }),
+        new Promise(resolve => {
+            chrome.storage.local.get([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY], result => {
+                resolve(result || {});
+            });
         })
-    ]).then(([currentLang, historyPageData, cachedRecord, deleteWarnSettings]) => { // currentLang is now from getLangPromise
+    ]).then(([currentLang, historyPageData, cachedRecord, deleteWarnSettings, overwriteRevertMarkerSettings]) => { // currentLang is now from getLangPromise
         const rawSyncHistory = Array.isArray(historyPageData?.syncHistory) ? historyPageData.syncHistory : [];
         const syncHistory = sortHistoryRecordsByTimeDesc(rawSyncHistory);
         const totalRecords = Number.isFinite(Number(historyPageData?.totalRecords))
@@ -3028,6 +3588,12 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const responsePageSize = Number.isFinite(Number(historyPageData?.pageSize))
             ? Number(historyPageData.pageSize)
             : PAGE_SIZE;
+        const latestOverwriteRevertLineInsertIndex = currentPage === 1
+            ? resolveLatestOverwriteRevertLineInsertIndex(
+                syncHistory,
+                overwriteRevertMarkerSettings?.[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]
+            )
+            : -1;
 
         popupHistoryDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
             deleteWarnSettings?.[HISTORY_DELETE_WARN_SETTING_KEYS.yellow],
@@ -3250,6 +3816,16 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
                 historyItem.setAttribute('data-record-time', record.time);
+                const recordTypeForDisplay = String(record?.type || '').trim().toLowerCase();
+                const recordOperationStrategy = resolveHistoryRecordOperationStrategy(record);
+                const showOverwriteRiskLine = (recordTypeForDisplay === 'restore' || recordTypeForDisplay === 'revert')
+                    && recordOperationStrategy === 'overwrite';
+                if (showOverwriteRiskLine) {
+                    historyItem.classList.add('history-item-overwrite-risk');
+                }
+                if (index === latestOverwriteRevertLineInsertIndex) {
+                    historyItem.classList.add('history-item-overwrite-risk');
+                }
                 // 优先使用记录中的永久序号，兼容旧记录（回退到计算的序号）
                 const seqNumber = record.seqNumber || Math.max(1, totalRecords - globalIndex);
 
@@ -3566,6 +4142,10 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     looksLikeLegacyReasonOnly;
 
                 const displayNote = (() => {
+                    if (recordTypeForDisplay === 'restore' || recordTypeForDisplay === 'revert') {
+                        return buildRestoreOperationDisplayNote(record, recordOperationStrategy, currentLang);
+                    }
+
                     if (recordType === 'switch' || recordType === 'auto_switch') {
                         return isSystemSwitchNote ? switchLabel : rawNote;
                     }
@@ -3711,6 +4291,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             historyList.appendChild(emptyItem);
         }
 
+        syncHistoryHeaderOpsWithListScrollbar(historyList);
+
         updateLastSyncInfo(currentLang); // Pass currentLang when calling updateLastSyncInfo
     }).catch(error => {
         const historyList = document.getElementById('syncHistoryList');
@@ -3722,6 +4304,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             errorItem.className = 'history-item empty-state';
             errorItem.innerHTML = `<div style="text-align:center; color:red; grid-column: 1 / -1;">无法加载历史记录</div>`; // 横跨所有列
             historyList.appendChild(errorItem);
+            syncHistoryHeaderOpsWithListScrollbar(historyList);
         }
     });
 }
@@ -5351,7 +5934,15 @@ function handleAutoSyncToggle(event) {
                 isSwitchToAutoBackup: true
             }, (syncResponse) => {
                 if (syncResponse && syncResponse.success) {
-                    showStatus('切换备份成功！', 'success');
+                    if (syncResponse.deferred === true) {
+                        if (syncResponse.queued === false) {
+                            showStatus('初始化上传进行中，切换备份已在待执行队列中。', 'info', 4200);
+                        } else {
+                            showStatus('初始化上传进行中，切换备份已加入待执行，初始化结束后自动执行一次。', 'info', 5200);
+                        }
+                    } else {
+                        showStatus('切换备份成功！', 'success');
+                    }
                     updateSyncHistory();
                     scheduleBookmarkCountDisplayRefresh({ delay: 120 });
 
@@ -15341,10 +15932,18 @@ function showRestoreModal(versions, source) {
             const resolvedSeq = selectedFolderType === 'overwrite'
                 ? '0'
                 : (displayedSeqFromTable || fallbackSeq || '');
+            const restoreActionNote = (() => {
+                if (strategy === 'merge') {
+                    return isEn
+                        ? `Import merged from #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                        : `导入合并自 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
+                }
+                return isEn
+                    ? `Overwrite restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                    : `覆盖恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
+            })();
             const restoreRecordMeta = {
-                note: isEn
-                    ? `Restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
-                    : `恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`,
+                note: restoreActionNote,
                 sourceSeqNumber: resolvedSeq,
                 sourceTime: selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '',
                 sourceNote: selectedVersion?.note || '',
@@ -15537,9 +16136,11 @@ function showRestoreModal(versions, source) {
                     }, 50);
                 } catch (_) { }
             } else {
+                promptRestoreRecoveryTransactionFromPopup();
                 alert(`${isEn ? 'Failed: ' : '失败：'}${formatRestoreUiError(restoreRes, lang)}`);
             }
         } catch (e) {
+            promptRestoreRecoveryTransactionFromPopup();
             const errorLang = cachedLang || (await getPreferredLang());
             alert(`${errorLang === 'en' ? 'Error: ' : '错误：'}${formatRestoreUiError(e, errorLang)}`);
         } finally {
@@ -15738,6 +16339,7 @@ function slashPathToChipsHTML(slashPath) {
 
 // Fallback favicon - star icon (same as history.html)
 const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
+const popupBrowserAPI = (typeof chrome !== 'undefined') ? chrome : (typeof browser !== 'undefined' ? browser : null);
 
 // Favicon cache (IndexedDB + negative cache) - ported from history_html/history.js
 const FaviconCache = {
@@ -15746,8 +16348,21 @@ const FaviconCache = {
     dbVersion: 1,
     storeName: 'favicons',
     failureStoreName: 'failures',
+    failureTtlMs: 90 * 1000,
+    requestTimeoutMs: 4000,
+    maxFetchedBytes: 512 * 1024,
+    minFaviconDimensionPx: 96,
+    minFallbackFaviconDimensionPx: 32,
+    browserFaviconSizeCandidates: [128, 96, 64],
+    publicFaviconSizeCandidates: [256, 192, 128, 96, 64],
+    googleS2SizeCandidates: [128, 64],
+    cacheQualityVersion: 1,
+    cacheQualityVersionKey: 'bb_favicon_quality_version',
+    firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
+    firstInstallSkipDbReadsRemaining: 0,
     memoryCache: new Map(),
-    failureCache: new Set(),
+    dimensionCache: new Map(),
+    failureCache: new Map(),
     pendingRequests: new Map(),
 
     async init() {
@@ -15762,7 +16377,11 @@ const FaviconCache = {
 
             request.onsuccess = () => {
                 this.db = request.result;
-                resolve();
+                Promise.resolve()
+                    .then(() => this._ensureQualityCacheVersion())
+                    .then(() => this._initializeFirstInstallFastPath())
+                    .catch(() => { })
+                    .finally(() => resolve());
             };
 
             request.onupgradeneeded = (event) => {
@@ -15779,6 +16398,85 @@ const FaviconCache = {
                 }
             };
         });
+    },
+
+    async _countStoreEntries(storeName) {
+        if (!this.db) return 0;
+
+        return new Promise((resolve) => {
+            try {
+                const tx = this.db.transaction([storeName], 'readonly');
+                const req = tx.objectStore(storeName).count();
+                req.onsuccess = () => resolve(Number(req.result) || 0);
+                req.onerror = () => resolve(0);
+            } catch (_) {
+                resolve(0);
+            }
+        });
+    },
+
+    async _initializeFirstInstallFastPath() {
+        let alreadyHandled = false;
+        try {
+            alreadyHandled = localStorage.getItem(this.firstInstallFastPathKey) === '1';
+        } catch (_) {
+            alreadyHandled = false;
+        }
+
+        if (alreadyHandled) {
+            this.firstInstallSkipDbReadsRemaining = 0;
+            return;
+        }
+
+        const [faviconCount, failureCount] = await Promise.all([
+            this._countStoreEntries(this.storeName),
+            this._countStoreEntries(this.failureStoreName)
+        ]);
+
+        this.firstInstallSkipDbReadsRemaining = (faviconCount === 0 && failureCount === 0) ? 1 : 0;
+
+        try {
+            localStorage.setItem(this.firstInstallFastPathKey, '1');
+        } catch (_) { }
+    },
+
+    async _ensureQualityCacheVersion() {
+        const currentVersion = Number(this.cacheQualityVersion) || 1;
+        let storedVersion = 0;
+
+        try {
+            storedVersion = Number(localStorage.getItem(this.cacheQualityVersionKey) || 0);
+            if (!Number.isFinite(storedVersion)) storedVersion = 0;
+        } catch (_) {
+            storedVersion = 0;
+        }
+
+        if (storedVersion >= currentVersion) {
+            return;
+        }
+
+        this.memoryCache.clear();
+        this.dimensionCache.clear();
+        this.failureCache.clear();
+
+        if (this.db) {
+            await new Promise((resolve) => {
+                try {
+                    const tx = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
+                    tx.objectStore(this.storeName).clear();
+                    tx.objectStore(this.failureStoreName).clear();
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => resolve();
+                    tx.onabort = () => resolve();
+                } catch (_) {
+                    resolve();
+                }
+            });
+        }
+
+        try {
+            localStorage.setItem(this.cacheQualityVersionKey, String(currentVersion));
+        } catch (_) { }
     },
 
     isInvalidUrl(url) {
@@ -15810,6 +16508,32 @@ const FaviconCache = {
         }
     },
 
+    isStoredFaviconData(dataUrl) {
+        return typeof dataUrl === 'string' && dataUrl.startsWith('data:image/');
+    },
+
+    _markFailureDomain(domain, timestamp = Date.now()) {
+        if (!domain) return;
+        const ts = Number(timestamp) || Date.now();
+        this.failureCache.set(domain, ts);
+    },
+
+    _clearFailureDomain(domain) {
+        if (!domain) return;
+        this.failureCache.delete(domain);
+    },
+
+    _isFailureDomainActive(domain) {
+        if (!domain) return false;
+        const ts = Number(this.failureCache.get(domain) || 0);
+        if (!ts) return false;
+        if ((Date.now() - ts) < this.failureTtlMs) {
+            return true;
+        }
+        this.failureCache.delete(domain);
+        return false;
+    },
+
     async get(url) {
         if (this.isInvalidUrl(url)) {
             return null;
@@ -15818,12 +16542,17 @@ const FaviconCache = {
         try {
             const domain = new URL(url).hostname;
 
-            if (this.failureCache.has(domain)) {
+            if (this._isFailureDomainActive(domain)) {
                 return 'failed';
             }
 
             if (this.memoryCache.has(domain)) {
                 return this.memoryCache.get(domain);
+            }
+
+            if (this.firstInstallSkipDbReadsRemaining > 0) {
+                this.firstInstallSkipDbReadsRemaining -= 1;
+                return null;
             }
 
             if (!this.db) await this.init();
@@ -15836,8 +16565,8 @@ const FaviconCache = {
                 failureReq.onsuccess = () => {
                     if (failureReq.result) {
                         const age = Date.now() - failureReq.result.timestamp;
-                        if (age < 7 * 24 * 60 * 60 * 1000) {
-                            this.failureCache.add(domain);
+                        if (age < this.failureTtlMs) {
+                            this._markFailureDomain(domain, failureReq.result.timestamp);
                             resolve('failed');
                             return;
                         }
@@ -15846,9 +16575,15 @@ const FaviconCache = {
                     const store = tx.objectStore(this.storeName);
                     const req = store.get(domain);
                     req.onsuccess = () => {
-                        if (req.result) {
+                        if (req.result && this.isStoredFaviconData(req.result.dataUrl)) {
                             this.memoryCache.set(domain, req.result.dataUrl);
                             resolve(req.result.dataUrl);
+                        } else if (req.result) {
+                            try {
+                                const cleanupTx = this.db.transaction([this.storeName], 'readwrite');
+                                cleanupTx.objectStore(this.storeName).delete(domain);
+                            } catch (_) { }
+                            resolve(null);
                         } else {
                             resolve(null);
                         }
@@ -15864,7 +16599,7 @@ const FaviconCache = {
     },
 
     async save(url, dataUrl) {
-        if (this.isInvalidUrl(url)) return;
+        if (this.isInvalidUrl(url) || !this.isStoredFaviconData(dataUrl)) return;
 
         try {
             const domain = new URL(url).hostname;
@@ -15875,7 +16610,7 @@ const FaviconCache = {
             const store = tx.objectStore(this.storeName);
             store.put({ domain, dataUrl, timestamp: Date.now() });
 
-            this.failureCache.delete(domain);
+            this._clearFailureDomain(domain);
             this.removeFailure(domain);
         } catch (_) { }
     },
@@ -15884,7 +16619,7 @@ const FaviconCache = {
         if (this.isInvalidUrl(url)) return;
         try {
             const domain = new URL(url).hostname;
-            this.failureCache.add(domain);
+            this._markFailureDomain(domain);
 
             if (!this.db) await this.init();
             const tx = this.db.transaction([this.failureStoreName], 'readwrite');
@@ -15906,7 +16641,8 @@ const FaviconCache = {
         try {
             const domain = new URL(url).hostname;
             this.memoryCache.delete(domain);
-            this.failureCache.delete(domain);
+            this.dimensionCache.clear();
+            this._clearFailureDomain(domain);
 
             if (!this.db) await this.init();
             const tx = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
@@ -15915,50 +16651,143 @@ const FaviconCache = {
         } catch (_) { }
     },
 
-    async fetch(url) {
+    async getDataUrlDimensions(dataUrl) {
+        if (!this.isStoredFaviconData(dataUrl)) return null;
+        if (this.dimensionCache.has(dataUrl)) {
+            return this.dimensionCache.get(dataUrl);
+        }
+
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const width = Number(img.naturalWidth || img.width || 0);
+                const height = Number(img.naturalHeight || img.height || 0);
+                if (width > 0 && height > 0) {
+                    const dimensions = { width, height };
+                    this.dimensionCache.set(dataUrl, dimensions);
+                    resolve(dimensions);
+                    return;
+                }
+                resolve(null);
+            };
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+        });
+    },
+
+    async isDataUrlAtLeast(dataUrl, minDimensionPx = 1) {
+        const min = Math.max(1, Number(minDimensionPx) || 1);
+        if (!this.isStoredFaviconData(dataUrl)) return false;
+        const dimensions = await this.getDataUrlDimensions(dataUrl);
+        if (!dimensions) return false;
+        return Number(dimensions.width) >= min && Number(dimensions.height) >= min;
+    },
+
+    async fetch(url, options = {}) {
         if (this.isInvalidUrl(url)) {
             return fallbackIcon;
         }
 
         try {
             const domain = new URL(url).hostname;
+            const requestedMinDimension = Math.max(0, Number(options?.minDimensionPx) || 0);
+            const strictMinDimension = requestedMinDimension > 0
+                ? Math.max(Math.max(1, Number(this.minFaviconDimensionPx) || 96), requestedMinDimension)
+                : Math.max(1, Number(this.minFaviconDimensionPx) || 96);
+            const fallbackMinCandidate = Number(options?.fallbackMinDimensionPx);
+            const fallbackMinBase = Number.isFinite(fallbackMinCandidate) && fallbackMinCandidate > 0
+                ? fallbackMinCandidate
+                : (Number(this.minFallbackFaviconDimensionPx) || 32);
+            const fallbackMinDimension = Math.max(1, Math.min(strictMinDimension, fallbackMinBase));
+            const cacheMinDimension = requestedMinDimension > 0
+                ? Math.max(1, Number(options?.cacheMinDimensionPx) || fallbackMinDimension)
+                : 0;
+            const requestKey = `${domain}|${strictMinDimension}|${fallbackMinDimension}`;
 
             const cached = await this.get(url);
             if (cached === 'failed') return fallbackIcon;
-            if (cached) return cached;
-
-            if (this.pendingRequests.has(domain)) {
-                return this.pendingRequests.get(domain);
+            if (cached) {
+                if (cacheMinDimension <= 0 || await this.isDataUrlAtLeast(cached, cacheMinDimension)) {
+                    return cached;
+                }
             }
 
-            const requestPromise = this._fetchFavicon(url);
-            this.pendingRequests.set(domain, requestPromise);
+            if (this.pendingRequests.has(requestKey)) {
+                return this.pendingRequests.get(requestKey);
+            }
+
+            const requestPromise = this._fetchFavicon(url, {
+                strictMinDimensionPx: strictMinDimension,
+                fallbackMinDimensionPx: fallbackMinDimension
+            });
+            this.pendingRequests.set(requestKey, requestPromise);
 
             try {
                 return await requestPromise;
             } finally {
-                this.pendingRequests.delete(domain);
+                this.pendingRequests.delete(requestKey);
             }
         } catch (_) {
             return fallbackIcon;
         }
     },
 
-    async _fetchFavicon(url) {
+    async _fetchFavicon(url, options = {}) {
         return new Promise(async (resolve) => {
             try {
                 const domain = new URL(url).hostname;
-                const sources = [
-                    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-                    `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
-                ];
 
-                for (let i = 0; i < sources.length; i++) {
-                    const faviconUrl = sources[i];
-                    const result = await this._tryLoadFavicon(faviconUrl, url);
+                const strictMinDimension = Math.max(
+                    1,
+                    Number(options?.strictMinDimensionPx) || Number(this.minFaviconDimensionPx) || 96
+                );
+                const fallbackMinCandidate = Number(options?.fallbackMinDimensionPx);
+                const fallbackMinDimension = Math.max(
+                    1,
+                    Math.min(
+                        strictMinDimension,
+                        (Number.isFinite(fallbackMinCandidate) && fallbackMinCandidate > 0)
+                            ? fallbackMinCandidate
+                            : (Number(this.minFallbackFaviconDimensionPx) || 32)
+                    )
+                );
+
+                const strictSources = this._buildFaviconSourceList(url, domain, {
+                    includeGoogleS2: false,
+                    minDimensionPx: strictMinDimension,
+                    maxPublicSizes: 2,
+                    maxBrowserSizes: 1
+                });
+
+                if (strictSources.length === 0) {
+                    this.saveFailure(url);
+                    resolve(fallbackIcon);
+                    return;
+                }
+
+                for (const faviconUrl of strictSources) {
+                    const result = await this._tryLoadFavicon(faviconUrl, url, strictMinDimension);
                     if (result && result !== fallbackIcon) {
                         resolve(result);
                         return;
+                    }
+                }
+
+                if (fallbackMinDimension < strictMinDimension) {
+                    const fallbackSources = this._buildFaviconSourceList(url, domain, {
+                        includeGoogleS2: true,
+                        minDimensionPx: fallbackMinDimension,
+                        maxPublicSizes: 1,
+                        maxBrowserSizes: 1,
+                        maxGoogleSizes: 1
+                    });
+
+                    for (const faviconUrl of fallbackSources) {
+                        const result = await this._tryLoadFavicon(faviconUrl, url, fallbackMinDimension);
+                        if (result && result !== fallbackIcon) {
+                            resolve(result);
+                            return;
+                        }
                     }
                 }
 
@@ -15971,56 +16800,205 @@ const FaviconCache = {
         });
     },
 
-    async _tryLoadFavicon(faviconUrl, originalUrl) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            const timeout = setTimeout(() => {
-                img.src = '';
-                resolve(null);
-            }, 3000);
+    _pickCandidateSizes(candidates, minDimensionPx = 1, maxCount = 2) {
+        const min = Math.max(1, Number(minDimensionPx) || 1);
+        const limit = Math.max(1, Number(maxCount) || 1);
+        const list = Array.isArray(candidates)
+            ? candidates.map((size) => Number(size)).filter((size) => Number.isFinite(size) && size > 0)
+            : [];
+        if (list.length === 0) return [];
+        const filtered = list.filter((size) => size >= min);
+        const source = filtered.length > 0 ? filtered : list;
+        return source.slice(0, limit);
+    },
 
-            img.onload = () => {
-                clearTimeout(timeout);
-                if (img.width < 8 || img.height < 8) {
-                    resolve(null);
+    _buildFaviconSourceList(url, domain, options = {}) {
+        const includeGoogleS2 = !!(options && options.includeGoogleS2);
+        const minDimensionPx = Math.max(1, Number(options?.minDimensionPx) || 1);
+        const maxPublicSizes = Math.max(1, Number(options?.maxPublicSizes) || 2);
+        const maxBrowserSizes = Math.max(1, Number(options?.maxBrowserSizes) || 1);
+        const maxGoogleSizes = Math.max(1, Number(options?.maxGoogleSizes) || 1);
+        const sources = [];
+        const seen = new Set();
+        const addSource = (sourceUrl) => {
+            if (!sourceUrl || seen.has(sourceUrl)) return;
+            seen.add(sourceUrl);
+            sources.push(sourceUrl);
+        };
+
+        const publicSizes = this._pickCandidateSizes(this.publicFaviconSizeCandidates, minDimensionPx, maxPublicSizes);
+        for (const size of publicSizes) {
+            addSource(this._getGstaticCnFaviconUrl(url, size));
+        }
+
+        addSource(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+
+        const browserSizes = this._pickCandidateSizes(this.browserFaviconSizeCandidates, minDimensionPx, maxBrowserSizes);
+        for (const size of browserSizes) {
+            addSource(this._getBrowserFaviconServiceUrl(url, size));
+        }
+
+        if (includeGoogleS2) {
+            const googleSizes = this._pickCandidateSizes(this.googleS2SizeCandidates, minDimensionPx, maxGoogleSizes);
+            for (const size of googleSizes) {
+                addSource(this._getGoogleS2FaviconUrl(url, size));
+            }
+        }
+
+        return sources;
+    },
+
+    _getBrowserFaviconServiceUrl(url, size = 64) {
+        try {
+            if (!popupBrowserAPI?.runtime?.getURL) return null;
+            const baseUrl = popupBrowserAPI.runtime.getURL('/_favicon/');
+            return `${baseUrl}?pageUrl=${encodeURIComponent(url)}&size=${encodeURIComponent(size)}`;
+        } catch (_) {
+            return null;
+        }
+    },
+
+    _getGstaticCnFaviconUrl(url, size = 128) {
+        return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
+    },
+
+    _getGoogleS2FaviconUrl(url, size = 64) {
+        return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=${encodeURIComponent(size)}`;
+    },
+
+    async _blobToDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+                    resolve(reader.result);
                     return;
                 }
+                reject(new Error('invalid_data_url'));
+            };
+            reader.onerror = () => reject(reader.error || new Error('read_failed'));
+            reader.readAsDataURL(blob);
+        });
+    },
 
+    async _readBlobDimensions(blob) {
+        return new Promise((resolve) => {
+            const objectUrl = URL.createObjectURL(blob);
+            const img = new Image();
+
+            const cleanup = () => {
                 try {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                    const dataUrl = canvas.toDataURL('image/png');
-                    this.save(originalUrl, dataUrl);
-                    resolve(dataUrl);
-                } catch (_) {
-                    // CORS: store the remote URL
-                    this.save(originalUrl, faviconUrl);
-                    resolve(faviconUrl);
-                }
+                    URL.revokeObjectURL(objectUrl);
+                } catch (_) { }
+            };
+
+            img.onload = () => {
+                const width = img.naturalWidth || img.width || 0;
+                const height = img.naturalHeight || img.height || 0;
+                cleanup();
+                resolve({ width, height });
             };
 
             img.onerror = () => {
-                clearTimeout(timeout);
+                cleanup();
                 resolve(null);
             };
 
-            img.src = faviconUrl;
+            img.src = objectUrl;
         });
+    },
+
+    async _fetchImageAsDataUrl(faviconUrl, minDimensionPx = this.minFaviconDimensionPx) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+
+        try {
+            const response = await fetch(faviconUrl, {
+                signal: controller.signal
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (contentType && !contentType.startsWith('image/')) {
+                return null;
+            }
+
+            const declaredLength = Number(response.headers.get('content-length') || 0);
+            if (Number.isFinite(declaredLength) && declaredLength > this.maxFetchedBytes) {
+                return null;
+            }
+
+            const blob = await response.blob();
+            if (!blob || blob.size === 0 || blob.size > this.maxFetchedBytes) {
+                return null;
+            }
+
+            const dimensions = await this._readBlobDimensions(blob);
+            const requiredDimension = Math.max(1, Number(minDimensionPx) || this.minFaviconDimensionPx);
+            if (!dimensions || dimensions.width < requiredDimension || dimensions.height < requiredDimension) {
+                return null;
+            }
+
+            return await this._blobToDataUrl(blob);
+        } catch (_) {
+            return null;
+        } finally {
+            clearTimeout(timeout);
+        }
+    },
+
+    async _tryLoadFavicon(faviconUrl, originalUrl, minDimensionPx = this.minFaviconDimensionPx) {
+        try {
+            const dataUrl = await this._fetchImageAsDataUrl(faviconUrl, minDimensionPx);
+            if (!dataUrl) {
+                return null;
+            }
+
+            await this.save(originalUrl, dataUrl);
+            return dataUrl;
+        } catch (_) {
+            return null;
+        }
     }
 };
+
+function resolveFaviconBindingUrlFromElement(element) {
+    if (!element) return '';
+
+    const readFrom = (node) => {
+        if (!node) return '';
+        if (node.dataset) {
+            if (node.dataset.bookmarkUrl) return node.dataset.bookmarkUrl;
+            if (node.dataset.nodeUrl) return node.dataset.nodeUrl;
+            if (node.dataset.url) return node.dataset.url;
+        }
+        if (typeof node.getAttribute === 'function') {
+            return node.getAttribute('data-bookmark-url')
+                || node.getAttribute('data-node-url')
+                || node.getAttribute('data-url')
+                || '';
+        }
+        return '';
+    };
+
+    let itemUrl = readFrom(element);
+    if (!itemUrl && typeof element.closest === 'function') {
+        const item = element.closest('[data-node-url], [data-bookmark-url], [data-url]');
+        itemUrl = readFrom(item);
+    }
+    return typeof itemUrl === 'string' ? itemUrl.trim() : '';
+}
 
 function updateFaviconImages(url, dataUrl) {
     try {
         const domain = new URL(url).hostname;
-        const allImages = document.querySelectorAll('img.tree-icon');
+        const allImages = document.querySelectorAll('img.tree-icon, img[data-bookmark-url], img[data-node-url], img[data-url]');
 
         allImages.forEach(img => {
-            const item = img.closest('[data-node-url], [data-bookmark-url]');
-            if (!item) return;
-            const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
+            const itemUrl = resolveFaviconBindingUrlFromElement(img);
             if (!itemUrl) return;
             try {
                 const itemDomain = new URL(itemUrl).hostname;
@@ -16048,9 +17026,8 @@ try { FaviconCache.init().catch(() => { }); } catch (_) { }
 
 // Receive favicon updates from background.js (share the same cache DB)
 try {
-    const browserAPI = (typeof chrome !== 'undefined') ? chrome : (typeof browser !== 'undefined' ? browser : null);
-    if (browserAPI && browserAPI.runtime && browserAPI.runtime.onMessage) {
-        browserAPI.runtime.onMessage.addListener((message) => {
+    if (popupBrowserAPI && popupBrowserAPI.runtime && popupBrowserAPI.runtime.onMessage) {
+        popupBrowserAPI.runtime.onMessage.addListener((message) => {
             if (!message || !message.action) return;
 
             if (message.action === 'clearFaviconCache') {
@@ -16091,7 +17068,7 @@ function getFaviconUrl(url) {
             return FaviconCache.memoryCache.get(domain);
         }
 
-        if (FaviconCache.failureCache.has(domain)) {
+        if (FaviconCache._isFailureDomainActive(domain)) {
             return fallbackIcon;
         }
 
@@ -16111,8 +17088,8 @@ function getFaviconUrl(url) {
 try {
     window.FaviconCache = FaviconCache;
     window.getFaviconUrl = getFaviconUrl;
-    window.getFaviconUrlAsync = async (url) => {
-        return await FaviconCache.fetch(url);
+    window.getFaviconUrlAsync = async (url, options = {}) => {
+        return await FaviconCache.fetch(url, options);
     };
 } catch (_) { }
 
@@ -18411,6 +19388,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const realtimeBackupTitle = document.getElementById('realtimeBackupTitle');
     const realtimeBackupDesc1 = document.getElementById('realtimeBackupDesc1');
     const realtimeBackupDesc2 = document.getElementById('realtimeBackupDesc2');
+    const realtimeBackupDesc3 = document.getElementById('realtimeBackupDesc3');
     const realtimeBackupToggle = document.getElementById('realtimeBackupToggle');
     const restoreAutoBackupDefaultsBtn = document.getElementById('restoreAutoBackupDefaults');
     const saveAutoBackupSettingsBtn = document.getElementById('saveAutoBackupSettings');
@@ -18452,14 +19430,18 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (realtimeBackupDesc1) {
                 realtimeBackupDesc1.textContent = isEN
-                    ? 'Backs up immediately on count/structure changes*,'
-                    : '当检测到「数量/结构变化」* 时立即执行备份，';
+                    ? 'Experimental: not recommended for long-term use. Realtime backup runs on count/structure changes*,'
+                    : '实验功能：不建议长期开启；当检测到「数量/结构变化」* 时会立即执行备份，';
             }
             if (realtimeBackupDesc2) {
-                // 添加示例文本（与动态提醒设置的示例一致）
                 realtimeBackupDesc2.innerHTML = isEN
-                    ? "example: (<span style=\"color: #4CAF50;\">+12</span> BKM, <span style=\"color: #4CAF50;\">+1</span> FLD, <span style=\"color: orange;\">BKM & FLD changed</span>)."
-                    : "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。";
+                    ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. A snapshot backup on/off switch may be provided in a later version.'
+                    : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；后续版本可能提供“快照备份开关（开启/关闭）”。';
+            }
+            if (realtimeBackupDesc3) {
+                realtimeBackupDesc3.innerHTML = isEN
+                    ? 'example of count/structure changes: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).'
+                    : '示例（数量/结构变化）：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。';
             }
             if (restoreAutoBackupDefaultsBtn) {
                 restoreAutoBackupDefaultsBtn.textContent = isEN ? 'Restore Defaults' : '恢复默认';
@@ -18665,7 +19647,12 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        if (area === 'local' && (changes.syncHistory || changes.lastSyncTime || changes.lastBookmarkUpdate)) {
+        if (area === 'local' && (
+            changes.syncHistory
+            || changes.lastSyncTime
+            || changes.lastBookmarkUpdate
+            || changes[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]
+        )) {
             schedulePopupHistoryRefresh(120);
         }
     });

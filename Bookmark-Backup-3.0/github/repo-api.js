@@ -1,5 +1,6 @@
 const GITHUB_API_BASE_URL = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';
+const GITHUB_REQUEST_TIMEOUT_MS = 20000;
 const githubRepoWriteQueues = new Map();
 
 function buildGitHubAuthHeader(token) {
@@ -220,18 +221,52 @@ async function waitForGitHubBranchReady({ repoApiBase, authHeader, branchName, m
   return false;
 }
 
-async function githubRequestJson(url, { method = 'GET', headers = {}, body, _retryCount = 0 } = {}) {
+async function githubRequestJson(url, { method = 'GET', headers = {}, body, _retryCount = 0, timeoutMs = GITHUB_REQUEST_TIMEOUT_MS } = {}) {
   const MAX_RETRIES = 2;
 
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': GITHUB_API_VERSION,
-      ...headers
-    },
-    body
-  });
+  const parsedTimeoutMs = Number(timeoutMs);
+  const enableTimeout = Number.isFinite(parsedTimeoutMs)
+    && parsedTimeoutMs > 0
+    && typeof AbortController === 'function';
+  const requestController = enableTimeout ? new AbortController() : null;
+  let timeoutTriggered = false;
+  let timeoutId = null;
+
+  if (requestController) {
+    timeoutId = setTimeout(() => {
+      timeoutTriggered = true;
+      requestController.abort();
+    }, parsedTimeoutMs);
+  }
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+        ...headers
+      },
+      body,
+      signal: requestController ? requestController.signal : undefined
+    });
+  } catch (error) {
+    if (timeoutTriggered) {
+      const timeoutError = new Error(`GitHub 请求超时（${parsedTimeoutMs}ms）`);
+      timeoutError.status = 408;
+      timeoutError.code = 'GITHUB_REQUEST_TIMEOUT';
+      timeoutError.cause = error;
+      console.error('[githubRequestJson] 请求超时:', method, url, timeoutError);
+      throw timeoutError;
+    }
+    console.error('[githubRequestJson] 请求失败:', method, url, error);
+    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 
   // Rate limit / server error retry (429, 403 with rate limit, 5xx)
   const status = response.status;
@@ -249,7 +284,7 @@ async function githubRequestJson(url, { method = 'GET', headers = {}, body, _ret
       }
     }
     await new Promise(resolve => setTimeout(resolve, waitMs));
-    return githubRequestJson(url, { method, headers, body, _retryCount: _retryCount + 1 });
+    return githubRequestJson(url, { method, headers, body, _retryCount: _retryCount + 1, timeoutMs });
   }
 
   const text = await response.text();

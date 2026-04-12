@@ -15,6 +15,7 @@ const getManualExportInfoLogFileName = (format = 'md') => {
 };
 const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
+const BOOKMARK_COMPARISON_GENERATION_KEY = 'bookmarkComparisonGeneration';
 
 let currentLang = 'zh_CN';
 // [Init] Restore custom language from storage immediately
@@ -446,6 +447,8 @@ let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
 let allBookmarks = [];
 let syncHistory = [];
 let syncHistoryPageRecords = []; // 当前分页的显示切片，与 syncHistory（全量）分离
+const HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY = 'historyOverwriteRevertMarkerTime';
+let historyOverwriteRevertMarkerTime = '';
 let lastBackupTime = null;
 let currentBookmarkData = null;
 
@@ -465,8 +468,37 @@ const FaviconCache = {
     dbVersion: 1,
     storeName: 'favicons',
     failureStoreName: 'failures',
-    memoryCache: new Map(), // {url: faviconDataUrl}
-    failureCache: new Set(), // 失败的域名集合
+    failureTtlMs: 90 * 1000,
+    requestTimeoutMs: 2200,
+    maxFetchedBytes: 512 * 1024,
+    minFaviconDimensionPx: 16,
+    minFallbackFaviconDimensionPx: 16,
+    minTerminalFallbackFaviconDimensionPx: 16,
+    browserFaviconSizeCandidates: [16, 32, 64, 96, 128],
+    publicFaviconSizeCandidates: [64, 96, 128, 192, 256],
+    googleS2SizeCandidates: [64, 128],
+    cravatarSizeCandidates: [64, 128],
+    domesticBranchProbeWindowSize: 12,
+    domesticBranchHardFailureThreshold: 8,
+    domesticBranchConsecutiveHardFailureThreshold: 5,
+    networkBranchMode: 'overseas',
+    networkBranchLocked: false,
+    networkBranchPendingReevaluation: true,
+    networkBranchWindow: [],
+    networkBranchHardFailureCount: 0,
+    networkBranchConsecutiveHardFailureCount: 0,
+    networkBranchLastReevaluationAt: 0,
+    networkBranchReevaluationCooldownMs: 3000,
+    networkBranchSwitchReason: '',
+    networkBranchLastReevaluationReason: '',
+    cacheQualityVersion: 2,
+    cacheQualityVersionKey: 'bb_favicon_quality_version',
+    firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
+    firstInstallSkipDbReadsRemaining: 0,
+    memoryCache: new Map(), // {domain: faviconDataUrl}
+    dimensionCache: new Map(), // {faviconDataUrl: {width, height}}
+    visualProfileCache: new Map(), // {faviconDataUrl: visual profile}
+    failureCache: new Map(), // {domain: timestamp}
     pendingRequests: new Map(), // 正在请求的URL，避免重复请求
 
     // 初始化 IndexedDB
@@ -482,7 +514,11 @@ const FaviconCache = {
 
             request.onsuccess = () => {
                 this.db = request.result;
-                resolve();
+                Promise.resolve()
+                    .then(() => this._ensureQualityCacheVersion())
+                    .then(() => this._initializeFirstInstallFastPath())
+                    .catch(() => { })
+                    .finally(() => resolve());
             };
 
             request.onupgradeneeded = (event) => {
@@ -501,6 +537,86 @@ const FaviconCache = {
                 }
             };
         });
+    },
+
+    async _countStoreEntries(storeName) {
+        if (!this.db) return 0;
+
+        return new Promise((resolve) => {
+            try {
+                const transaction = this.db.transaction([storeName], 'readonly');
+                const request = transaction.objectStore(storeName).count();
+                request.onsuccess = () => resolve(Number(request.result) || 0);
+                request.onerror = () => resolve(0);
+            } catch (_) {
+                resolve(0);
+            }
+        });
+    },
+
+    async _initializeFirstInstallFastPath() {
+        let alreadyHandled = false;
+        try {
+            alreadyHandled = localStorage.getItem(this.firstInstallFastPathKey) === '1';
+        } catch (_) {
+            alreadyHandled = false;
+        }
+
+        if (alreadyHandled) {
+            this.firstInstallSkipDbReadsRemaining = 0;
+            return;
+        }
+
+        const [faviconCount, failureCount] = await Promise.all([
+            this._countStoreEntries(this.storeName),
+            this._countStoreEntries(this.failureStoreName)
+        ]);
+
+        this.firstInstallSkipDbReadsRemaining = (faviconCount === 0 && failureCount === 0) ? 1 : 0;
+
+        try {
+            localStorage.setItem(this.firstInstallFastPathKey, '1');
+        } catch (_) { }
+    },
+
+    async _ensureQualityCacheVersion() {
+        const currentVersion = Number(this.cacheQualityVersion) || 1;
+        let storedVersion = 0;
+
+        try {
+            storedVersion = Number(localStorage.getItem(this.cacheQualityVersionKey) || 0);
+            if (!Number.isFinite(storedVersion)) storedVersion = 0;
+        } catch (_) {
+            storedVersion = 0;
+        }
+
+        if (storedVersion >= currentVersion) {
+            return;
+        }
+
+        this.memoryCache.clear();
+        this.dimensionCache.clear();
+        this.visualProfileCache.clear();
+        this.failureCache.clear();
+
+        if (this.db) {
+            await new Promise((resolve) => {
+                try {
+                    const transaction = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
+                    transaction.objectStore(this.storeName).clear();
+                    transaction.objectStore(this.failureStoreName).clear();
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = () => resolve();
+                    transaction.onabort = () => resolve();
+                } catch (_) {
+                    resolve();
+                }
+            });
+        }
+
+        try {
+            localStorage.setItem(this.cacheQualityVersionKey, String(currentVersion));
+        } catch (_) { }
     },
 
     // 检查URL是否为本地/内网/明显无效
@@ -537,6 +653,32 @@ const FaviconCache = {
         }
     },
 
+    isStoredFaviconData(dataUrl) {
+        return typeof dataUrl === 'string' && dataUrl.startsWith('data:image/');
+    },
+
+    _markFailureDomain(domain, timestamp = Date.now()) {
+        if (!domain) return;
+        const ts = Number(timestamp) || Date.now();
+        this.failureCache.set(domain, ts);
+    },
+
+    _clearFailureDomain(domain) {
+        if (!domain) return;
+        this.failureCache.delete(domain);
+    },
+
+    _isFailureDomainActive(domain) {
+        if (!domain) return false;
+        const ts = Number(this.failureCache.get(domain) || 0);
+        if (!ts) return false;
+        if ((Date.now() - ts) < this.failureTtlMs) {
+            return true;
+        }
+        this.failureCache.delete(domain);
+        return false;
+    },
+
     // 从缓存获取favicon
     async get(url) {
         if (this.isInvalidUrl(url)) {
@@ -548,13 +690,18 @@ const FaviconCache = {
             const domain = urlObj.hostname;
 
             // 检查失败缓存
-            if (this.failureCache.has(domain)) {
+            if (this._isFailureDomainActive(domain)) {
                 return 'failed';
             }
 
             // 检查内存缓存
             if (this.memoryCache.has(domain)) {
                 return this.memoryCache.get(domain);
+            }
+
+            if (this.firstInstallSkipDbReadsRemaining > 0) {
+                this.firstInstallSkipDbReadsRemaining -= 1;
+                return null;
             }
 
             // 从 IndexedDB 读取
@@ -569,10 +716,10 @@ const FaviconCache = {
 
                 failureRequest.onsuccess = () => {
                     if (failureRequest.result) {
-                        // 检查失败缓存是否过期（7天）
+                        // 检查失败缓存是否过期（24小时）
                         const age = Date.now() - failureRequest.result.timestamp;
-                        if (age < 7 * 24 * 60 * 60 * 1000) {
-                            this.failureCache.add(domain);
+                        if (age < this.failureTtlMs) {
+                            this._markFailureDomain(domain, failureRequest.result.timestamp);
                             resolve('failed');
                             return;
                         }
@@ -583,10 +730,15 @@ const FaviconCache = {
                     const request = store.get(domain);
 
                     request.onsuccess = () => {
-                        if (request.result) {
-                            // 永久缓存，不检查过期（只有删除书签时才删除缓存）
+                        if (request.result && this.isStoredFaviconData(request.result.dataUrl)) {
                             this.memoryCache.set(domain, request.result.dataUrl);
                             resolve(request.result.dataUrl);
+                        } else if (request.result) {
+                            try {
+                                const cleanupTransaction = this.db.transaction([this.storeName], 'readwrite');
+                                cleanupTransaction.objectStore(this.storeName).delete(domain);
+                            } catch (_) { }
+                            resolve(null);
                         } else {
                             resolve(null);
                         }
@@ -604,7 +756,7 @@ const FaviconCache = {
 
     // 保存favicon到缓存
     async save(url, dataUrl) {
-        if (this.isInvalidUrl(url)) return;
+        if (this.isInvalidUrl(url) || !this.isStoredFaviconData(dataUrl)) return;
 
         try {
             const urlObj = new URL(url);
@@ -626,7 +778,7 @@ const FaviconCache = {
             });
 
             // 从失败缓存中移除（如果存在）
-            this.failureCache.delete(domain);
+            this._clearFailureDomain(domain);
             this.removeFailure(domain);
 
         } catch (e) {
@@ -643,7 +795,7 @@ const FaviconCache = {
             const domain = urlObj.hostname;
 
             // 更新内存缓存
-            this.failureCache.add(domain);
+            this._markFailureDomain(domain);
 
             // 保存到 IndexedDB
             if (!this.db) await this.init();
@@ -684,7 +836,9 @@ const FaviconCache = {
 
             // 清除内存缓存
             this.memoryCache.delete(domain);
-            this.failureCache.delete(domain);
+            this.dimensionCache.clear();
+            this.visualProfileCache.clear();
+            this._clearFailureDomain(domain);
 
             // 清除 IndexedDB
             if (!this.db) await this.init();
@@ -698,8 +852,358 @@ const FaviconCache = {
         }
     },
 
+    async getDataUrlDimensions(dataUrl) {
+        if (!this.isStoredFaviconData(dataUrl)) return null;
+        if (this.dimensionCache.has(dataUrl)) {
+            return this.dimensionCache.get(dataUrl);
+        }
+
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const width = Number(img.naturalWidth || img.width || 0);
+                const height = Number(img.naturalHeight || img.height || 0);
+                if (width > 0 && height > 0) {
+                    const dimensions = { width, height };
+                    this.dimensionCache.set(dataUrl, dimensions);
+                    resolve(dimensions);
+                    return;
+                }
+                resolve(null);
+            };
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+        });
+    },
+
+    async isDataUrlAtLeast(dataUrl, minDimensionPx = 1) {
+        const min = Math.max(1, Number(minDimensionPx) || 1);
+        if (!this.isStoredFaviconData(dataUrl)) return false;
+        const dimensions = await this.getDataUrlDimensions(dataUrl);
+        if (!dimensions) return false;
+        return Number(dimensions.width) >= min && Number(dimensions.height) >= min;
+    },
+
+    async getDataUrlVisualProfile(dataUrl) {
+        if (!this.isStoredFaviconData(dataUrl)) return null;
+        if (this.visualProfileCache.has(dataUrl)) {
+            return this.visualProfileCache.get(dataUrl);
+        }
+
+        const profile = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const width = Number(img.naturalWidth || img.width || 0);
+                const height = Number(img.naturalHeight || img.height || 0);
+                if (width <= 0 || height <= 0) {
+                    resolve(null);
+                    return;
+                }
+
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        resolve({
+                            width,
+                            height,
+                            minDimension: Math.min(width, height),
+                            sampleCount: 0,
+                            transparentRatio: 0,
+                            whiteOpaqueRatio: 0,
+                            nearWhiteOpaqueRatio: 0
+                        });
+                        return;
+                    }
+
+                    ctx.drawImage(img, 0, 0);
+                    const pixels = ctx.getImageData(0, 0, width, height).data;
+                    const step = Math.max(1, Math.floor(Math.min(width, height) / 64));
+                    let sampleCount = 0;
+                    let transparentCount = 0;
+                    let whiteOpaqueCount = 0;
+                    let nearWhiteOpaqueCount = 0;
+
+                    for (let y = 0; y < height; y += step) {
+                        for (let x = 0; x < width; x += step) {
+                            const idx = ((y * width) + x) * 4;
+                            const r = pixels[idx];
+                            const g = pixels[idx + 1];
+                            const b = pixels[idx + 2];
+                            const a = pixels[idx + 3];
+                            sampleCount += 1;
+
+                            if (a <= 8) {
+                                transparentCount += 1;
+                                continue;
+                            }
+
+                            if (a >= 245) {
+                                if (r >= 250 && g >= 250 && b >= 250) {
+                                    whiteOpaqueCount += 1;
+                                }
+                                if (r >= 240 && g >= 240 && b >= 240) {
+                                    nearWhiteOpaqueCount += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    resolve({
+                        width,
+                        height,
+                        minDimension: Math.min(width, height),
+                        sampleCount,
+                        transparentRatio: sampleCount > 0 ? (transparentCount / sampleCount) : 0,
+                        whiteOpaqueRatio: sampleCount > 0 ? (whiteOpaqueCount / sampleCount) : 0,
+                        nearWhiteOpaqueRatio: sampleCount > 0 ? (nearWhiteOpaqueCount / sampleCount) : 0
+                    });
+                } catch (_) {
+                    resolve({
+                        width,
+                        height,
+                        minDimension: Math.min(width, height),
+                        sampleCount: 0,
+                        transparentRatio: 0,
+                        whiteOpaqueRatio: 0,
+                        nearWhiteOpaqueRatio: 0
+                    });
+                }
+            };
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+        });
+
+        if (profile) {
+            this.visualProfileCache.set(dataUrl, profile);
+        }
+        return profile;
+    },
+
+    _classifyFaviconSource(sourceUrl = '') {
+        const safe = String(sourceUrl || '');
+        if (safe.includes('icons.duckduckgo.com/ip3/')) return 'duckduckgo';
+        if (safe.includes('faviconV2?client=SOCIAL')) return 'gstatic';
+        if (safe.includes('cn.cravatar.com/favicon/')) return 'cravatar';
+        if (safe.includes('google.com/s2/favicons')) return 'google-s2';
+        if (safe.includes('/_favicon/')) return 'browser';
+        return 'other';
+    },
+
+    _getSourceTimeoutMs(sourceUrl = '', minDimensionPx = this.minFaviconDimensionPx) {
+        const sourceKind = this._classifyFaviconSource(sourceUrl);
+        const baseTimeout = Math.max(500, Number(this.requestTimeoutMs) || 2200);
+
+        if (sourceKind === 'duckduckgo') return Math.min(baseTimeout, 1200);
+        if (sourceKind === 'google-s2') return Math.min(baseTimeout, 1300);
+        if (sourceKind === 'gstatic') return Math.min(baseTimeout, 1500);
+        if (sourceKind === 'cravatar') return Math.min(baseTimeout, 1200);
+        if (sourceKind === 'browser') return Math.min(baseTimeout, 1000);
+        return baseTimeout;
+    },
+
+    _isWhitePlateProfile(profile) {
+        if (!profile || typeof profile !== 'object') return false;
+        const nearWhite = Number(profile.nearWhiteOpaqueRatio || 0);
+        const transparent = Number(profile.transparentRatio || 0);
+        return nearWhite >= 0.22 && transparent <= 0.10;
+    },
+
+    _isTransparentPreferredProfile(profile) {
+        if (!profile || typeof profile !== 'object') return false;
+        const transparent = Number(profile.transparentRatio || 0);
+        return transparent >= 0.04;
+    },
+
+    _scoreFaviconCandidate(profile, sourceKind = '') {
+        if (!profile || typeof profile !== 'object') return -Infinity;
+        const minDimension = Math.max(0, Number(profile.minDimension || 0));
+        const transparentRatio = Math.max(0, Math.min(1, Number(profile.transparentRatio || 0)));
+        const nearWhiteRatio = Math.max(0, Math.min(1, Number(profile.nearWhiteOpaqueRatio || 0)));
+
+        let score = 0;
+        score += Math.min(200, minDimension);
+        score += transparentRatio * 60;
+        score -= nearWhiteRatio * 90;
+
+        if (sourceKind === 'duckduckgo') score += 8;
+        else if (sourceKind === 'gstatic') score += 4;
+        else if (sourceKind === 'google-s2') score += 3;
+        else if (sourceKind === 'cravatar') score += 2;
+        else if (sourceKind === 'browser') score += 1;
+
+        return score;
+    },
+
+    async _buildFaviconCandidate(dataUrl, sourceUrl, minDimensionPx, options = {}) {
+        if (!this.isStoredFaviconData(dataUrl)) return null;
+        const dimensions = await this.getDataUrlDimensions(dataUrl);
+        if (!dimensions) return null;
+
+        const minDimension = Math.max(0, Math.min(
+            Number(dimensions.width) || 0,
+            Number(dimensions.height) || 0
+        ));
+        const reachedMin = minDimension >= Math.max(1, Number(minDimensionPx) || 1);
+        const sourceKind = this._classifyFaviconSource(sourceUrl);
+        const includeVisualProfile = !!(options && options.includeVisualProfile === true);
+
+        let profile = null;
+        let isWhitePlate = false;
+        let score = minDimension;
+
+        if (includeVisualProfile) {
+            profile = await this.getDataUrlVisualProfile(dataUrl);
+            if (profile) {
+                isWhitePlate = this._isWhitePlateProfile(profile);
+                score = this._scoreFaviconCandidate(profile, sourceKind);
+            }
+        }
+
+        return {
+            dataUrl,
+            sourceUrl,
+            sourceKind,
+            profile,
+            score,
+            isWhitePlate,
+            reachedMin,
+            minDimension,
+            width: Number(dimensions.width) || 0,
+            height: Number(dimensions.height) || 0
+        };
+    },
+
+    async _selectBestCandidateWithConflictRule(candidates = []) {
+        const validCandidates = Array.isArray(candidates)
+            ? candidates.filter((candidate) => candidate && candidate.reachedMin)
+            : [];
+        if (validCandidates.length === 0) return null;
+
+        let topMinDimension = 0;
+        for (const candidate of validCandidates) {
+            const candidateMin = Math.max(0, Number(candidate.minDimension) || 0);
+            if (candidateMin > topMinDimension) topMinDimension = candidateMin;
+        }
+
+        const topCandidates = validCandidates.filter((candidate) => {
+            const candidateMin = Math.max(0, Number(candidate.minDimension) || 0);
+            return candidateMin === topMinDimension;
+        });
+
+        if (topCandidates.length <= 1) {
+            return topCandidates[0] || validCandidates[0];
+        }
+
+        let bestTransparentCandidate = null;
+        let bestNonWhiteCandidate = null;
+        let bestAnyCandidate = null;
+
+        for (const rawCandidate of topCandidates) {
+            const candidate = await this._buildFaviconCandidate(
+                rawCandidate.dataUrl,
+                rawCandidate.sourceUrl,
+                1,
+                { includeVisualProfile: true }
+            ) || rawCandidate;
+
+            if (!bestAnyCandidate || candidate.score > bestAnyCandidate.score) {
+                bestAnyCandidate = candidate;
+            }
+
+            if (candidate.isWhitePlate) {
+                continue;
+            }
+
+            if (!bestNonWhiteCandidate || candidate.score > bestNonWhiteCandidate.score) {
+                bestNonWhiteCandidate = candidate;
+            }
+
+            if (this._isTransparentPreferredProfile(candidate.profile)) {
+                if (!bestTransparentCandidate || candidate.score > bestTransparentCandidate.score) {
+                    bestTransparentCandidate = candidate;
+                }
+            }
+        }
+
+        return bestTransparentCandidate || bestNonWhiteCandidate || bestAnyCandidate || topCandidates[0] || validCandidates[0];
+    },
+
+    _normalizeNetworkBranchMode(mode = '') {
+        return String(mode || '').toLowerCase() === 'domestic' ? 'domestic' : 'overseas';
+    },
+
+    _resolveNetworkLanguageBucket() {
+        const normalizedCurrentLang = String((typeof currentLang === 'string' ? currentLang : '') || '').toLowerCase();
+        if (normalizedCurrentLang.startsWith('zh')) return 'zh';
+        try {
+            const uiLang = String(chrome?.i18n?.getUILanguage?.() || navigator?.language || '').toLowerCase();
+            return uiLang.startsWith('zh') ? 'zh' : 'non_zh';
+        } catch (_) {
+            return 'non_zh';
+        }
+    },
+
+    _resetNetworkBranchProbeStats() {
+        this.networkBranchWindow = [];
+        this.networkBranchHardFailureCount = 0;
+        this.networkBranchConsecutiveHardFailureCount = 0;
+    },
+
+    markNetworkBranchReevaluation(reason = '') {
+        this.networkBranchLastReevaluationReason = String(reason || '');
+        // no-op: branch selection is language-driven now.
+    },
+
+    requestNetworkBranchReevaluation(reason = '') {
+        this.networkBranchLastReevaluationAt = Date.now();
+        this.markNetworkBranchReevaluation(reason);
+        return false;
+    },
+
+    _resolveNetworkBranchForFetch() {
+        const languageBucket = this._resolveNetworkLanguageBucket();
+        const branchMode = languageBucket === 'zh' ? 'domestic' : 'overseas';
+        this.networkBranchMode = branchMode;
+        return branchMode;
+    },
+
+    _isHardFailureStatus(statusCode) {
+        const code = Number(statusCode);
+        if (!Number.isFinite(code)) return false;
+        if (code === 0 || code === 408) return true;
+        return code >= 500 && code <= 599;
+    },
+
+    _isHardFailureMeta(meta) {
+        if (!meta || typeof meta !== 'object') return false;
+        if (meta.hardFailure === true) return true;
+        if (this._isHardFailureStatus(meta.statusCode)) return true;
+        const errorCode = String(meta.errorCode || '').toLowerCase();
+        return errorCode === 'timeout'
+            || errorCode === 'abort'
+            || errorCode === 'network_error'
+            || errorCode === 'fetch_failed'
+            || errorCode === 'proxy_error'
+            || errorCode === 'http_0';
+    },
+
+    _switchToDomesticBranch(reason = '') {
+        this.networkBranchMode = 'domestic';
+        this.networkBranchLocked = true;
+        this.networkBranchPendingReevaluation = false;
+        this.networkBranchSwitchReason = String(reason || '');
+    },
+
+    _recordBranchProbeResult({ branchMode = '', sourceUrl = '', meta = null } = {}) {
+        // no-op: probe-based branch switching is disabled.
+        return;
+    },
+
     // 获取favicon（带缓存和请求合并）
-    async fetch(url) {
+    async fetch(url, options = {}) {
         if (this.isInvalidUrl(url)) {
             return fallbackIcon;
         }
@@ -707,6 +1211,20 @@ const FaviconCache = {
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
+            const requestedMinDimension = Math.max(0, Number(options?.minDimensionPx) || 0);
+            const strictMinDimension = requestedMinDimension > 0
+                ? Math.max(Math.max(1, Number(this.minFaviconDimensionPx) || 96), requestedMinDimension)
+                : Math.max(1, Number(this.minFaviconDimensionPx) || 96);
+            const fallbackMinCandidate = Number(options?.fallbackMinDimensionPx);
+            const fallbackMinBase = Number.isFinite(fallbackMinCandidate) && fallbackMinCandidate > 0
+                ? fallbackMinCandidate
+                : (Number(this.minFallbackFaviconDimensionPx) || 32);
+            const fallbackMinDimension = Math.max(1, Math.min(strictMinDimension, fallbackMinBase));
+            const cacheMinDimension = requestedMinDimension > 0
+                ? Math.max(1, Number(options?.cacheMinDimensionPx) || fallbackMinDimension)
+                : 0;
+            const branchMode = this._resolveNetworkBranchForFetch();
+            const requestKey = `${domain}|${branchMode}|${strictMinDimension}|${fallbackMinDimension}`;
 
             // 1. 检查缓存
             const cached = await this.get(url);
@@ -714,23 +1232,29 @@ const FaviconCache = {
                 return fallbackIcon;
             }
             if (cached) {
-                return cached;
+                if (cacheMinDimension <= 0 || await this.isDataUrlAtLeast(cached, cacheMinDimension)) {
+                    return cached;
+                }
             }
 
             // 2. 检查是否已有相同请求在进行中（避免重复请求）
-            if (this.pendingRequests.has(domain)) {
-                return this.pendingRequests.get(domain);
+            if (this.pendingRequests.has(requestKey)) {
+                return this.pendingRequests.get(requestKey);
             }
 
             // 3. 发起新请求
-            const requestPromise = this._fetchFavicon(url);
-            this.pendingRequests.set(domain, requestPromise);
+            const requestPromise = this._fetchFavicon(url, {
+                strictMinDimensionPx: strictMinDimension,
+                fallbackMinDimensionPx: fallbackMinDimension,
+                branchMode
+            });
+            this.pendingRequests.set(requestKey, requestPromise);
 
             try {
                 const result = await requestPromise;
                 return result;
             } finally {
-                this.pendingRequests.delete(domain);
+                this.pendingRequests.delete(requestKey);
             }
 
         } catch (e) {
@@ -738,95 +1262,405 @@ const FaviconCache = {
         }
     },
 
-    // 实际请求favicon - 多源降级策略
-    // 注意：不再直接请求网站的 /favicon.ico，因为某些网站（如需要认证的网站）
-    // 可能返回 HTML 页面而非图标，导致浏览器解析其中的 preload 标签并产生警告
-    async _fetchFavicon(url) {
+    // 实际请求favicon - 语言分支固定瀑布策略：
+    // 中文分支：Cravatar -> /_favicon -> Google S2
+    // 非中文分支：Google S2 -> DuckDuckGo -> t3.gstatic.cn -> /_favicon
+    async _fetchFavicon(url, options = {}) {
         return new Promise(async (resolve) => {
             try {
                 const urlObj = new URL(url);
                 const domain = urlObj.hostname;
 
-                // 定义多个 favicon 源，按优先级尝试
-                // 只使用第三方服务，避免直接请求可能返回 HTML 的网站
-                const faviconSources = [
-                    // 1. DuckDuckGo（全球可用，国内可访问，推荐首选）
-                    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-                    // 2. Google S2（功能强大，但中国大陆被墙）
-                    `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
-                ];
+                const strictMinDimension = Math.max(
+                    1,
+                    Number(options?.strictMinDimensionPx) || Number(this.minFaviconDimensionPx) || 96
+                );
+                const fallbackMinCandidate = Number(options?.fallbackMinDimensionPx);
+                const fallbackMinDimension = Math.max(
+                    1,
+                    Math.min(
+                        strictMinDimension,
+                        (Number.isFinite(fallbackMinCandidate) && fallbackMinCandidate > 0)
+                            ? fallbackMinCandidate
+                            : (Number(this.minFallbackFaviconDimensionPx) || 32)
+                    )
+                );
 
-                // 尝试每个源
-                for (let i = 0; i < faviconSources.length; i++) {
-                    const faviconUrl = faviconSources[i];
-                    const sourceName = ['DuckDuckGo', 'Google S2'][i];
+                let activeBranchMode = this._normalizeNetworkBranchMode(options?.branchMode || this._resolveNetworkBranchForFetch());
 
-                    const result = await this._tryLoadFavicon(faviconUrl, url, sourceName);
-                    if (result && result !== fallbackIcon) {
-                        resolve(result);
-                        return;
+                const strictFaviconSources = this._buildFaviconSourceList(url, domain, {
+                    branchMode: activeBranchMode,
+                    minDimensionPx: strictMinDimension,
+                    maxDomesticGstaticSizes: 2,
+                    maxOverseasGoogleSizes: 1,
+                    maxDomesticCravatarSizes: 1,
+                    maxBrowserSizes: 1
+                });
+
+                if (strictFaviconSources.length === 0) {
+                    this.saveFailure(url);
+                    resolve(fallbackIcon);
+                    return;
+                }
+
+                const attemptedSourceUrls = new Set();
+                let sawHardFailure = false;
+
+                const tryCandidateFromSource = async (faviconUrl, minDimensionPx, candidateBucket) => {
+                    const minDimensionKey = Math.max(1, Number(minDimensionPx) || 1);
+                    const attemptKey = `${faviconUrl}|${minDimensionKey}`;
+                    if (!faviconUrl || attemptedSourceUrls.has(attemptKey)) {
+                        return false;
+                    }
+                    attemptedSourceUrls.add(attemptKey);
+
+                    const loadResult = await this._tryLoadFavicon(faviconUrl, minDimensionPx, {
+                        timeoutMs: this._getSourceTimeoutMs(faviconUrl, minDimensionPx)
+                    });
+                    this._recordBranchProbeResult({
+                        branchMode: activeBranchMode,
+                        sourceUrl: faviconUrl,
+                        meta: loadResult && loadResult.meta ? loadResult.meta : null
+                    });
+                    if (this._isHardFailureMeta(loadResult && loadResult.meta ? loadResult.meta : null)) {
+                        sawHardFailure = true;
+                    }
+
+                    const result = loadResult && typeof loadResult.dataUrl === 'string' ? loadResult.dataUrl : '';
+                    if (!result || result === fallbackIcon) {
+                        if (activeBranchMode === 'overseas' && this.networkBranchMode === 'domestic') {
+                            return 'switch_branch';
+                        }
+                        return false;
+                    }
+
+                    const candidate = await this._buildFaviconCandidate(result, faviconUrl, minDimensionPx);
+                    if (!candidate || !candidate.reachedMin) {
+                        return false;
+                    }
+
+                    if (Array.isArray(candidateBucket)) {
+                        candidateBucket.push(candidate);
+                    }
+                    return false;
+                };
+
+                const runCandidateRound = async (sourceList, minDimensionPx, candidateBucket, options = {}) => {
+                    const safeList = Array.isArray(sourceList) ? sourceList : [];
+                    const parallelCount = Math.max(1, Number(options.parallelCount) || 1);
+                    const stopOnFirstCandidate = options.stopOnFirstCandidate !== false;
+
+                    for (let i = 0; i < safeList.length; i += parallelCount) {
+                        const chunk = safeList.slice(i, i + parallelCount);
+                        if (chunk.length === 0) break;
+                        const results = await Promise.all(
+                            chunk.map((sourceUrl) => tryCandidateFromSource(sourceUrl, minDimensionPx, candidateBucket))
+                        );
+                        if (results.includes('switch_branch')) return 'switch_branch';
+                        if (stopOnFirstCandidate && candidateBucket.length > 0) return 'found';
+                    }
+
+                    return candidateBucket.length > 0 ? 'found' : 'none';
+                };
+
+                // 第一轮：默认走极速链路（>=16）；高分辨率请求会自动拉高 strictMinDimension。
+                const strictCandidates = [];
+                await runCandidateRound(strictFaviconSources, strictMinDimension, strictCandidates, {
+                    parallelCount: 3,
+                    stopOnFirstCandidate: true
+                });
+
+                activeBranchMode = this._normalizeNetworkBranchMode(this.networkBranchMode || activeBranchMode);
+                const useFastFirstCandidate = strictMinDimension <= Math.max(16, Number(this.minFaviconDimensionPx) || 16);
+                let chosenCandidate = useFastFirstCandidate
+                    ? (strictCandidates[0] || null)
+                    : await this._selectBestCandidateWithConflictRule(strictCandidates);
+
+                // 第二轮：放宽到兜底阈值（默认 >= 32，拒绝 16x16）
+                if (!chosenCandidate && fallbackMinDimension < strictMinDimension) {
+                    const fallbackFaviconSources = this._buildFaviconSourceList(url, domain, {
+                        branchMode: activeBranchMode,
+                        minDimensionPx: fallbackMinDimension,
+                        maxDomesticGstaticSizes: 1,
+                        maxOverseasGoogleSizes: 1,
+                        maxDomesticCravatarSizes: 1,
+                        maxBrowserSizes: 1
+                    });
+                    const fallbackCandidates = [];
+                    await runCandidateRound(fallbackFaviconSources, fallbackMinDimension, fallbackCandidates, {
+                        parallelCount: 2,
+                        stopOnFirstCandidate: true
+                    });
+                    chosenCandidate = await this._selectBestCandidateWithConflictRule(fallbackCandidates);
+                }
+
+                // 第三轮（终极兜底）：仅在前两轮都拿不到任何可用候选时，放宽到 >=16。
+                if (!chosenCandidate) {
+                    const terminalFallbackMinDimension = Math.max(
+                        1,
+                        Math.min(
+                            fallbackMinDimension,
+                            Number(this.minTerminalFallbackFaviconDimensionPx) || 16
+                        )
+                    );
+                    if (terminalFallbackMinDimension < fallbackMinDimension) {
+                        const terminalFallbackSources = this._buildFaviconSourceList(url, domain, {
+                            branchMode: activeBranchMode,
+                            minDimensionPx: terminalFallbackMinDimension,
+                            maxDomesticGstaticSizes: 1,
+                            maxOverseasGoogleSizes: 1,
+                            maxDomesticCravatarSizes: 1,
+                            maxBrowserSizes: 1
+                        });
+                        const terminalCandidates = [];
+                        await runCandidateRound(terminalFallbackSources, terminalFallbackMinDimension, terminalCandidates, {
+                            parallelCount: 2,
+                            stopOnFirstCandidate: true
+                        });
+                        chosenCandidate = await this._selectBestCandidateWithConflictRule(terminalCandidates);
                     }
                 }
 
+                if (chosenCandidate && chosenCandidate.dataUrl) {
+                    await this.save(url, chosenCandidate.dataUrl);
+                    resolve(chosenCandidate.dataUrl);
+                    return;
+                }
+
                 // 所有源都失败，记录失败并返回 fallback（静默）
-                this.saveFailure(url);
+                if (!sawHardFailure) {
+                    this.saveFailure(url);
+                }
                 resolve(fallbackIcon);
 
             } catch (e) {
                 // 静默处理错误
-                this.saveFailure(url);
                 resolve(fallbackIcon);
             }
         });
     },
 
-    // 尝试从单个源加载 favicon
-    async _tryLoadFavicon(faviconUrl, originalUrl, sourceName) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            // 不设置 crossOrigin，避免 CORS 预检请求导致的错误
-            // img.crossOrigin = 'anonymous';
+    _pickCandidateSizes(candidates, minDimensionPx = 1, maxCount = 2) {
+        const min = Math.max(1, Number(minDimensionPx) || 1);
+        const limit = Math.max(1, Number(maxCount) || 1);
+        const list = Array.isArray(candidates)
+            ? candidates.map((size) => Number(size)).filter((size) => Number.isFinite(size) && size > 0)
+            : [];
+        if (list.length === 0) return [];
+        const filtered = list.filter((size) => size >= min);
+        const source = filtered.length > 0 ? filtered : list;
+        return source.slice(0, limit);
+    },
 
-            const timeout = setTimeout(() => {
-                img.src = '';
-                resolve(null); // 超时，尝试下一个源
-            }, 3000); // 每个源最多等待3秒
+    _buildFaviconSourceList(url, domain, options = {}) {
+        const branchMode = this._normalizeNetworkBranchMode(options?.branchMode || this._resolveNetworkBranchForFetch());
+        const minDimensionPx = Math.max(1, Number(options?.minDimensionPx) || 1);
+        const maxBrowserSizes = Math.max(1, Number(options?.maxBrowserSizes) || 1);
+        const maxOverseasGoogleSizes = Math.max(1, Number(options?.maxOverseasGoogleSizes) || 1);
+        const maxDomesticGstaticSizes = Math.max(1, Number(options?.maxDomesticGstaticSizes) || 2);
+        const maxDomesticCravatarSizes = Math.max(1, Number(options?.maxDomesticCravatarSizes) || 1);
 
-            img.onload = () => {
-                clearTimeout(timeout);
+        const sources = [];
+        const seen = new Set();
+        const addSource = (sourceUrl) => {
+            if (!sourceUrl || seen.has(sourceUrl)) return;
+            seen.add(sourceUrl);
+            sources.push(sourceUrl);
+        };
 
-                // 检查是否是有效的图片（某些服务器返回1x1的占位图）
-                if (img.width < 8 || img.height < 8) {
-                    resolve(null);
+        const gstaticSizes = this._pickCandidateSizes(this.publicFaviconSizeCandidates, minDimensionPx, maxDomesticGstaticSizes);
+        const googleSizes = this._pickCandidateSizes(this.googleS2SizeCandidates, minDimensionPx, maxOverseasGoogleSizes);
+        const cravatarSizes = this._pickCandidateSizes(this.cravatarSizeCandidates, minDimensionPx, maxDomesticCravatarSizes);
+        const browserSizes = this._pickCandidateSizes(this.browserFaviconSizeCandidates, minDimensionPx, maxBrowserSizes);
+
+        if (branchMode === 'domestic') {
+            for (const size of cravatarSizes) {
+                addSource(this._getCravatarFaviconUrl(domain, size));
+            }
+            for (const size of browserSizes) {
+                addSource(this._getBrowserFaviconServiceUrl(url, size));
+            }
+            for (const size of googleSizes) {
+                addSource(this._getGoogleS2FaviconUrl(url, size));
+            }
+        } else {
+            for (const size of googleSizes) {
+                addSource(this._getGoogleS2FaviconUrl(url, size));
+            }
+            addSource(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+            for (const size of gstaticSizes) {
+                addSource(this._getGstaticCnFaviconUrl(url, size));
+            }
+            for (const size of browserSizes) {
+                addSource(this._getBrowserFaviconServiceUrl(url, size));
+            }
+        }
+
+        return sources;
+    },
+
+    _getBrowserFaviconServiceUrl(url, size = 64) {
+        try {
+            if (!browserAPI?.runtime?.getURL) return null;
+            const baseUrl = browserAPI.runtime.getURL('/_favicon/');
+            return `${baseUrl}?pageUrl=${encodeURIComponent(url)}&size=${encodeURIComponent(size)}`;
+        } catch (_) {
+            return null;
+        }
+    },
+
+    _getGstaticCnFaviconUrl(url, size = 128) {
+        return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
+    },
+
+    _getCravatarFaviconUrl(domain, size = 64) {
+        return `https://cn.cravatar.com/favicon/api/index.php?url=${encodeURIComponent(domain)}&size=${encodeURIComponent(size)}`;
+    },
+
+    _getGoogleS2FaviconUrl(url, size = 64) {
+        return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=${encodeURIComponent(size)}`;
+    },
+
+    async _blobToDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+                    resolve(reader.result);
                     return;
                 }
+                reject(new Error('invalid_data_url'));
+            };
+            reader.onerror = () => reject(reader.error || new Error('read_failed'));
+            reader.readAsDataURL(blob);
+        });
+    },
 
-                // 尝试转换为 Base64（可能因 CORS 失败，但不显示错误）
+    async _readBlobDimensions(blob) {
+        return new Promise((resolve) => {
+            const objectUrl = URL.createObjectURL(blob);
+            const img = new Image();
+
+            const cleanup = () => {
                 try {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                    const dataUrl = canvas.toDataURL('image/png');
+                    URL.revokeObjectURL(objectUrl);
+                } catch (_) { }
+            };
 
-                    // 保存到缓存
-                    this.save(originalUrl, dataUrl);
-                    resolve(dataUrl);
-                } catch (e) {
-                    // CORS 限制，直接使用原 URL（静默处理，不输出日志）
-                    this.save(originalUrl, faviconUrl);
-                    resolve(faviconUrl);
-                }
+            img.onload = () => {
+                const width = img.naturalWidth || img.width || 0;
+                const height = img.naturalHeight || img.height || 0;
+                cleanup();
+                resolve({ width, height });
             };
 
             img.onerror = () => {
-                clearTimeout(timeout);
-                resolve(null); // 失败，尝试下一个源
+                cleanup();
+                resolve(null);
             };
 
-            img.src = faviconUrl;
+            img.src = objectUrl;
         });
+    },
+
+    async _fetchImageAsDataUrl(faviconUrl, minDimensionPx = this.minFaviconDimensionPx, options = {}) {
+        const timeoutMs = Math.max(500, Number(options?.timeoutMs) || Number(this.requestTimeoutMs) || 3000);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const response = await fetch(faviconUrl, {
+                signal: controller.signal
+            });
+
+            if (!response.ok) {
+                const statusCode = Number(response.status) || 0;
+                return {
+                    dataUrl: '',
+                    meta: {
+                        attempted: true,
+                        statusCode,
+                        hardFailure: this._isHardFailureStatus(statusCode),
+                        errorCode: `http_${statusCode || 0}`
+                    }
+                };
+            }
+
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (contentType && !contentType.startsWith('image/')) {
+                return {
+                    dataUrl: '',
+                    meta: { attempted: true, hardFailure: false, errorCode: 'non_image_content' }
+                };
+            }
+
+            const declaredLength = Number(response.headers.get('content-length') || 0);
+            if (Number.isFinite(declaredLength) && declaredLength > this.maxFetchedBytes) {
+                return {
+                    dataUrl: '',
+                    meta: { attempted: true, hardFailure: false, errorCode: 'payload_too_large' }
+                };
+            }
+
+            const blob = await response.blob();
+            if (!blob || blob.size === 0 || blob.size > this.maxFetchedBytes) {
+                return {
+                    dataUrl: '',
+                    meta: { attempted: true, hardFailure: false, errorCode: 'invalid_blob' }
+                };
+            }
+
+            const dimensions = await this._readBlobDimensions(blob);
+            const requiredDimension = Math.max(1, Number(minDimensionPx) || this.minFaviconDimensionPx);
+            if (!dimensions || dimensions.width < requiredDimension || dimensions.height < requiredDimension) {
+                return {
+                    dataUrl: '',
+                    meta: { attempted: true, hardFailure: false, errorCode: 'dimension_too_small' }
+                };
+            }
+
+            const dataUrl = await this._blobToDataUrl(blob);
+            return {
+                dataUrl,
+                meta: { attempted: true, hardFailure: false, statusCode: Number(response.status) || 200, errorCode: '' }
+            };
+        } catch (error) {
+            const errorCode = error && error.name === 'AbortError' ? 'timeout' : 'fetch_failed';
+            return {
+                dataUrl: '',
+                meta: {
+                    attempted: true,
+                    hardFailure: errorCode === 'timeout' || errorCode === 'fetch_failed',
+                    errorCode
+                }
+            };
+        } finally {
+            clearTimeout(timeout);
+        }
+    },
+
+    // 尝试从单个源加载 favicon，仅返回 dataURL，不在此阶段写缓存
+    async _tryLoadFavicon(faviconUrl, minDimensionPx = this.minFaviconDimensionPx, options = {}) {
+        try {
+            const result = await this._fetchImageAsDataUrl(faviconUrl, minDimensionPx, options);
+            const dataUrl = result && typeof result.dataUrl === 'string' ? result.dataUrl : '';
+            if (!dataUrl || !this.isStoredFaviconData(dataUrl)) {
+                return {
+                    dataUrl: '',
+                    meta: result && result.meta ? result.meta : { attempted: true, hardFailure: false, errorCode: 'empty_data_url' }
+                };
+            }
+
+            return {
+                dataUrl,
+                meta: result && result.meta ? result.meta : { attempted: true, hardFailure: false, errorCode: '' }
+            };
+        } catch (_) {
+            return {
+                dataUrl: '',
+                meta: { attempted: true, hardFailure: true, errorCode: 'fetch_failed' }
+            };
+        }
     }
 };
 
@@ -1218,7 +2052,7 @@ function getFaviconUrl(url) {
         }
 
         // 检查失败缓存
-        if (FaviconCache.failureCache.has(domain)) {
+        if (FaviconCache._isFailureDomainActive(domain)) {
             return fallbackIcon;
         }
 
@@ -1239,6 +2073,33 @@ function getFaviconUrl(url) {
     }
 }
 
+function resolveFaviconBindingUrlFromElement(element) {
+    if (!element) return '';
+
+    const readFrom = (node) => {
+        if (!node) return '';
+        if (node.dataset) {
+            if (node.dataset.bookmarkUrl) return node.dataset.bookmarkUrl;
+            if (node.dataset.nodeUrl) return node.dataset.nodeUrl;
+            if (node.dataset.url) return node.dataset.url;
+        }
+        if (typeof node.getAttribute === 'function') {
+            return node.getAttribute('data-bookmark-url')
+                || node.getAttribute('data-node-url')
+                || node.getAttribute('data-url')
+                || '';
+        }
+        return '';
+    };
+
+    let itemUrl = readFrom(element);
+    if (!itemUrl && typeof element.closest === 'function') {
+        const item = element.closest('[data-node-url], [data-bookmark-url], [data-url]');
+        itemUrl = readFrom(item);
+    }
+    return typeof itemUrl === 'string' ? itemUrl.trim() : '';
+}
+
 // 更新页面上所有指定URL的favicon图片
 function updateFaviconImages(url, dataUrl) {
     let updatedCount = 0;
@@ -1246,55 +2107,41 @@ function updateFaviconImages(url, dataUrl) {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
 
-        // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url/data-bookmark-url）
-        const allImages = document.querySelectorAll('img.tree-icon, img.change-tree-item-icon, img.search-result-favicon');
+        const allImages = document.querySelectorAll(
+            'img.tree-icon, img.change-tree-item-icon, img.search-result-favicon, img[data-bookmark-url], img[data-node-url], img[data-url]'
+        );
 
         allImages.forEach(img => {
-            // 优先检查 img 元素自身的 data-bookmark-url 属性（搜索结果场景）
-            let itemUrl = img.dataset.bookmarkUrl;
+            const itemUrl = resolveFaviconBindingUrlFromElement(img);
+            if (!itemUrl) return;
 
-            // 如果 img 自身没有，再检查父元素
-            if (!itemUrl) {
-                const item = img.closest('[data-node-url], [data-bookmark-url]');
-                if (item) {
-                    itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
-                }
-            }
+            try {
+                const itemDomain = new URL(itemUrl).hostname;
+                if (itemDomain !== domain) return;
 
-            if (itemUrl) {
-                try {
-                    const itemDomain = new URL(itemUrl).hostname;
-                    if (itemDomain === domain) {
-                        // 更新图标
-                        img.src = dataUrl;
-
-                        // 如果图片之前是隐藏的（被黄色书签图标替代），现在显示它
-                        if (img.style.display === 'none') {
-                            img.style.display = '';
-                            // 隐藏相邻的 fallback 图标（可能是 previousSibling 或在同一父容器中）
-                            const prevSibling = img.previousElementSibling;
-                            if (prevSibling && prevSibling.classList.contains('search-result-icon-box-inline')) {
-                                prevSibling.style.display = 'none';
-                            } else {
-                                // 在父容器中查找 fallback 图标
-                                const parent = img.parentElement;
-                                if (parent) {
-                                    const fallbackIcon = parent.querySelector('.search-result-icon-box-inline');
-                                    if (fallbackIcon) {
-                                        fallbackIcon.style.display = 'none';
-                                    }
-                                }
+                img.src = dataUrl;
+                if (img.style.display === 'none') {
+                    img.style.display = '';
+                    const prevSibling = img.previousElementSibling;
+                    if (prevSibling && prevSibling.classList.contains('search-result-icon-box-inline')) {
+                        prevSibling.style.display = 'none';
+                    } else {
+                        const parent = img.parentElement;
+                        if (parent) {
+                            const inlineFallbackIcon = parent.querySelector('.search-result-icon-box-inline');
+                            if (inlineFallbackIcon) {
+                                inlineFallbackIcon.style.display = 'none';
                             }
                         }
-
-                        updatedCount++;
                     }
-                } catch (e) {
-                    // 忽略无效URL
                 }
+
+                updatedCount++;
+            } catch (_) {
+                // 忽略无效URL
             }
         });
-    } catch (e) {
+    } catch (_) {
         // 静默处理
     }
     return updatedCount;
@@ -1317,14 +2164,14 @@ function setupGlobalImageErrorHandler() {
 }
 
 // 异步获取favicon（推荐使用，支持完整缓存）
-async function getFaviconUrlAsync(url) {
+async function getFaviconUrlAsync(url, options = {}) {
     if (!url) return fallbackIcon;
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return fallbackIcon;
     }
 
-    return await FaviconCache.fetch(url);
+    return await FaviconCache.fetch(url, options);
 }
 
 // Fallback 图标 - 星标书签图标
@@ -4275,6 +5122,7 @@ async function executeRevert(strategy) {
             return;
         }
         if (!resp || !resp.success) {
+            promptRestoreRecoveryTransactionFromHistory();
             const msg = resp && resp.error ? String(resp.error) : (currentLang === 'zh_CN' ? '撤销失败' : 'Revert failed');
             setRevertProgress(0, msg);
             showRevertToast(false, msg);
@@ -4282,6 +5130,18 @@ async function executeRevert(strategy) {
         }
 
         const appliedStrategy = normalizeRevertStrategyValue(resp.strategy || strategyToUse);
+        try {
+            if (appliedStrategy === 'overwrite') {
+                historyOverwriteRevertMarkerTime = new Date().toISOString();
+                await browserAPI.storage.local.set({
+                    [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: historyOverwriteRevertMarkerTime
+                });
+            } else {
+                historyOverwriteRevertMarkerTime = '';
+                await browserAPI.storage.local.remove([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
+            }
+        } catch (_) { }
+
         if (appliedStrategy === 'patch') {
             successMsg = currentLang === 'zh_CN'
                 ? '已完成补丁撤销，已恢复到上次备份状态'
@@ -4325,6 +5185,7 @@ async function executeRevert(strategy) {
             } catch (_) { }
         }, 300);
     } catch (e) {
+        promptRestoreRecoveryTransactionFromHistory();
         const msg = currentLang === 'zh_CN' ? `撤销失败: ${e.message}` : `Revert failed: ${e.message}`;
         setRevertProgress(0, msg);
         showRevertToast(false, msg);
@@ -4399,11 +5260,13 @@ function showHistoryPageToast(message, { type = 'info', duration = 2000 } = {}) 
     removeHistoryPageToast();
 
     const toast = document.createElement('div');
-    const normalizedType = type === 'success' || type === 'error' ? type : 'info';
+    const normalizedType = (type === 'success' || type === 'error' || type === 'warning') ? type : 'info';
     const safeMessage = String(message == null ? '' : message).trim();
     const iconClass = normalizedType === 'success'
         ? 'fa-check-circle'
-        : (normalizedType === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle');
+        : (normalizedType === 'error'
+            ? 'fa-exclamation-circle'
+            : (normalizedType === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle'));
 
     toast.className = `history-page-toast history-page-toast--${normalizedType}`;
     toast.innerHTML = `<i class="fas ${iconClass} history-page-toast__icon"></i><span class="history-page-toast__text">${escapeHtml(safeMessage)}</span>`;
@@ -4452,6 +5315,7 @@ async function loadAllData(options = {}) {
 
         syncHistory = storageData.syncHistory || [];
         syncHistory = await ensureSyncHistorySeqNumbersPersisted(syncHistory);
+        historyOverwriteRevertMarkerTime = String(storageData[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY] || '').trim();
         applyHistoryDeleteButtonWarningState(syncHistory.length);
 
         // 注意：不再清理 bookmarkTree，保留所有记录的详细数据
@@ -4665,7 +5529,7 @@ async function warmupFaviconCache(bookmarkUrls) {
 
 function loadStorageData() {
     return new Promise((resolve) => {
-        browserAPI.storage.local.get(['syncHistory', 'lastSyncTime'], (data) => {
+        browserAPI.storage.local.get(['syncHistory', 'lastSyncTime', HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY], (data) => {
             resolve(data);
         });
     });
@@ -6534,6 +7398,21 @@ async function renderChangesTreePreview(changeData) {
             await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: hasChangesFlag });
         }
 
+        let stabilizedTreeToRender = null;
+        try {
+            const stabilizedRenderState = await resolveCurrentChangesRenderState(changeData, { requireDiffMap: false });
+            if (stabilizedRenderState?.changeMap instanceof Map) {
+                treeChangeMap = stabilizedRenderState.changeMap;
+            }
+            if (Array.isArray(stabilizedRenderState?.currentTree)) {
+                cachedCurrentTree = stabilizedRenderState.currentTree;
+                cachedCurrentTreeIndex = null;
+            }
+            if (Array.isArray(stabilizedRenderState?.treeToRender)) {
+                stabilizedTreeToRender = stabilizedRenderState.treeToRender;
+            }
+        } catch (_) { }
+
         if (!permanentSection || !cachedCurrentTree) {
             console.error('[书签树映射预览] 无法获取模板或数据');
             targetContainer.innerHTML = `<div class="empty-state-small">${currentLang === 'zh_CN' ? '暂无可用的预览数据' : 'No preview data available'}</div>`;
@@ -6588,10 +7467,15 @@ async function renderChangesTreePreview(changeData) {
             const tempDiv = document.createElement('div');
 
             // Current Changes 预览：如有 deleted 节点，合并 oldTree 以保留原位置展示
-            let treeToRender = cachedCurrentTree;
+            let treeToRender = Array.isArray(stabilizedTreeToRender) && stabilizedTreeToRender.length > 0
+                ? stabilizedTreeToRender
+                : cachedCurrentTree;
             try {
                 const oldTree = cachedOldTree;
-                if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
+                if (
+                    (!Array.isArray(stabilizedTreeToRender) || stabilizedTreeToRender.length === 0)
+                    && oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0
+                ) {
                     let hasDeleted = false;
                     for (const [, ch] of treeChangeMap) {
                         if (ch && ch.type && String(ch.type).includes('deleted')) { hasDeleted = true; break; }
@@ -8648,7 +9532,7 @@ function getUnifiedHistoryRecordNote(record, lang) {
         return isSystemManualNote ? manualLabel : rawNote;
     }
 
-    if (recordType === 'restore') {
+    if (recordType === 'restore' || recordType === 'revert') {
         return rawNote;
     }
 
@@ -8681,6 +9565,158 @@ function getUnifiedHistoryRecordNote(record, lang) {
     }
 
     return rawNote;
+}
+
+function normalizeHistoryOperationStrategyValue(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'patch') return 'patch';
+    if (normalized === 'overwrite') return 'overwrite';
+    if (normalized === 'merge') return 'merge';
+    return '';
+}
+
+function inferHistoryOperationStrategyFromNote(note = '') {
+    const text = String(note || '').trim().toLowerCase();
+    if (!text) return '';
+    if (text.includes('补丁恢复') || text.includes('patch restore') || text.includes('补丁撤销') || text.includes('patch revert')) {
+        return 'patch';
+    }
+    if (text.includes('覆盖恢复') || text.includes('overwrite restore') || text.includes('overwrite restored') || text.includes('覆盖撤销') || text.includes('overwrite revert')) {
+        return 'overwrite';
+    }
+    if (text.includes('导入合并') || text.includes('import merge') || text.includes('import merged')) {
+        return 'merge';
+    }
+    return '';
+}
+
+function resolveHistoryRecordOperationStrategy(record) {
+    if (!record || typeof record !== 'object') return '';
+    const recordType = String(record.type || '').trim().toLowerCase();
+
+    const byRestoreInfo = normalizeHistoryOperationStrategyValue(record?.restoreInfo?.strategy);
+    if (byRestoreInfo) return byRestoreInfo;
+
+    const byRecoveryInfo = normalizeHistoryOperationStrategyValue(
+        record?.recoveryInfo?.resolvedStrategy || record?.recoveryInfo?.requestedStrategy
+    );
+    if (byRecoveryInfo) return byRecoveryInfo;
+
+    const byTopLevel = normalizeHistoryOperationStrategyValue(record?.resolvedStrategy || record?.requestedStrategy);
+    if (byTopLevel) return byTopLevel;
+
+    const byNote = inferHistoryOperationStrategyFromNote(record?.note || '');
+    if (byNote) return byNote;
+
+    if (recordType === 'restore' || recordType === 'revert') {
+        return String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite'
+            ? 'overwrite'
+            : '';
+    }
+
+    return '';
+}
+
+function buildHistoryOperationStrategyBadge(recordType, strategy, lang = currentLang) {
+    const normalizedType = String(recordType || '').trim().toLowerCase();
+    const normalizedStrategy = normalizeHistoryOperationStrategyValue(strategy);
+    if ((normalizedType !== 'restore' && normalizedType !== 'revert') || !normalizedStrategy) {
+        return '';
+    }
+
+    const isZh = lang === 'zh_CN';
+    let label = '';
+    let icon = 'fa-code-branch';
+    let title = '';
+
+    if (normalizedStrategy === 'patch') {
+        label = isZh
+            ? (normalizedType === 'revert' ? '补丁撤销' : '补丁恢复')
+            : (normalizedType === 'revert' ? 'Patch Revert' : 'Patch Restore');
+        title = isZh ? '按 ID 补丁执行' : 'ID-based patch strategy';
+        icon = 'fa-code-branch';
+    } else if (normalizedStrategy === 'overwrite') {
+        label = isZh
+            ? (normalizedType === 'revert' ? '覆盖撤销' : '覆盖恢复')
+            : (normalizedType === 'revert' ? 'Overwrite Revert' : 'Overwrite Restore');
+        title = isZh ? '高风险：ID会变化，后续补丁将重建' : 'High risk: IDs changed and later patch flow will rebuild';
+        icon = 'fa-exclamation-triangle';
+    } else if (normalizedStrategy === 'merge') {
+        label = isZh ? '导入合并' : 'Import Merge';
+        title = isZh ? '导入新增，不删除现有节点' : 'Import-only merge strategy';
+        icon = 'fa-layer-group';
+    }
+
+    if (!label) return '';
+
+    return `<span class="commit-badge operation-strategy ${normalizedStrategy}" title="${escapeHtml(title)}">
+        <i class="fas ${icon}"></i> ${escapeHtml(label)}
+    </span>`;
+}
+
+function buildHistoryOverwriteRiskDivider(recordType, strategy, lang = currentLang) {
+    const normalizedType = String(recordType || '').trim().toLowerCase();
+    const normalizedStrategy = normalizeHistoryOperationStrategyValue(strategy);
+    if ((normalizedType !== 'restore' && normalizedType !== 'revert') || normalizedStrategy !== 'overwrite') {
+        return '';
+    }
+
+    const isZh = lang === 'zh_CN';
+    const label = isZh
+        ? (normalizedType === 'revert'
+            ? '覆盖撤销分界线（ID会变化，后续补丁将重建）'
+            : '覆盖恢复分界线（ID会变化，后续补丁将重建）')
+        : (normalizedType === 'revert'
+            ? 'Overwrite Revert Divider (IDs changed, later patch flow rebuilds)'
+            : 'Overwrite Restore Divider (IDs changed, later patch flow rebuilds)');
+
+    return `<div class="history-warning-divider" role="separator" aria-label="${escapeHtml(label)}">
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+        <span class="history-warning-divider-label"><i class="fas fa-exclamation-triangle"></i>${escapeHtml(label)}</span>
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+    </div>`;
+}
+
+function getHistoryMarkerTimeMs(rawValue) {
+    const text = String(rawValue || '').trim();
+    if (!text) return 0;
+    const numeric = Number(text);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    const parsed = Date.parse(text);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 0;
+}
+
+function resolveLatestOverwriteRevertDividerInsertIndex(records = []) {
+    const markerTimeMs = getHistoryMarkerTimeMs(historyOverwriteRevertMarkerTime);
+    if (!markerTimeMs || markerTimeMs <= 0) return -1;
+
+    const list = Array.isArray(records) ? records : [];
+    if (list.length === 0) return -1;
+
+    const newestMs = getHistoryRecordTimeMs(list[0]);
+    if (markerTimeMs >= newestMs) return 0;
+
+    for (let i = 1; i < list.length; i += 1) {
+        const recordMs = getHistoryRecordTimeMs(list[i]);
+        if (markerTimeMs >= recordMs) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+function buildLatestOverwriteRevertDivider(lang = currentLang) {
+    const isZh = lang === 'zh_CN';
+    const label = isZh
+        ? '执行了覆盖撤销（ID会变化，后续补丁将重建）'
+        : 'Overwrite revert executed (IDs changed, later patch flow rebuilds)';
+    return `<div class="history-warning-divider latest-overwrite-revert" role="separator" aria-label="${escapeHtml(label)}">
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+        <span class="history-warning-divider-label"><i class="fas fa-exclamation-triangle"></i>${escapeHtml(label)}</span>
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+    </div>`;
 }
 
 function renderHistoryView() {
@@ -8728,6 +9764,9 @@ function renderHistoryView() {
     const pageRecords = (syncHistoryPageRecords.length > HISTORY_PAGE_SIZE && syncHistoryPageRecords.length === totalRecords)
         ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
         : sortedRecords;
+    const latestOverwriteRevertDividerInsertIndex = currentHistoryPage === 1
+        ? resolveLatestOverwriteRevertDividerInsertIndex(pageRecords)
+        : -1;
 
     // 更新分页控件 UI
     if (pagination) {
@@ -8761,6 +9800,13 @@ function renderHistoryView() {
         const isAuto = record.type !== 'manual';
         const fingerprint = record.fingerprint || '';
         const isRestore = record.type === 'restore';
+        const isRevert = record.type === 'revert';
+        const operationStrategy = resolveHistoryRecordOperationStrategy(record);
+        const operationStrategyBadge = buildHistoryOperationStrategyBadge(record.type, operationStrategy, currentLang);
+        const overwriteRiskDivider = buildHistoryOverwriteRiskDivider(record.type, operationStrategy, currentLang);
+        const latestOverwriteRevertDivider = (latestOverwriteRevertDividerInsertIndex === i && !overwriteRiskDivider)
+            ? buildLatestOverwriteRevertDivider(currentLang)
+            : '';
 
         // 计算变化
         const changes = calculateChanges(record, globalIndex, { totalRecords });
@@ -8842,6 +9888,13 @@ function renderHistoryView() {
             typeBadge = `<span class="commit-badge restore" title="${currentLang === 'zh_CN' ? '恢复操作' : 'Restore Operation'}" style="background: var(--accent-light); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
                    <i class="fas fa-undo"></i> ${currentLang === 'zh_CN' ? '恢复' : 'Restore'}
                </span>`;
+        } else if (isRevert) {
+            typeBadge = `<span class="commit-badge restore" title="${currentLang === 'zh_CN' ? '撤销操作' : 'Revert Operation'}" style="background: rgba(255, 152, 0, 0.14); color: #ff9800; border: 1px solid #ff9800;">
+                   <i class="fas fa-history"></i> ${currentLang === 'zh_CN' ? '撤销' : 'Revert'}
+               </span>`;
+        }
+        if ((isRestore || isRevert) && operationStrategyBadge) {
+            typeBadge = '';
         }
 
         const overwriteMode = String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite'
@@ -8855,58 +9908,63 @@ function renderHistoryView() {
                 <i class="fas fa-layer-group"></i> ${currentLang === 'zh_CN' ? '版本化' : 'Versioning'}
             </span>`;
 
-        const titleClass = isRestore ? 'commit-title restore-title' : 'commit-title';
-        const seqClass = isRestore ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
+        const titleClass = (isRestore || isRevert) ? 'commit-title restore-title' : 'commit-title';
+        const seqClass = (isRestore || isRevert) ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
 
         const exportAriaLabel = currentLang === 'zh_CN' ? '导出' : 'Export';
         const detailSearchAriaLabel = currentLang === 'zh_CN' ? '搜索' : 'Search';
 
         return `
-            <div class="commit-item" data-record-time="${record.time}">
-                <div class="commit-header">
-                    <div class="commit-title-group">
-                        <span class="${seqClass}" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqNumber}</span>
-        <div class="${titleClass}" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(displayTitle)}</div>
-                        <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                    </div>
-                    <div class="commit-actions">
-                        <button class="action-btn record-export-open-btn" data-time="${record.time}" aria-label="${exportAriaLabel}">
-                            <i class="fas fa-file-export"></i>
-                            <span class="btn-tooltip">${exportAriaLabel}</span>
-                        </button>
-                        <button class="action-btn detail-search-open-btn" data-time="${record.time}" aria-label="${detailSearchAriaLabel}">
-                            <i class="fas fa-search"></i>
-                            <span class="btn-tooltip">${detailSearchAriaLabel}</span>
-                        </button>
-                        <button class="action-btn restore-btn" data-time="${record.time}" data-display-title="${escapeHtml(displayTitle)}" aria-label="${currentLang === 'zh_CN' ? '恢复到此版本' : 'Restore to this version'}">
-                            <i class="fas fa-undo"></i>
-                            <span class="btn-tooltip">${currentLang === 'zh_CN' ? '恢复' : 'Restore'}</span>
-                        </button>
-                        <button class="action-btn detail-btn" data-time="${record.time}">
-                            <i class="fas fa-angle-right"></i>
-                            <span class="btn-tooltip">${modeText}</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="commit-meta">
-                    <div class="commit-meta-left">
-                        <div class="commit-time">
-                            <i class="fas fa-clock"></i> ${time}
+            <div class="history-record-group">
+                ${latestOverwriteRevertDivider}
+                ${overwriteRiskDivider}
+                <div class="commit-item" data-record-time="${record.time}">
+                    <div class="commit-header">
+                        <div class="commit-title-group">
+                            <span class="${seqClass}" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqNumber}</span>
+            <div class="${titleClass}" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(displayTitle)}</div>
+                            <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
+                                <i class="fas fa-edit"></i>
+                            </button>
                         </div>
-                    ${renderCommitStatsInline(changes)}
-                    ${!typeBadge ? `<span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
-                        <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
-                        ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
-                    </span>` : ''}
-                        ${typeBadge}
-                        ${strategyBadge}
-                        <span class="commit-badge direction" title="${escapeHtml(directionText)}" aria-label="${escapeHtml(directionText)}">
-                            ${directionIcon}
-                        </span>
+                        <div class="commit-actions">
+                            <button class="action-btn record-export-open-btn" data-time="${record.time}" aria-label="${exportAriaLabel}">
+                                <i class="fas fa-file-export"></i>
+                                <span class="btn-tooltip">${exportAriaLabel}</span>
+                            </button>
+                            <button class="action-btn detail-search-open-btn" data-time="${record.time}" aria-label="${detailSearchAriaLabel}">
+                                <i class="fas fa-search"></i>
+                                <span class="btn-tooltip">${detailSearchAriaLabel}</span>
+                            </button>
+                            <button class="action-btn restore-btn" data-time="${record.time}" data-display-title="${escapeHtml(displayTitle)}" aria-label="${currentLang === 'zh_CN' ? '恢复到此版本' : 'Restore to this version'}">
+                                <i class="fas fa-undo"></i>
+                                <span class="btn-tooltip">${currentLang === 'zh_CN' ? '恢复' : 'Restore'}</span>
+                            </button>
+                            <button class="action-btn detail-btn" data-time="${record.time}">
+                                <i class="fas fa-angle-right"></i>
+                                <span class="btn-tooltip">${modeText}</span>
+                            </button>
+                        </div>
                     </div>
-                    <span class="commit-fingerprint" title="提交指纹号">#${escapeHtml(fingerprint)}</span>
+                    <div class="commit-meta">
+                        <div class="commit-meta-left">
+                            <div class="commit-time">
+                                <i class="fas fa-clock"></i> ${time}
+                            </div>
+                        ${renderCommitStatsInline(changes)}
+                        ${!typeBadge ? `<span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
+                            <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
+                            ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
+                        </span>` : ''}
+                            ${typeBadge}
+                            ${operationStrategyBadge}
+                            ${strategyBadge}
+                            <span class="commit-badge direction" title="${escapeHtml(directionText)}" aria-label="${escapeHtml(directionText)}">
+                                ${directionIcon}
+                            </span>
+                        </div>
+                        <span class="commit-fingerprint" title="提交指纹号">#${escapeHtml(fingerprint)}</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -12617,9 +13675,6 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
     let result = null;
     let appliedStrategy = preflightResolvedStrategy;
     let patchFallbackUsed = false;
-    let restoreBackupResp = null;
-    let restoreBackupTask = null;
-    let restoreBaselineCaptured = false;
     const restoreSessionId = `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
     try {
@@ -12634,24 +13689,6 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             });
         } catch (_) { }
         setRestoreProgress(5, isZh ? '已暂停书签监听...' : 'Bookmark listening paused...');
-
-        try {
-            const preRestoreTree = await browserAPI.bookmarks.getTree();
-            if (Array.isArray(preRestoreTree) && preRestoreTree.length > 0) {
-                await browserAPI.storage.local.set({
-                    restoreBaselineSnapshot: {
-                        bookmarkTree: preRestoreTree,
-                        capturedAt: Date.now(),
-                        capturedAtIso: new Date().toISOString(),
-                        source: 'history_executeRestore',
-                        restoreSessionId
-                    }
-                });
-                restoreBaselineCaptured = true;
-            }
-        } catch (baselineError) {
-            
-        }
 
         const executeHistoryRestoreInBackground = async (nextStrategy) => {
             const response = await browserAPI.runtime.sendMessage({
@@ -12675,6 +13712,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 return response;
             }
             if (!response || response.success !== true) {
+                promptRestoreRecoveryTransactionFromHistory();
                 throw new Error((response && response.error)
                     ? String(response.error)
                     : (nextStrategy === 'overwrite'
@@ -12763,56 +13801,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             throw new Error(`Unknown restore strategy: ${strategy}`);
         }
 
-        setRestoreProgress(90, isZh ? '正在提交恢复记录任务...' : 'Submitting restore record task...');
-
-        const restoreNote = (() => {
-            const timeText = formatTime(currentRestoreRecord.time);
-            const seqText = currentRestoreRecord.seqNumber;
-            if (appliedStrategy === 'overwrite') {
-                return isZh
-                    ? `覆盖恢复至 #${seqText} (${timeText})`
-                    : `Overwrite restored to #${seqText} (${timeText})`;
-            }
-            if (appliedStrategy === 'merge') {
-                return isZh
-                    ? `导入合并自 #${seqText} (${timeText})`
-                    : `Import merged from #${seqText} (${timeText})`;
-            }
-            if (appliedStrategy === 'patch') {
-                return isZh
-                    ? `补丁恢复至 #${seqText} (${timeText})`
-                    : `Patch restored to #${seqText} (${timeText})`;
-            }
-            return isZh
-                ? `恢复至 #${seqText} (${timeText})`
-                : `Restored to #${seqText} (${timeText})`;
-        })();
-
-        try {
-            restoreBackupTask = browserAPI.runtime.sendMessage({
-                action: 'triggerRestoreBackup',
-                note: restoreNote,
-                sourceSeqNumber: currentRestoreRecord.seqNumber,
-                sourceTime: currentRestoreRecord.time,
-                sourceNote: currentRestoreRecord.note || '',
-                sourceFingerprint: currentRestoreRecord.fingerprint || '',
-                sourceSnapshotKey: currentRestoreRecord.snapshotKey || '',
-                sourceOverwriteMode: String(currentRestoreRecord.overwriteMode || '').trim().toLowerCase() === 'overwrite' ? 'overwrite' : 'versioned',
-                strategy: appliedStrategy,
-                restoreSessionId,
-                precomputedDiffSummary: preflightInfo?.precomputedDiffSummary || null
-            });
-            restoreBackupResp = { success: true, queued: true };
-        } catch (e) {
-            restoreBackupTask = null;
-            restoreBackupResp = null;
-        }
-
-        if (restoreBackupTask) {
-            setRestoreProgress(100, isZh ? '恢复完成！恢复记录正在后台创建...' : 'Restore completed! Restore record is being created in background...');
-        } else {
-            setRestoreProgress(100, isZh ? '恢复完成！' : 'Restore completed!');
-        }
+        setRestoreProgress(100, isZh ? '恢复完成！' : 'Restore completed!');
 
         let successMsg = isZh ? '恢复成功！' : 'Restore successful!';
         const preflightSummary = summarizeChangeMap(preflightInfo && preflightInfo.changeMap ? preflightInfo.changeMap : new Map());
@@ -12854,35 +13843,15 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         }
 
         showToast(successMsg);
-
-        if (restoreBackupTask && typeof restoreBackupTask.then === 'function') {
-            restoreBackupTask.then((resp) => {
-                if (isRestoreRecoveryLockedResponse(resp)) {
-                    promptRestoreRecoveryTransactionFromHistory();
-                    return;
-                }
-                if (resp && resp.success === true) return;
-                const errText = resp && resp.error ? String(resp.error) : '';
-                showToast(currentLang === 'zh_CN'
-                    ? `恢复记录创建失败${errText ? `：${errText}` : ''}`
-                    : `Failed to create restore record${errText ? `: ${errText}` : ''}`);
-                if (restoreBaselineCaptured) {
-                    browserAPI.storage.local.remove(['restoreBaselineSnapshot']).catch(() => { });
-                }
-            }).catch((e) => {
-                const errText = e && e.message ? String(e.message) : '';
-                showToast(currentLang === 'zh_CN'
-                    ? `恢复记录创建失败${errText ? `：${errText}` : ''}`
-                    : `Failed to create restore record${errText ? `: ${errText}` : ''}`);
-                if (restoreBaselineCaptured) {
-                    browserAPI.storage.local.remove(['restoreBaselineSnapshot']).catch(() => { });
-                }
-            });
-        } else if (!restoreBackupResp || restoreBackupResp.success !== true) {
-            const errText = restoreBackupResp && restoreBackupResp.error ? String(restoreBackupResp.error) : '';
+        if (result?.restoreRecordSuccess === false) {
+            const errText = String(result?.restoreRecordError || '');
             showToast(currentLang === 'zh_CN'
                 ? `恢复记录创建失败${errText ? `：${errText}` : ''}`
                 : `Failed to create restore record${errText ? `: ${errText}` : ''}`);
+        } else if (result?.restoreRecordWarning) {
+            showToast(currentLang === 'zh_CN'
+                ? `恢复记录已写入，但有告警：${result.restoreRecordWarning}`
+                : `Restore history completed with warnings: ${result.restoreRecordWarning}`);
         }
 
         setTimeout(async () => {
@@ -12907,16 +13876,11 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         }, 1200);
     } catch (error) {
         console.error('[executeRestore] restore failed:', error);
+        promptRestoreRecoveryTransactionFromHistory();
         const msg = currentLang === 'zh_CN' ? `恢复失败: ${error.message}` : `Restore failed: ${error.message}`;
         setRestoreProgress(0, msg);
         showToast(msg);
     } finally {
-        if (restoreBaselineCaptured && (!restoreBackupResp || restoreBackupResp.success !== true)) {
-            try {
-                await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
-            } catch (_) { }
-        }
-
         try {
             await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
         } catch (_) { }
@@ -13268,6 +14232,7 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
             return response;
         }
         if (!response || response.success !== true) {
+            promptRestoreRecoveryTransactionFromHistory();
             throw new Error((response && response.error)
                 ? String(response.error)
                 : (isZh ? '导入合并失败' : 'Import merge failed'));
@@ -13278,6 +14243,10 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
             created: Number.isFinite(Number(response.created)) ? Number(response.created) : 0,
             folderId: response.importedFolderId || response.folderId || '',
             folderTitle: response.importedFolderTitle || response.folderTitle || '',
+            restoreRecordSuccess: response.restoreRecordSuccess,
+            restoreRecordError: response.restoreRecordError || '',
+            restoreRecordWarning: response.restoreRecordWarning || '',
+            restoreRecordSyncTime: response.restoreRecordSyncTime || '',
             sourceType: useChangesView ? 'changes' : 'snapshot',
             viewMode: useChangesView ? viewMode : 'snapshot'
         };
@@ -13521,6 +14490,7 @@ let cachedCurrentTreeIndex = null; // id -> node（懒加载用，按需构建�
 let cachedRenderTreeIndex = null; // id -> node（懒加载用，包含 deleted 合并树）
 const detailChangeCache = new Map(); // key(recordTime:mode) -> { treeToRender, changeMap, ts }
 const recordChangeDataCache = new Map(); // key(recordTime) -> persisted changes_data payload
+const invalidRecordChangeDataCache = new Set(); // key(recordTime) -> invalid persisted payload
 const DETAIL_CHANGE_CACHE_MAX = 20;
 
 function getDetailChangeCacheKey(recordTime, mode) {
@@ -13553,6 +14523,7 @@ function setDetailChangeCache(recordTime, mode, payload) {
 function clearDetailChangeCache() {
     detailChangeCache.clear();
     recordChangeDataCache.clear();
+    invalidRecordChangeDataCache.clear();
 }
 
 let __canvasPermanentHintSet = null;
@@ -13831,7 +14802,17 @@ async function refreshCachedCurrentTreeSnapshot(reason = '') {
     try {
         const snapshot = await getBookmarkTreeSnapshot();
         if (snapshot && Array.isArray(snapshot.tree)) {
-            cachedCurrentTree = snapshot.tree;
+            let alignedTree = snapshot.tree;
+            let baselineTree = null;
+            try {
+                const storageData = await new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve));
+                baselineTree = storageData?.lastBookmarkData?.bookmarkTree || null;
+                const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(baselineTree, snapshot.tree, storageData || {});
+                alignedTree = generationAwareTrees?.treeForDiff || snapshot.tree;
+            } catch (_) { }
+
+            cachedOldTree = baselineTree;
+            cachedCurrentTree = alignedTree;
             cachedCurrentTreeIndex = null;
             cachedRenderTreeIndex = null;
             try { window.__canvasRenderTreeIndex = null; } catch (_) { }
@@ -14299,6 +15280,48 @@ function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
 let isRenderingTree = false;
 let pendingRenderRequest = null;
 
+function buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData = {}) {
+    const activeGeneration = normalizeBookmarkComparisonGenerationManual(
+        storageData?.[BOOKMARK_COMPARISON_GENERATION_KEY],
+        1
+    );
+    const baselineGeneration = normalizeBookmarkComparisonGenerationManual(
+        storageData?.lastBookmarkData?.comparisonGeneration,
+        activeGeneration
+    );
+    const crossGeneration = (
+        activeGeneration != null
+        && baselineGeneration != null
+        && activeGeneration !== baselineGeneration
+    );
+    if (!crossGeneration) {
+        return {
+            treeForDiff: currentTree,
+            crossGeneration: false
+        };
+    }
+    if (!Array.isArray(oldTree) || !oldTree[0] || !Array.isArray(currentTree) || !currentTree[0]) {
+        return {
+            treeForDiff: currentTree,
+            crossGeneration: true
+        };
+    }
+    try {
+        const alignedTree = cloneSerializableData(currentTree);
+        if (Array.isArray(alignedTree) && alignedTree[0]) {
+            normalizeTreeIds(alignedTree, oldTree, { strictGlobalUrlMatch: true });
+            return {
+                treeForDiff: alignedTree,
+                crossGeneration: true
+            };
+        }
+    } catch (_) { }
+    return {
+        treeForDiff: currentTree,
+        crossGeneration: true
+    };
+}
+
 // 同步版本的树渲染（真正可 await，用于 Current Changes 预览）
 async function renderTreeViewSync() {
     
@@ -14319,7 +15342,7 @@ async function renderTreeViewSync() {
         // 并行获取数据
         const [snapshot, storageData] = await Promise.all([
             getBookmarkTreeSnapshot(),
-            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
+            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
         ]);
         const currentTree = snapshot ? snapshot.tree : null;
         lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
@@ -14330,20 +15353,22 @@ async function renderTreeViewSync() {
         }
 
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
+        const comparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData);
+        const currentTreeForDiff = comparisonTrees.treeForDiff || currentTree;
         cachedOldTree = oldTree;
-        cachedCurrentTree = currentTree;
+        cachedCurrentTree = currentTreeForDiff;
         cachedCurrentTreeIndex = null;
 
         // 检测变动
         if (oldTree && oldTree[0]) {
-            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTreeForDiff);
             
         } else {
             treeChangeMap = new Map();
         }
 
         // 合并旧树和新树，显示删除的节点
-        let treeToRender = currentTree;
+        let treeToRender = currentTreeForDiff;
         if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
             let hasDeletedNodes = false;
             for (const [, change] of treeChangeMap) {
@@ -14354,10 +15379,10 @@ async function renderTreeViewSync() {
             }
             if (hasDeletedNodes) {
                 try {
-                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
+                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTreeForDiff, treeChangeMap);
                 } catch (error) {
                     console.error('[renderTreeViewSync] 重建树时出错:', error);
-                    treeToRender = currentTree;
+                    treeToRender = currentTreeForDiff;
                 }
             }
         }
@@ -14406,7 +15431,7 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
     try {
         const [snapshot, storageData] = await Promise.all([
             getBookmarkTreeSnapshot(),
-            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
+            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
         ]);
 
         const currentTree = snapshot ? snapshot.tree : null;
@@ -14420,15 +15445,17 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
         }
 
         const oldTree = storageData?.lastBookmarkData?.bookmarkTree || null;
+        const comparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData);
+        const currentTreeForDiff = comparisonTrees.treeForDiff || currentTree;
         cachedOldTree = oldTree;
-        cachedCurrentTree = currentTree;
+        cachedCurrentTree = currentTreeForDiff;
         cachedCurrentTreeIndex = null;
         cachedRenderTreeIndex = null;
         try { window.__canvasRenderTreeIndex = null; } catch (_) { }
         lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
 
         if (oldTree && oldTree[0]) {
-            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTreeForDiff);
         } else {
             treeChangeMap = new Map();
         }
@@ -14437,9 +15464,11 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
             try {
                 const liveTree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
                 if (Array.isArray(liveTree) && liveTree.length > 0) {
-                    const liveMap = await detectTreeChangesFast(oldTree, liveTree);
+                    const liveComparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, liveTree, storageData);
+                    const liveTreeForDiff = liveComparisonTrees.treeForDiff || liveTree;
+                    const liveMap = await detectTreeChangesFast(oldTree, liveTreeForDiff);
                     if (liveMap instanceof Map && liveMap.size > 0) {
-                        cachedCurrentTree = liveTree;
+                        cachedCurrentTree = liveTreeForDiff;
                         cachedCurrentTreeIndex = null;
                         cachedRenderTreeIndex = null;
                         try { window.__canvasRenderTreeIndex = null; } catch (_) { }
@@ -14646,7 +15675,7 @@ async function renderTreeView(forceRefresh = false) {
     // 获取数据并行处理
     Promise.all([
         getBookmarkTreeSnapshot(),
-        new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
+        new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
     ]).then(async ([snapshot, storageData]) => {
         const currentTree = snapshot ? snapshot.tree : null;
         const snapshotVersion = snapshot ? snapshot.version : null;
@@ -14665,6 +15694,11 @@ async function renderTreeView(forceRefresh = false) {
             }
             return;
         }
+        const oldTree = storageData?.lastBookmarkData?.bookmarkTree || null;
+        const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData || {});
+        const currentTreeForDiff = currentView === 'current-changes'
+            ? (generationAwareTrees?.treeForDiff || currentTree)
+            : currentTree;
 
         // 版本快路径：优先使用 background 快照版本，避免对整棵树做 JSON 指纹（非常耗时）
         const canUseVersion = snapshotVersion !== null && typeof snapshotVersion !== 'undefined';
@@ -14675,7 +15709,8 @@ async function renderTreeView(forceRefresh = false) {
             
 
             if (currentView === 'current-changes' && treeContainer.children.length) {
-                cachedCurrentTree = currentTree;
+                cachedOldTree = oldTree;
+                cachedCurrentTree = currentTreeForDiff;
                 cachedCurrentTreeIndex = null;
                 if (currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
                     await ensureCanvasLazyChangeHints(false);
@@ -14737,9 +15772,8 @@ async function renderTreeView(forceRefresh = false) {
         // 树有变化，重新渲染
         
 
-        const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
-        cachedCurrentTree = currentTree; // 缓存当前树，用于智能路径检测
+        cachedCurrentTree = currentTreeForDiff; // 缓存“按代口径”树，避免被旧口径覆盖
         cachedCurrentTreeIndex = null;
 
         // 【关键修复】预热 favicon 缓存 - 从 IndexedDB 批量加载到内存
@@ -14778,10 +15812,10 @@ async function renderTreeView(forceRefresh = false) {
             // previously we skipped it for performance, now we keep it but optimize rendering
             // treeChangeMap = new Map(); // Don't skip!
             
-            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTreeForDiff);
         } else if (oldTree && oldTree[0]) {
             
-            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTreeForDiff);
             
 
             // 打印前5个变动
@@ -14802,7 +15836,7 @@ async function renderTreeView(forceRefresh = false) {
         }
 
         // 合并旧树和新树，显示删除的节点
-        let treeToRender = currentTree;
+        let treeToRender = currentTreeForDiff;
         if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
             // 检查是否有删除的节点，只有在有删除节点时才重建树
             let hasDeletedNodes = false;
@@ -14815,10 +15849,10 @@ async function renderTreeView(forceRefresh = false) {
             if (hasDeletedNodes) {
                 
                 try {
-                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
+                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTreeForDiff, treeChangeMap);
                 } catch (error) {
                     console.error('[renderTreeView] 重建树时出错:', error);
-                    treeToRender = currentTree; // 回退到原始树
+                    treeToRender = currentTreeForDiff; // 回退到按代口径树
                 }
             }
         }
@@ -18258,6 +19292,9 @@ async function ensureRecordBookmarkTree(record) {
 async function getRecordChangeDataLazy(recordTime) {
     const timeKey = String(recordTime || '').trim();
     if (!timeKey) return null;
+    if (invalidRecordChangeDataCache.has(timeKey)) {
+        return null;
+    }
     if (recordChangeDataCache.has(timeKey)) {
         return recordChangeDataCache.get(timeKey);
     }
@@ -18276,6 +19313,13 @@ async function getRecordChangeDataLazy(recordTime) {
 
     recordChangeDataCache.set(timeKey, payload || null);
     return payload || null;
+}
+
+function invalidateRecordChangeDataCache(recordTime) {
+    const timeKey = String(recordTime || '').trim();
+    if (!timeKey) return;
+    invalidRecordChangeDataCache.add(timeKey);
+    recordChangeDataCache.delete(timeKey);
 }
 
 function deserializeRecordChangeMap(changeData) {
@@ -18305,6 +19349,101 @@ function cloneSerializableData(value) {
     } catch (_) {
         return value;
     }
+}
+
+function normalizeBookmarkComparisonGenerationManual(value, fallback = 1) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 1) return Math.floor(parsed);
+    if (fallback === null || typeof fallback === 'undefined') return null;
+    const parsedFallback = Number(fallback);
+    if (Number.isFinite(parsedFallback) && parsedFallback >= 1) return Math.floor(parsedFallback);
+    return 1;
+}
+
+function computeStableTextHashManual(text) {
+    const input = String(text || '');
+    let hash = 2166136261;
+    for (let i = 0; i < input.length; i += 1) {
+        hash ^= input.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function buildBookmarkTreeContentSignatureManual(tree) {
+    if (!Array.isArray(tree) || tree.length === 0) return '';
+    try {
+        const prints = generateFingerprintsFromTree(tree);
+        const bookmarkPrints = Array.isArray(prints?.bookmarks)
+            ? prints.bookmarks.slice().sort()
+            : [];
+        const folderPrints = Array.isArray(prints?.folders)
+            ? prints.folders.slice().sort()
+            : [];
+        const body = `${bookmarkPrints.join('\n')}\n---\n${folderPrints.join('\n')}`;
+        return `${bookmarkPrints.length}:${folderPrints.length}:${computeStableTextHashManual(body)}`;
+    } catch (_) {
+        return '';
+    }
+}
+
+function shouldUsePersistedChangeDataForRecord(options = {}) {
+    const record = options?.record || null;
+    const previousRecord = options?.previousRecord || null;
+    const persistedChangeData = options?.persistedChangeData || null;
+    const comparisonBaseTree = options?.comparisonBaseTree || null;
+    const currentTree = record?.bookmarkTree || null;
+
+    if (!persistedChangeData || typeof persistedChangeData !== 'object') return false;
+    if (!Array.isArray(persistedChangeData.changeEntries)) return false;
+
+    const currentGeneration = normalizeBookmarkComparisonGenerationManual(record?.comparisonGeneration, null);
+    const previousGeneration = normalizeBookmarkComparisonGenerationManual(
+        previousRecord?.comparisonGeneration,
+        currentGeneration
+    );
+    const persistedCurrentGeneration = normalizeBookmarkComparisonGenerationManual(
+        persistedChangeData?.comparisonGeneration,
+        null
+    );
+    const persistedBaselineGeneration = normalizeBookmarkComparisonGenerationManual(
+        persistedChangeData?.baselineGeneration,
+        persistedCurrentGeneration
+    );
+    const isCrossGenerationRecord = (
+        currentGeneration != null
+        && previousGeneration != null
+        && currentGeneration !== previousGeneration
+    );
+    const schemaVersion = Number(persistedChangeData?.schemaVersion || 0);
+
+    if (schemaVersion >= 2) {
+        if (currentGeneration != null && persistedCurrentGeneration != null && persistedCurrentGeneration !== currentGeneration) {
+            return false;
+        }
+        if (previousGeneration != null && persistedBaselineGeneration != null && persistedBaselineGeneration !== previousGeneration) {
+            return false;
+        }
+
+        const expectedBaselineSignature = buildBookmarkTreeContentSignatureManual(comparisonBaseTree);
+        const expectedCurrentSignature = buildBookmarkTreeContentSignatureManual(currentTree);
+        const persistedBaselineSignature = String(persistedChangeData?.comparisonBaselineSignature || '').trim();
+        const persistedCurrentSignature = String(persistedChangeData?.comparisonCurrentSignature || '').trim();
+
+        if (persistedBaselineSignature && expectedBaselineSignature && persistedBaselineSignature !== expectedBaselineSignature) {
+            return false;
+        }
+        if (persistedCurrentSignature && expectedCurrentSignature && persistedCurrentSignature !== expectedCurrentSignature) {
+            return false;
+        }
+        return true;
+    }
+
+    // 旧 schema 没有代与签名：跨代记录默认不信任旧 payload，直接回退重算
+    if (isCrossGenerationRecord) {
+        return false;
+    }
+    return true;
 }
 
 function inferCollectionGroupChangeTypeFromTitle(title) {
@@ -20317,12 +21456,41 @@ function setupRealtimeMessageListener() {
         } else if (message.action === 'updateFaviconFromTab') {
             // 从打开的 tab 更新 favicon（静默）
             if (message.url && message.favIconUrl) {
-                FaviconCache.save(message.url, message.favIconUrl).then(() => {
-                    // 更新页面上对应的 favicon 图标
-                    updateFaviconImages(message.url, message.favIconUrl);
-                }).catch(() => {
-                    // 静默处理错误
-                });
+                if (FaviconCache.isStoredFaviconData(message.favIconUrl)) {
+                    const incomingDataUrl = message.favIconUrl;
+                    Promise.resolve().then(async () => {
+                        const incomingDimensions = await FaviconCache.getDataUrlDimensions(incomingDataUrl);
+                        const incomingMinDimension = incomingDimensions
+                            ? Math.min(
+                                Number(incomingDimensions.width) || 0,
+                                Number(incomingDimensions.height) || 0
+                            )
+                            : 0;
+                        if (incomingMinDimension > 0 && incomingMinDimension < 16) {
+                            return;
+                        }
+
+                        const existing = await FaviconCache.get(message.url);
+                        if (existing && existing !== 'failed' && FaviconCache.isStoredFaviconData(existing)) {
+                            const existingDimensions = await FaviconCache.getDataUrlDimensions(existing);
+                            const existingMinDimension = existingDimensions
+                                ? Math.min(
+                                    Number(existingDimensions.width) || 0,
+                                    Number(existingDimensions.height) || 0
+                                )
+                                : 0;
+                            if (existingMinDimension > 0 && incomingMinDimension > 0 && incomingMinDimension < existingMinDimension) {
+                                return;
+                            }
+                        }
+
+                        await FaviconCache.save(message.url, incomingDataUrl);
+                        // 更新页面上对应的 favicon 图标
+                        updateFaviconImages(message.url, incomingDataUrl);
+                    }).catch(() => {
+                        // 静默处理错误
+                    });
+                }
             }
         } else if (message.action === 'clearExplicitMoved') {
             try {
@@ -20620,6 +21788,9 @@ function formatRestoreRecoveryPhaseLabel(phase, lang = currentLang) {
     if (normalized === 'destructive_started') return isEn ? 'Destructive Phase' : '破坏性阶段';
     if (normalized === 'apply_started') return isEn ? 'Applying Changes' : '正在应用变更';
     if (normalized === 'finalizing') return isEn ? 'Finalizing' : '正在收尾';
+    if (normalized === 'continue_failed') return isEn ? 'Continue Failed' : '继续失败';
+    if (normalized === 'rollback_failed') return isEn ? 'Rollback Failed' : '回滚失败';
+    if (normalized === 'locked_incident') return isEn ? 'Locked Incident' : '故障锁定';
     if (normalized === 'completed') return isEn ? 'Completed' : '已完成';
     return normalized || (isEn ? 'Unknown' : '未知');
 }
@@ -20649,6 +21820,9 @@ function closeRestoreRecoveryBlockingOverlayInHistory() {
     restoreRecoveryBlockingOverlayState = null;
     if (!state) return;
 
+    if (typeof state.unlockConfirmCleanup === 'function') {
+        state.unlockConfirmCleanup();
+    }
     if (state.timer) {
         window.clearInterval(state.timer);
     }
@@ -20718,12 +21892,17 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                     <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${isEn ? 'Resolve Unfinished Restore/Revert' : '处理未完成的恢复/撤销事务'}</div>
                     <div style="font-size:13px;line-height:1.7;color:var(--text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it here now, or dismiss the reminder after repeated prompts.' : '检测到一次未完成的恢复/撤销事务。你可以现在在这里处理，或在多次提醒后关闭本提醒。'}</div>
                 </div>
-                <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:48px;padding:4px 8px;border-radius:999px;background:var(--bg-secondary);border:1px solid var(--border-color);font-size:12px;font-weight:700;color:var(--text-secondary);white-space:nowrap;flex-shrink:0;"></div>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <button id="restoreRecoveryQuickExportBtn" style="min-width:128px;padding:6px 10px;border:1px solid var(--border-color);border-radius:999px;background:transparent;color:var(--text-primary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Export 2-HTML' : '导出2个HTML'}</button>
+                    <button id="restoreRecoveryUnlockBtn" style="min-width:132px;padding:6px 10px;border:1px dashed var(--border-color);border-radius:999px;background:transparent;color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁'}</button>
+                    <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:48px;padding:4px 8px;border-radius:999px;background:var(--bg-secondary);border:1px solid var(--border-color);font-size:12px;font-weight:700;color:var(--text-secondary);white-space:nowrap;flex-shrink:0;"></div>
+                </div>
             </div>
             <div id="restoreRecoveryBlockingSummary" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;padding:14px;border-radius:12px;background:var(--bg-secondary);border:1px solid var(--border-color);font-size:13px;"></div>
             <div id="restoreRecoveryBlockingMessage" style="padding:12px 14px;border-radius:12px;background:var(--accent-light);color:var(--accent-primary);border:1px solid var(--border-color);font-size:13px;line-height:1.7;"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
                 <button id="restoreRecoveryDismissBtn" style="display:none;min-width:168px;padding:10px 16px;border:1px dashed var(--border-color);border-radius:10px;background:transparent;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close Panel Only' : '仅关闭当前面板'}</button>
+                <button id="restoreRecoveryExportBackupBtn" style="min-width:168px;padding:10px 16px;border:1px solid var(--border-color);border-radius:10px;background:transparent;color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Export Backup Package' : '导出备份包（2个HTML）'}</button>
                 <button id="restoreRecoveryRollbackBtn" style="min-width:168px;padding:10px 16px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
                 <button id="restoreRecoveryContinueBtn" style="min-width:168px;padding:10px 16px;border:none;border-radius:10px;background:var(--accent-primary);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
             </div>
@@ -20736,7 +21915,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     const summary = panel.querySelector('#restoreRecoveryBlockingSummary');
     const message = panel.querySelector('#restoreRecoveryBlockingMessage');
     const promptCountBadge = panel.querySelector('#restoreRecoveryPromptCountBadge');
+    const quickExportBtn = panel.querySelector('#restoreRecoveryQuickExportBtn');
+    const unlockBtn = panel.querySelector('#restoreRecoveryUnlockBtn');
     const dismissBtn = panel.querySelector('#restoreRecoveryDismissBtn');
+    const exportBackupBtn = panel.querySelector('#restoreRecoveryExportBackupBtn');
     const continueBtn = panel.querySelector('#restoreRecoveryContinueBtn');
     const rollbackBtn = panel.querySelector('#restoreRecoveryRollbackBtn');
 
@@ -20746,7 +21928,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         summary,
         message,
         promptCountBadge,
+        quickExportBtn,
+        unlockBtn,
         dismissBtn,
+        exportBackupBtn,
         continueBtn,
         rollbackBtn,
         actionRunning: false,
@@ -20755,6 +21940,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         lastStatus: null,
         timer: null,
         actionHintTimer: null,
+        unlockConfirmOpen: false,
+        unlockConfirmCleanup: null,
+        thresholdUnlockPromptedSessionId: '',
+        thresholdUnlockPromptedAtCount: 0,
         keydownHandler: null,
         focusHandler: null
     };
@@ -20762,20 +21951,48 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
 
     const continueIdleText = isEn ? 'Continue to Target' : '继续到目标状态';
     const rollbackIdleText = isEn ? 'Rollback to Start' : '回滚到开始前状态';
+    const exportIdleText = isEn ? 'Export Backup Package' : '导出备份包（2个HTML）';
+    const quickExportIdleText = isEn ? 'Export 2-HTML' : '导出2个HTML';
+    const unlockIdleText = isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁';
 
     const applyActionButtonLabels = (actionType = '') => {
         if (actionType === 'continue') {
             continueBtn.textContent = isEn ? 'Continuing…' : '继续处理中…';
             rollbackBtn.textContent = rollbackIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
             return;
         }
         if (actionType === 'rollback') {
             rollbackBtn.textContent = isEn ? 'Rolling back…' : '回滚处理中…';
             continueBtn.textContent = continueIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
+            return;
+        }
+        if (actionType === 'export') {
+            exportBackupBtn.textContent = isEn ? 'Exporting…' : '导出中…';
+            if (quickExportBtn) quickExportBtn.textContent = isEn ? 'Exporting…' : '导出中…';
+            continueBtn.textContent = continueIdleText;
+            rollbackBtn.textContent = rollbackIdleText;
+            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
+            return;
+        }
+        if (actionType === 'unlock') {
+            if (unlockBtn) unlockBtn.textContent = isEn ? 'Unlocking…' : '解锁中…';
+            continueBtn.textContent = continueIdleText;
+            rollbackBtn.textContent = rollbackIdleText;
+            exportBackupBtn.textContent = exportIdleText;
+            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
             return;
         }
         continueBtn.textContent = continueIdleText;
         rollbackBtn.textContent = rollbackIdleText;
+        exportBackupBtn.textContent = exportIdleText;
+        if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
+        if (unlockBtn) unlockBtn.textContent = unlockIdleText;
     };
 
     const setMessage = (textValue, tone = 'info') => {
@@ -20789,6 +22006,142 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             message.style.border = '1px solid var(--border-color)';
         }
         message.textContent = textValue;
+    };
+
+    const showUnlockSecondaryConfirm = (options = {}) => {
+        if (state.unlockConfirmOpen) {
+            return Promise.resolve('cancel');
+        }
+
+        const thresholdReached = options && options.thresholdReached === true;
+        const titleText = thresholdReached
+            ? (isEn ? 'Reminder Threshold Reached' : '已达到提醒阈值')
+            : (isEn ? 'Confirm Unlock' : '确认解锁');
+        const detailText = thresholdReached
+            ? (isEn
+                ? 'This transaction has reached the reminder threshold. It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.'
+                : '该事务已达到提醒阈值。建议先手动备份（导出2个HTML），再解锁并停止后续提醒。')
+            : (isEn
+                ? 'Before unlocking, it is recommended to manually back up first (export 2 HTML files). Unlocking will clear this unfinished transaction.'
+                : '解锁前建议先手动备份（导出2个HTML）。解锁会清理当前未完成事务。');
+        const unlockButtonText = thresholdReached
+            ? (isEn ? 'Stop Prompt & Unlock' : '停止提醒并解锁')
+            : (isEn ? 'Unlock Now' : '直接解锁');
+
+        state.unlockConfirmOpen = true;
+        return new Promise((resolve) => {
+            const layer = document.createElement('div');
+            layer.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                background: rgba(2, 6, 23, 0.36);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 14px;
+                box-sizing: border-box;
+            `;
+
+            const card = document.createElement('div');
+            card.setAttribute('role', 'dialog');
+            card.setAttribute('aria-modal', 'true');
+            card.style.cssText = `
+                width: min(380px, calc(100vw - 36px));
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+                padding: 14px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            `;
+
+            card.innerHTML = `
+                <div style="font-size:15px;font-weight:700;">${titleText}</div>
+                <div style="font-size:12px;line-height:1.6;color:var(--text-secondary);">${detailText}</div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                    <button id="restoreRecoveryUnlockCancelBtn" style="min-width:92px;padding:8px 10px;border:1px dashed var(--border-color);border-radius:8px;background:transparent;color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Cancel' : '取消'}</button>
+                    <button id="restoreRecoveryUnlockDirectBtn" style="min-width:118px;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;font-weight:600;cursor:pointer;">${unlockButtonText}</button>
+                    <button id="restoreRecoveryUnlockBackupBtn" style="min-width:132px;padding:8px 10px;border:none;border-radius:8px;background:var(--accent-primary);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">${isEn ? 'Manual Backup (2-HTML)' : '手动备份（2个HTML）'}</button>
+                </div>
+            `;
+
+            layer.appendChild(card);
+            document.body.appendChild(layer);
+
+            const backupBtn = card.querySelector('#restoreRecoveryUnlockBackupBtn');
+            const unlockDirectBtn = card.querySelector('#restoreRecoveryUnlockDirectBtn');
+            const cancelBtn = card.querySelector('#restoreRecoveryUnlockCancelBtn');
+
+            const cleanup = () => {
+                if (!state.unlockConfirmOpen) return;
+                state.unlockConfirmOpen = false;
+                if (state.unlockConfirmCleanup === cleanup) {
+                    state.unlockConfirmCleanup = null;
+                }
+                document.removeEventListener('keydown', onKeyDown, true);
+                if (layer.parentNode) {
+                    layer.parentNode.removeChild(layer);
+                }
+            };
+            state.unlockConfirmCleanup = cleanup;
+
+            const settle = (choice) => {
+                cleanup();
+                resolve(choice);
+            };
+
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    settle('cancel');
+                }
+            };
+
+            layer.addEventListener('click', (event) => {
+                if (event.target === layer) {
+                    settle('cancel');
+                }
+            });
+            if (cancelBtn) cancelBtn.addEventListener('click', () => settle('cancel'));
+            if (unlockDirectBtn) unlockDirectBtn.addEventListener('click', () => settle('unlock'));
+            if (backupBtn) backupBtn.addEventListener('click', () => settle('export'));
+            document.addEventListener('keydown', onKeyDown, true);
+        });
+    };
+
+    const formatFailureReason = (transaction = {}) => {
+        const action = String(transaction.lastFailureAction || '').trim().toLowerCase();
+        const stage = String(transaction.lastFailureStage || '').trim();
+        const category = String(transaction.lastFailureCategory || '').trim().toLowerCase();
+        const errorMessage = String(transaction.lastFailureMessage || '').trim();
+        const actionLabel = action === 'rollback'
+            ? (isEn ? 'Rollback' : '回滚')
+            : (action === 'continue' ? (isEn ? 'Continue' : '继续') : '');
+        const categoryLabel = category === 'algorithm_error'
+            ? (isEn ? 'Algorithm Error' : '算法错误')
+            : (category === 'browser_or_environment_error'
+                ? (isEn ? 'Browser/Environment Error' : '浏览器限制/环境错误')
+                : (category === 'other_error' ? (isEn ? 'Other Error' : '其他错误') : ''));
+        const parts = [];
+        if (actionLabel) {
+            parts.push(isEn ? `Action=${actionLabel}` : `动作=${actionLabel}`);
+        }
+        if (categoryLabel) {
+            parts.push(isEn ? `Type=${categoryLabel}` : `类型=${categoryLabel}`);
+        }
+        if (stage) {
+            parts.push(isEn ? `Stage=${stage}` : `阶段=${stage}`);
+        }
+        if (errorMessage) {
+            parts.push(errorMessage);
+        }
+        return parts.join(' | ');
     };
 
     const renderSummary = (status) => {
@@ -20807,6 +22160,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         const titleText = String(transaction.displayTitle || '').trim();
         if (titleText) {
             rows.push([isEn ? 'Title' : '标题备注', titleText]);
+        }
+        const failureReason = formatFailureReason(transaction);
+        if (failureReason) {
+            rows.push([isEn ? 'Last Failure' : '最近失败', failureReason]);
         }
         summary.innerHTML = '';
         rows.forEach(([label, value]) => {
@@ -20835,10 +22192,27 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         const canRollback = transaction.canRollback !== false;
         const isIntentOnly = transaction.intentOnly === true;
         const isActive = status?.active === true;
+        const phase = String(transaction.phase || '').trim().toLowerCase();
+        const lockedIncident = transaction.lockedIncident === true || phase === 'locked_incident';
         const promptCount = Math.max(0, Number(transaction.promptCount) || 0);
         const promptThreshold = Math.max(1, Number(transaction.promptThreshold) || 3);
         const canDismissPanel = transaction.canDismissPanel === true;
+        const canExportBackupPackage = transaction.canExportBackupPackage === true;
+        const canUnlockNow = true;
         const allowDismiss = canDismissPanel || isIntentOnly;
+        const sessionId = String(transaction.sessionId || '').trim();
+        const failureReason = formatFailureReason(transaction);
+        if (state.thresholdUnlockPromptedSessionId !== sessionId) {
+            state.thresholdUnlockPromptedSessionId = sessionId;
+            state.thresholdUnlockPromptedAtCount = 0;
+        }
+        const shouldAutoPromptThresholdUnlock = canDismissPanel
+            && !isIntentOnly
+            && !isActive
+            && !state.actionRunning
+            && !state.unlockConfirmOpen
+            && promptCount === promptThreshold
+            && state.thresholdUnlockPromptedAtCount !== promptCount;
         renderSummary(status);
 
         if (promptCount > 0) {
@@ -20853,14 +22227,23 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
 
         continueBtn.disabled = state.actionRunning || isActive || !canContinue;
         rollbackBtn.disabled = state.actionRunning || isActive || !canRollback;
+        exportBackupBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
+        if (quickExportBtn) quickExportBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
+        if (unlockBtn) unlockBtn.disabled = state.actionRunning || isActive || !canUnlockNow;
         dismissBtn.disabled = state.actionRunning || isActive || !allowDismiss;
         dismissBtn.style.display = allowDismiss ? 'inline-flex' : 'none';
 
         continueBtn.style.opacity = continueBtn.disabled ? '0.55' : '1';
         rollbackBtn.style.opacity = rollbackBtn.disabled ? '0.55' : '1';
+        exportBackupBtn.style.opacity = exportBackupBtn.disabled ? '0.55' : '1';
+        if (quickExportBtn) quickExportBtn.style.opacity = quickExportBtn.disabled ? '0.55' : '1';
+        if (unlockBtn) unlockBtn.style.opacity = unlockBtn.disabled ? '0.55' : '1';
         dismissBtn.style.opacity = dismissBtn.disabled ? '0.55' : '1';
         continueBtn.style.cursor = continueBtn.disabled ? 'not-allowed' : 'pointer';
         rollbackBtn.style.cursor = rollbackBtn.disabled ? 'not-allowed' : 'pointer';
+        exportBackupBtn.style.cursor = exportBackupBtn.disabled ? 'not-allowed' : 'pointer';
+        if (quickExportBtn) quickExportBtn.style.cursor = quickExportBtn.disabled ? 'not-allowed' : 'pointer';
+        if (unlockBtn) unlockBtn.style.cursor = unlockBtn.disabled ? 'not-allowed' : 'pointer';
         dismissBtn.style.cursor = dismissBtn.disabled ? 'not-allowed' : 'pointer';
         if (!state.actionRunning) {
             applyActionButtonLabels('');
@@ -20882,8 +22265,40 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             );
             return;
         }
+        if (lockedIncident) {
+            setMessage(
+                isEn
+                    ? `Continue and rollback both failed. Export the backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `继续和回滚都失败，当前已锁定为故障态。请先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
+        if (phase === 'continue_failed') {
+            setMessage(
+                isEn
+                    ? `Continue failed. You can roll back, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `继续失败。你可以先回滚，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
+        if (phase === 'rollback_failed') {
+            setMessage(
+                isEn
+                    ? `Rollback failed. You can continue to target, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
+                    : `回滚失败。你可以继续到目标状态，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
+            return;
+        }
         if (!canContinue && !canRollback) {
-            setMessage(isEn ? 'Transaction snapshots are temporarily unavailable. Retrying detection automatically…' : '事务快照暂时不可用，正在自动重试检测……', 'error');
+            setMessage(
+                isEn
+                    ? `Transaction snapshots are temporarily unavailable.${failureReason ? ` ${failureReason}` : ''}`
+                    : `事务快照暂时不可用。${failureReason ? ` ${failureReason}` : ''}`,
+                'error'
+            );
             return;
         }
         if (!canContinue) {
@@ -20906,10 +22321,20 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         if (canDismissPanel) {
             setMessage(
                 isEn
-                    ? 'This unfinished transaction has already reopened multiple times. You may close this panel now and continue using the regular actions. If you start a new restore/revert, it will replace this unfinished transaction.'
-                    : '这次未完成事务已经重复弹出多次。你现在可以关闭当前面板并继续使用常规操作；如果你发起新的恢复/撤销，它会替换这次未完成事务。',
+                    ? `Reminder threshold reached (${promptCount}/${promptThreshold}). It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.`
+                    : `已达到提醒阈值（${promptCount}/${promptThreshold}）。建议先手动备份（导出2个HTML），再执行解锁并停止后续提醒。`,
                 'info'
             );
+            if (shouldAutoPromptThresholdUnlock) {
+                state.thresholdUnlockPromptedAtCount = promptCount;
+                window.setTimeout(async () => {
+                    if (restoreRecoveryBlockingOverlayState !== state) return;
+                    if (state.actionRunning || state.unlockConfirmOpen) return;
+                    const decision = await showUnlockSecondaryConfirm({ thresholdReached: true });
+                    if (restoreRecoveryBlockingOverlayState !== state) return;
+                    handleUnlockDecision(decision, 'threshold');
+                }, 0);
+            }
             return;
         }
         setMessage(isEn ? 'Choose one action to resolve this unfinished transaction. The dialog cannot be dismissed.' : '请选择“继续”或“回滚”来处理这次未完成事务；该面板不能关闭。', 'info');
@@ -20932,15 +22357,33 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     };
 
     const runAction = async (action) => {
-        const actionType = action === 'continueRestoreRecoveryTransaction' ? 'continue' : 'rollback';
+        const actionType = action === 'continueRestoreRecoveryTransaction'
+            ? 'continue'
+            : (action === 'rollbackRestoreRecoveryTransaction'
+                ? 'rollback'
+                : (action === 'unlockRestoreRecoveryWriteLock' ? 'unlock' : 'export'));
+        const actionLabel = actionType === 'continue'
+            ? (isEn ? 'Continue' : '继续')
+            : (actionType === 'rollback'
+                ? (isEn ? 'Rollback' : '回滚')
+                : (actionType === 'unlock' ? (isEn ? 'Unlock' : '解锁') : (isEn ? 'Export Backup Package' : '导出备份包')));
+        if (typeof state.unlockConfirmCleanup === 'function') {
+            state.unlockConfirmCleanup();
+        }
         state.actionRunning = true;
         state.actionType = actionType;
         state.actionStartedAt = Date.now();
         continueBtn.disabled = true;
         rollbackBtn.disabled = true;
+        exportBackupBtn.disabled = true;
+        if (quickExportBtn) quickExportBtn.disabled = true;
+        if (unlockBtn) unlockBtn.disabled = true;
         dismissBtn.disabled = true;
         continueBtn.style.opacity = '0.55';
         rollbackBtn.style.opacity = '0.55';
+        exportBackupBtn.style.opacity = '0.55';
+        if (quickExportBtn) quickExportBtn.style.opacity = '0.55';
+        if (unlockBtn) unlockBtn.style.opacity = '0.55';
         dismissBtn.style.opacity = '0.55';
         applyActionButtonLabels(actionType);
 
@@ -20955,10 +22398,28 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 );
                 return;
             }
+            if (actionType === 'rollback') {
+                setMessage(
+                    isEn
+                        ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
+                        : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
+                    'info'
+                );
+                return;
+            }
+            if (actionType === 'unlock') {
+                setMessage(
+                    isEn
+                        ? `Unlocking and stopping further prompts… (${elapsedSeconds}s)`
+                        : `正在解锁并停止后续弹窗……（${elapsedSeconds}秒）`,
+                    'info'
+                );
+                return;
+            }
             setMessage(
                 isEn
-                    ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
-                    : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
+                    ? `Exporting backup package… (${elapsedSeconds}s)`
+                    : `正在导出备份包……（${elapsedSeconds}秒）`,
                 'info'
             );
         };
@@ -20973,7 +22434,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         }, 1000);
 
         try {
-            const result = await browserAPI.runtime.sendMessage({ action });
+            const payload = (actionType === 'export' || actionType === 'unlock')
+                ? { action, sessionId: state.lastStatus?.transaction?.sessionId || '' }
+                : { action };
+            const result = await browserAPI.runtime.sendMessage(payload);
             if (!result || result.success !== true) {
                 state.actionRunning = false;
                 state.actionType = '';
@@ -20985,8 +22449,8 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 await refreshStatus();
                 setMessage(
                     isEn
-                        ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${result && result.error ? result.error : 'Unknown error'}`
-                        : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${result && result.error ? result.error : '未知错误'}`,
+                        ? `${actionLabel} failed: ${result && result.error ? result.error : 'Unknown error'}`
+                        : `${actionLabel}失败：${result && result.error ? result.error : '未知错误'}`,
                     'error'
                 );
                 return;
@@ -20998,7 +22462,31 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 state.actionHintTimer = null;
             }
             applyActionButtonLabels('');
-            showToast(action === 'continueRestoreRecoveryTransaction'
+            if (actionType === 'export') {
+                showToast(isEn ? 'Backup package exported.' : '备份包已导出。');
+                if (Array.isArray(result?.files) && result.files.length > 0) {
+                    const previewText = result.files.slice(0, 2).join(' ; ');
+                    setMessage(
+                        isEn
+                            ? `Export completed: ${previewText}`
+                            : `导出完成：${previewText}`,
+                        'info'
+                    );
+                }
+                await refreshStatus();
+                return true;
+            }
+            if (actionType === 'unlock') {
+                closeRestoreRecoveryBlockingOverlayInHistory();
+                showToast(
+                    isEn ? 'Prompts disabled and lock cleared.' : '已停止弹出并解除写锁。',
+                    'info',
+                    2600
+                );
+                setTimeout(() => window.location.reload(), 120);
+                return true;
+            }
+            showToast(actionType === 'continue'
                 ? (isEn ? 'Continue completed.' : '继续完成。')
                 : (isEn ? 'Rollback completed.' : '回滚完成。'));
             if (action === 'continueRestoreRecoveryTransaction' && result?.restoreRecordWarning) {
@@ -21008,6 +22496,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 );
             }
             setTimeout(() => window.location.reload(), 250);
+            return true;
         } catch (error) {
             state.actionRunning = false;
             state.actionType = '';
@@ -21019,11 +22508,40 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             await refreshStatus();
             setMessage(
                 isEn
-                    ? `${action === 'continueRestoreRecoveryTransaction' ? 'Continue' : 'Rollback'} failed: ${error?.message || error}`
-                    : `${action === 'continueRestoreRecoveryTransaction' ? '继续' : '回滚'}失败：${error?.message || error}`,
+                    ? `${actionLabel} failed: ${error?.message || error}`
+                    : `${actionLabel}失败：${error?.message || error}`,
                 'error'
             );
+            return false;
         }
+    };
+
+    const handleUnlockDecision = (decision, source = 'manual') => {
+        if (decision === 'cancel') {
+            if (source === 'threshold') {
+                setMessage(
+                    isEn
+                        ? 'You can manually back up first, then unlock to stop future prompts.'
+                        : '你可以先手动备份，再解锁并停止后续提醒。',
+                    'info'
+                );
+            }
+            return;
+        }
+        if (decision === 'export') {
+            if (exportBackupBtn.disabled) {
+                setMessage(
+                    isEn
+                        ? 'Backup export is unavailable right now. Please retry after snapshots become available.'
+                        : '当前无法导出备份包，请在快照可用后重试。',
+                    'error'
+                );
+                return;
+            }
+            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+            return;
+        }
+        runAction('unlockRestoreRecoveryWriteLock').catch(() => { });
     };
 
     continueBtn.addEventListener('click', () => {
@@ -21034,6 +22552,23 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         if (rollbackBtn.disabled) return;
         runAction('rollbackRestoreRecoveryTransaction').catch(() => { });
     });
+    exportBackupBtn.addEventListener('click', () => {
+        if (exportBackupBtn.disabled) return;
+        runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+    });
+    if (quickExportBtn) {
+        quickExportBtn.addEventListener('click', () => {
+            if (quickExportBtn.disabled) return;
+            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
+        });
+    }
+    if (unlockBtn) {
+        unlockBtn.addEventListener('click', async () => {
+            if (unlockBtn.disabled) return;
+            const decision = await showUnlockSecondaryConfirm();
+            handleUnlockDecision(decision, 'manual');
+        });
+    }
     dismissBtn.addEventListener('click', () => {
         if (dismissBtn.disabled) return;
         const isIntentOnly = state.lastStatus?.transaction?.intentOnly === true;
@@ -21068,13 +22603,14 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     });
 
     state.keydownHandler = (event) => {
+        if (state.unlockConfirmOpen) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
             return;
         }
         if (event.key === 'Tab') {
-            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length === 0) {
                 event.preventDefault();
                 panel.focus();
@@ -21089,9 +22625,10 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         }
     };
     state.focusHandler = (event) => {
+        if (state.unlockConfirmOpen) return;
         if (!overlay.contains(event.target)) {
             event.stopPropagation();
-            const focusable = [rollbackBtn, continueBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
+            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
             if (focusable.length > 0) {
                 focusable[0].focus();
             } else {
@@ -21132,7 +22669,11 @@ async function maybePromptRestoreRecoveryTransactionInHistory() {
             return;
         }
         if (status.transaction.canDismissPanel === true && status.transaction.intentOnly !== true) {
-            return;
+            const promptCount = Math.max(0, Number(status.transaction.promptCount) || 0);
+            const promptThreshold = Math.max(1, Number(status.transaction.promptThreshold) || 1);
+            if (promptCount > promptThreshold) {
+                return;
+            }
         }
         await showRestoreRecoveryBlockingOverlayInHistory(status);
     } catch (error) {
@@ -22682,6 +24223,11 @@ function mergeCurrentChangesStatsWithHistoryCounts(baseStats = {}, counts = null
         return merged;
     }
 
+    // 状态卡片口径优先：只在上游缺失细分统计时，才回退使用可渲染树计数。
+    if (hasAnyCurrentChangesStatsCounts(merged)) {
+        return merged;
+    }
+
     const readPair = (key) => ({
         bookmarks: Number(counts?.[key]?.bookmarks || 0),
         folders: Number(counts?.[key]?.folders || 0)
@@ -22704,6 +24250,49 @@ function mergeCurrentChangesStatsWithHistoryCounts(baseStats = {}, counts = null
     merged.modifiedCount = modified.bookmarks + modified.folders;
 
     return merged;
+}
+
+function flattenCurrentChangesStatsTotals(stats = {}) {
+    const toNum = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0);
+    return {
+        added: toNum(stats?.bookmarkAdded) + toNum(stats?.folderAdded),
+        deleted: toNum(stats?.bookmarkDeleted) + toNum(stats?.folderDeleted),
+        moved: toNum(stats?.movedCount),
+        modified: toNum(stats?.modifiedCount)
+    };
+}
+
+function flattenCurrentChangesRenderableTotals(counts = null) {
+    return {
+        added: Number(counts?.added?.bookmarks || 0) + Number(counts?.added?.folders || 0),
+        deleted: Number(counts?.deleted?.bookmarks || 0) + Number(counts?.deleted?.folders || 0),
+        moved: Number(counts?.moved?.bookmarks || 0) + Number(counts?.moved?.folders || 0),
+        modified: Number(counts?.modified?.bookmarks || 0) + Number(counts?.modified?.folders || 0)
+    };
+}
+
+function computeCurrentChangesTotalsDistance(statsTotals, renderTotals) {
+    const safeStats = statsTotals && typeof statsTotals === 'object' ? statsTotals : {};
+    const safeRender = renderTotals && typeof renderTotals === 'object' ? renderTotals : {};
+    return Math.abs(Number(safeStats.added || 0) - Number(safeRender.added || 0))
+        + Math.abs(Number(safeStats.deleted || 0) - Number(safeRender.deleted || 0))
+        + Math.abs(Number(safeStats.moved || 0) - Number(safeRender.moved || 0))
+        + Math.abs(Number(safeStats.modified || 0) - Number(safeRender.modified || 0));
+}
+
+function shouldTryCurrentChangesAlignmentRescue(statsTotals, renderTotals) {
+    const statsAddedDeleted = Number(statsTotals?.added || 0) + Number(statsTotals?.deleted || 0);
+    const statsStructural = Number(statsTotals?.moved || 0) + Number(statsTotals?.modified || 0);
+    const renderAddedDeleted = Number(renderTotals?.added || 0) + Number(renderTotals?.deleted || 0);
+    const renderStructural = Number(renderTotals?.moved || 0) + Number(renderTotals?.modified || 0);
+
+    // 命中条件：
+    // - 统计口径认为“只有结构变化”（如只移动）
+    // - 但可渲染差异图出现明显增删（常见于跨代漏判）
+    return statsAddedDeleted === 0
+        && statsStructural > 0
+        && renderAddedDeleted > 0
+        && renderStructural >= 0;
 }
 
 function buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree) {
@@ -22736,17 +24325,65 @@ async function resolveCurrentChangesRenderState(changeData, options = {}) {
     const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
     const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
     const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
-    const treeToRender = buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree);
-    const useRenderableCounts = changeMap.size > 0 && Array.isArray(treeToRender) && treeToRender.length > 0;
-    const counts = useRenderableCounts ? getHistoryChangeCounts(changeMap, treeToRender) : null;
     const baseStats = normalizeCurrentChangesExportStatsManual(changeData || {});
+
+    let activeChangeMap = changeMap;
+    let activeCurrentTree = currentTree;
+    let activeTreeToRender = buildCurrentChangesRenderableTree(activeChangeMap, activeCurrentTree, oldTree);
+    let useRenderableCounts = activeChangeMap.size > 0 && Array.isArray(activeTreeToRender) && activeTreeToRender.length > 0;
+    let counts = useRenderableCounts ? getHistoryChangeCounts(activeChangeMap, activeTreeToRender) : null;
+
+    // 当前变化的兜底：如果统计显示“仅移动/修改”，但预览图出现大量增删，
+    // 说明很可能命中了跨代漏判；这里强制做一次内容对齐重算。
+    if (
+        useRenderableCounts
+        && oldTree && oldTree[0]
+        && Array.isArray(activeCurrentTree) && activeCurrentTree[0]
+        && counts
+    ) {
+        const statsTotals = flattenCurrentChangesStatsTotals(baseStats);
+        const renderTotals = flattenCurrentChangesRenderableTotals(counts);
+        const originalDistance = computeCurrentChangesTotalsDistance(statsTotals, renderTotals);
+        if (shouldTryCurrentChangesAlignmentRescue(statsTotals, renderTotals)) {
+            try {
+                const alignedCurrentTree = cloneSerializableData(activeCurrentTree);
+                if (Array.isArray(alignedCurrentTree) && alignedCurrentTree[0]) {
+                    normalizeTreeIds(alignedCurrentTree, oldTree, { strictGlobalUrlMatch: true });
+                    const rescuedChangeMap = await detectTreeChangesFast(oldTree, alignedCurrentTree, {
+                        useGlobalExplicitMovedIds: false,
+                        explicitMovedIdSet: null
+                    });
+                    const rescuedTreeToRender = buildCurrentChangesRenderableTree(rescuedChangeMap, alignedCurrentTree, oldTree);
+                    const rescuedCounts = getHistoryChangeCounts(rescuedChangeMap, rescuedTreeToRender);
+                    const rescuedTotals = flattenCurrentChangesRenderableTotals(rescuedCounts);
+                    const rescuedDistance = computeCurrentChangesTotalsDistance(statsTotals, rescuedTotals);
+
+                    if (rescuedDistance < originalDistance) {
+                        activeChangeMap = rescuedChangeMap;
+                        activeCurrentTree = alignedCurrentTree;
+                        activeTreeToRender = rescuedTreeToRender;
+                        counts = rescuedCounts;
+                        useRenderableCounts = activeChangeMap.size > 0 && Array.isArray(activeTreeToRender) && activeTreeToRender.length > 0;
+
+                        // 对齐后的映射回写到当前页面缓存，保证三种视图口径一致。
+                        treeChangeMap = activeChangeMap;
+                        cachedCurrentTree = activeCurrentTree;
+                        cachedCurrentTreeIndex = null;
+                        cachedRenderTreeIndex = null;
+                        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+                    }
+                }
+            } catch (_) { }
+        }
+    }
+
     const normalizedStats = mergeCurrentChangesStatsWithHistoryCounts(baseStats, counts, useRenderableCounts);
 
     return {
-        changeMap,
-        currentTree,
+        changeMap: activeChangeMap,
+        currentTree: activeCurrentTree,
         oldTree,
-        treeToRender,
+        treeToRender: activeTreeToRender,
         counts,
         normalizedStats,
         hasRenderableCounts: useRenderableCounts && hasAnyCounts(counts),
@@ -22821,14 +24458,24 @@ function getCurrentChangesExportExpandedIdsManual() {
     return getCurrentChangesExportViewStateManual().expandedIds;
 }
 
-async function getCurrentChangesExportTreeDataManual(mode) {
+async function getCurrentChangesExportTreeDataManual(mode, changeData = null) {
     try {
         await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: true });
     } catch (_) { }
 
-    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
-    const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
+    let changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
+    let currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
     const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
+
+    try {
+        const stabilized = await resolveCurrentChangesRenderState(changeData || {}, { requireDiffMap: false });
+        if (stabilized?.changeMap instanceof Map) {
+            changeMap = stabilized.changeMap;
+        }
+        if (Array.isArray(stabilized?.currentTree)) {
+            currentTree = stabilized.currentTree;
+        }
+    } catch (_) { }
 
     let treeToExport = currentTree;
     if (oldTree && currentTree && changeMap.size > 0) {
@@ -23128,7 +24775,7 @@ async function buildCurrentChangesExportPayloadManual(changeData, mode) {
     const isZh = currentLang === 'zh_CN';
     const lang = isZh ? 'zh_CN' : 'en';
 
-    const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode);
+    const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode, changeData);
     const viewState = normalizedMode === 'detailed'
         ? getCurrentChangesExportViewStateManual()
         : { expandedIds: new Set(), exactExpandedState: false };
@@ -24318,13 +25965,29 @@ function closeGlobalExportModal() {
     document.getElementById('globalExportModal').classList.remove('show');
 }
 
+const GLOBAL_EXPORT_STATUS_TONES = ['info', 'success', 'warning', 'error'];
+
+function setGlobalExportStatusCard(message, tone = 'info') {
+    const statusEl = document.getElementById('globalExportStatus');
+    if (!statusEl) return;
+
+    const normalizedTone = GLOBAL_EXPORT_STATUS_TONES.includes(String(tone)) ? String(tone) : 'info';
+    statusEl.classList.add('global-export-status-chip');
+    GLOBAL_EXPORT_STATUS_TONES.forEach((toneName) => {
+        statusEl.classList.remove(`global-export-status-chip--${toneName}`);
+    });
+    statusEl.classList.add(`global-export-status-chip--${normalizedTone}`);
+    statusEl.textContent = String(message == null ? '' : message);
+}
+
 function updateGlobalExportStatus() {
     const selectedCount = Object.values(globalExportSelectedState).filter(v => v === true).length;
     const total = Object.keys(globalExportSelectedState).length;
-    const statusEl = document.getElementById('globalExportStatus');
-
-    if (statusEl) {
-        statusEl.textContent = `${currentLang === 'zh_CN' ? '已选' : 'Selected'} ${selectedCount} / ${total}`;
+    if (!globalExportInProgress) {
+        setGlobalExportStatusCard(
+            `${currentLang === 'zh_CN' ? '已选' : 'Selected'} ${selectedCount} / ${total}`,
+            'info'
+        );
     }
 
     const confirmBtn = document.getElementById('globalExportConfirmBtn');
@@ -24341,6 +26004,7 @@ function updateGlobalExportStatus() {
 let globalExportCurrentPage = 1;
 const GLOBAL_EXPORT_PAGE_SIZE = 10;
 let globalExportSelectedState = {}; // 保存每条记录的选中状态
+let globalExportInProgress = false;
 
 let globalExportSeqNumberByTime = new Map(); // time(string) -> seqNumber(number)
 
@@ -25556,6 +27220,7 @@ async function startGlobalExport() {
     const selectedTimesSorted = selectedTimes
         .slice()
         .sort((a, b) => Number(b) - Number(a));
+    const totalCount = selectedTimesSorted.length;
 
     const seqMap = buildSequenceMapFromHistory(syncHistory);
     const selectedSeqNumbers = selectedTimes
@@ -25566,9 +27231,12 @@ async function startGlobalExport() {
     const seqWidth = String(Math.max(syncHistory?.length || 1, 1)).length;
 
     const confirmBtn = document.getElementById('globalExportConfirmBtn');
+    if (!confirmBtn) return;
     const originalText = confirmBtn.innerHTML;
     confirmBtn.disabled = true;
     confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在处理...' : 'Processing...'}`;
+    const isZh = currentLang === 'zh_CN';
+    globalExportInProgress = true;
 
     try {
         const formatHtml = document.getElementById('globalExportFormatHtml').checked;
@@ -25578,22 +27246,34 @@ async function startGlobalExport() {
         const exportIndex = Boolean(document.getElementById('globalExportContentIndex')?.checked);
 
         if (!exportSnapshot && !exportChanges && !exportIndex) {
-            showToast(currentLang === 'zh_CN' ? '至少选择快照、变化记录或索引文件之一' : 'Select Snapshot, Change Records, or Index Files');
+            const msg = isZh
+                ? '至少选择快照、变化记录或索引文件之一'
+                : 'Select Snapshot, Change Records, or Index Files';
+            setGlobalExportStatusCard(msg, 'error');
+            showToast(isZh ? '导出配置无效' : 'Invalid export setup', 'error', 2200);
             return;
         }
         if (exportChanges && !formatHtml && !formatJson) {
-            showToast(currentLang === 'zh_CN' ? '变化记录需要选择一种导出格式' : 'Select one change records format');
+            const msg = isZh
+                ? '变化记录需要选择一种导出格式'
+                : 'Select one change records format';
+            setGlobalExportStatusCard(msg, 'error');
+            showToast(isZh ? '导出配置无效' : 'Invalid export setup', 'error', 2200);
             return;
         }
 
         let processedCount = 0;
-        const totalCount = selectedTimesSorted.length;
         const files = [];
         const timestamp = formatTimeForFilename(); // 导出时间（本地时间）
         const zipPrefix = currentLang === 'zh_CN' ? '备份历史归档' : 'Backup_History_Archive';
         const zipRootFolder = `${zipPrefix}_${timestamp}`;
         const manualExportRoot = `${zipRootFolder}`;
         const manualExportRecords = [];
+        let recordSuccessCount = 0;
+        let recordFailureCount = 0;
+        let artifactFailureCount = 0;
+        let missingRecordCount = 0;
+
         for (const recordTime of selectedTimesSorted) {
             // 更新进度
             processedCount++;
@@ -25602,7 +27282,11 @@ async function startGlobalExport() {
             await new Promise(r => requestAnimationFrame(r));
 
             const record = syncHistory.find(r => String(r.time) === String(recordTime));
-            if (!record) continue;
+            if (!record) {
+                missingRecordCount++;
+                recordFailureCount++;
+                continue;
+            }
 
             const savedMode = getRecordDetailMode(record.time);
             const defaultMode = historyDetailMode || 'collection';
@@ -25610,6 +27294,7 @@ async function startGlobalExport() {
             const naming = buildGlobalExportRecordNamingInfo(record, mode, seqMap, seqWidth);
             const recordFolderRelativePath = `${naming.snapshotKey}`;
             const recordFolderPath = `${manualExportRoot}/${recordFolderRelativePath}`;
+            let recordProducedAny = false;
             const manualExportRecord = {
                 seqNumber: naming.seqNumber,
                 note: record.note || '',
@@ -25641,7 +27326,9 @@ async function startGlobalExport() {
                     });
                     manualExportRecord.snapshotPaths.html = `${recordFolderRelativePath}/${snapshotLeafName}`;
                     manualExportRecord.hasSnapshot = true;
+                    recordProducedAny = true;
                 } catch (err) {
+                    artifactFailureCount++;
                     console.error('Snapshot HTML Gen Error', err);
                 }
             }
@@ -25659,7 +27346,9 @@ async function startGlobalExport() {
                     }
                     manualExportRecord.changesPathsByMode[mode].html = `${recordFolderRelativePath}/${changesLeafName}`;
                     manualExportRecord.hasChanges = true;
+                    recordProducedAny = true;
                 } catch (err) {
+                    artifactFailureCount++;
                     console.error('Changes HTML Gen Error', err);
                 }
             }
@@ -25689,13 +27378,24 @@ async function startGlobalExport() {
                     }
                     manualExportRecord.changesPathsByMode[mode].json = `${recordFolderRelativePath}/${changesLeafName}`;
                     manualExportRecord.hasChanges = true;
+                    recordProducedAny = true;
                 } catch (err) {
+                    artifactFailureCount++;
                     console.error('Changes JSON Gen Error', err);
                 }
             }
 
             if (exportIndex && (manualExportRecord.hasSnapshot || manualExportRecord.hasChanges || (!exportSnapshot && !exportChanges))) {
                 manualExportRecords.push(manualExportRecord);
+                if (!exportSnapshot && !exportChanges) {
+                    recordProducedAny = true;
+                }
+            }
+
+            if (recordProducedAny) {
+                recordSuccessCount++;
+            } else {
+                recordFailureCount++;
             }
         }
 
@@ -25708,7 +27408,7 @@ async function startGlobalExport() {
         }
 
         if (files.length === 0) {
-            throw new Error('No files generated');
+            throw new Error(isZh ? '没有可导出的文件' : 'No files generated');
         }
 
         // 确保 ZIP 内的文件名排序为倒序（大的在前）
@@ -25721,13 +27421,49 @@ async function startGlobalExport() {
 
         downloadBlob(zipUrl, zipName);
 
-        closeGlobalExportModal();
-        showToast(currentLang === 'zh_CN' ? '全局导出成功' : 'Global export successful');
+        const isPartial = recordFailureCount > 0 || artifactFailureCount > 0 || missingRecordCount > 0;
+        const partialItems = [];
+        if (recordFailureCount > 0) {
+            partialItems.push(isZh ? `记录失败 ${recordFailureCount} 条` : `${recordFailureCount} failed records`);
+        }
+        if (artifactFailureCount > 0) {
+            partialItems.push(isZh ? `文件失败 ${artifactFailureCount} 项` : `${artifactFailureCount} failed file items`);
+        }
+        if (missingRecordCount > 0) {
+            partialItems.push(isZh ? `缺失记录 ${missingRecordCount} 条` : `${missingRecordCount} missing records`);
+        }
+
+        const resultMessage = isPartial
+            ? (isZh
+                ? `导出部分成功：${recordSuccessCount}/${totalCount} 条记录完成${partialItems.length ? `（${partialItems.join('，')}）` : ''}`
+                : `Export partially completed: ${recordSuccessCount}/${totalCount} records succeeded${partialItems.length ? ` (${partialItems.join(', ')})` : ''}`)
+            : (isZh
+                ? `导出成功：${recordSuccessCount}/${totalCount} 条记录，生成 ${files.length} 个文件`
+                : `Export completed: ${recordSuccessCount}/${totalCount} records, ${files.length} files generated`);
+
+        setGlobalExportStatusCard(resultMessage, isPartial ? 'warning' : 'success');
+        showToast(
+            isPartial
+                ? (isZh ? '导出部分成功' : 'Export partially completed')
+                : (isZh ? '导出成功' : 'Export completed'),
+            isPartial ? 'warning' : 'success',
+            isPartial ? 3000 : 2200
+        );
+
+        if (!isPartial) {
+            closeGlobalExportModal();
+        }
 
     } catch (e) {
         console.error('Global Export Failed', e);
-        showToast(currentLang === 'zh_CN' ? '导出失败' : 'Export failed');
+        const errorText = e && e.message ? String(e.message) : '';
+        const failMessage = isZh
+            ? `导出失败${errorText ? `：${errorText}` : ''}`
+            : `Export failed${errorText ? `: ${errorText}` : ''}`;
+        setGlobalExportStatusCard(failMessage, 'error');
+        showToast(isZh ? '导出失败' : 'Export failed', 'error', 2400);
     } finally {
+        globalExportInProgress = false;
         confirmBtn.disabled = false;
         confirmBtn.innerHTML = originalText;
     }
@@ -25916,34 +27652,44 @@ async function prepareDataForExport(record) {
 
     const persistedChangeData = await getRecordChangeDataLazy(record.time);
     if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
-        changeMap = deserializeRecordChangeMap(persistedChangeData);
         const previousRecord = await resolvePreviousRecordForComparison();
         const comparisonBaseTree = previousRecord && previousRecord.bookmarkTree
             ? previousRecord.bookmarkTree
             : null;
+        const canUsePersisted = shouldUsePersistedChangeDataForRecord({
+            record,
+            previousRecord,
+            persistedChangeData,
+            comparisonBaseTree
+        });
 
-        let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
-            ? cloneSerializableData(persistedChangeData.treeWithDeleted)
-            : record.bookmarkTree;
+        if (canUsePersisted) {
+            changeMap = deserializeRecordChangeMap(persistedChangeData);
 
-        const shouldTryRebuildDeleted = hasDeletedChangeInMap(changeMap) && !(Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length);
-        if (shouldTryRebuildDeleted) {
-            if (previousRecord && previousRecord.bookmarkTree) {
-                try {
-                    treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
-                } catch (_) {
-                    treeToExport = record.bookmarkTree;
+            let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
+                ? cloneSerializableData(persistedChangeData.treeWithDeleted)
+                : record.bookmarkTree;
+
+            const shouldTryRebuildDeleted = hasDeletedChangeInMap(changeMap) && !(Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length);
+            if (shouldTryRebuildDeleted) {
+                if (previousRecord && previousRecord.bookmarkTree) {
+                    try {
+                        treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                    } catch (_) {
+                        treeToExport = record.bookmarkTree;
+                    }
                 }
             }
-        }
 
-        return {
-            treeToExport,
-            changeMap,
-            changeData: persistedChangeData,
-            missingComparisonBase: false,
-            comparisonBaseTree
-        };
+            return {
+                treeToExport,
+                changeMap,
+                changeData: persistedChangeData,
+                missingComparisonBase: false,
+                comparisonBaseTree
+            };
+        }
+        invalidateRecordChangeDataCache(record.time);
     }
 
     const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
@@ -25965,11 +27711,25 @@ async function prepareDataForExport(record) {
         } catch (_) { }
     }
     if (previousRecord && previousRecord.bookmarkTree) {
-        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
-            useGlobalExplicitMovedIds: false,
-            explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
+        const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(
+            previousRecord.bookmarkTree,
+            record.bookmarkTree,
+            {
+                lastBookmarkData: {
+                    comparisonGeneration: previousRecord?.comparisonGeneration
+                },
+                [BOOKMARK_COMPARISON_GENERATION_KEY]: record?.comparisonGeneration
+            }
+        );
+        const currentTreeForDiff = generationAwareTrees?.treeForDiff || record.bookmarkTree;
+        const explicitMovedIdsForRecord = generationAwareTrees?.crossGeneration === true
+            ? null
+            : ((record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
                 ? record.bookmarkStats.explicitMovedIds
-                : null
+                : null);
+        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, currentTreeForDiff, {
+            useGlobalExplicitMovedIds: false,
+            explicitMovedIdSet: explicitMovedIdsForRecord
         });
 
         // 重建删除节点
@@ -25982,10 +27742,12 @@ async function prepareDataForExport(record) {
         }
         if (hasDeleted) {
             try {
-                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, currentTreeForDiff, changeMap);
             } catch (error) {
-                treeToExport = record.bookmarkTree; // fallback
+                treeToExport = currentTreeForDiff; // fallback
             }
+        } else {
+            treeToExport = currentTreeForDiff;
         }
     } else if (record.isFirstBackup) {
         const allNodes = flattenBookmarkTree(record.bookmarkTree);

@@ -825,6 +825,7 @@
             --history-ops-btn-gap: 5px;
             --history-ops-track-width: calc((var(--history-ops-btn-width) * 3) + (var(--history-ops-btn-gap) * 2));
             --history-ops-right-inset: 5px;
+            --history-scrollbar-width: 0px;
         }
 
         .sync-history h3 {
@@ -988,6 +989,17 @@
             border-bottom: none;
         }
 
+        .history-item.history-item-overwrite-risk::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            right: 8px;
+            top: 0;
+            border-top: 2px solid var(--theme-warning-color);
+            opacity: 0.95;
+            pointer-events: none;
+        }
+
         /* 详情按钮悬浮效果：条目悬浮时按钮变清晰 */
         .details-btn {
             display: inline-flex;
@@ -1088,7 +1100,7 @@
             gap: var(--history-ops-btn-gap);
             width: var(--history-ops-track-width);
             flex: 0 0 var(--history-ops-track-width);
-            margin-right: var(--history-ops-right-inset);
+            margin-right: calc(var(--history-ops-right-inset) + var(--history-scrollbar-width));
             box-sizing: border-box;
         }
 

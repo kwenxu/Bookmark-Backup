@@ -162,8 +162,9 @@ function createRealtimeBackupBlock(lang) {
         </div>
         <div class="config-content" id="realtimeBackupContent" style="display: none; padding: 15px;">
             <div style="font-size: 13px; line-height: 1.6; color: var(--theme-text-secondary); margin-bottom: 15px;">
-                <div id="realtimeBackupDesc1">${lang === 'en' ? 'Backs up immediately on count/structure changes*,' : '当检测到「数量/结构变化」* 时立即执行备份，'}</div>
-                <div id="realtimeBackupDesc2" style="margin-top: 5px;">${lang === 'en' ? 'example: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).' : '示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。'}</div>
+                <div id="realtimeBackupDesc1">${lang === 'en' ? 'Experimental: not recommended for long-term use. Realtime backup runs on count/structure changes*,' : '实验功能：不建议长期开启；当检测到「数量/结构变化」* 时会立即执行备份，'}</div>
+                <div id="realtimeBackupDesc2" style="margin-top: 5px;">${lang === 'en' ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. A snapshot backup on/off switch may be provided in a later version.' : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；后续版本可能提供“快照备份开关（开启/关闭）”。'}</div>
+                <div id="realtimeBackupDesc3" style="margin-top: 5px;">${lang === 'en' ? 'example of count/structure changes: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).' : '示例（数量/结构变化）：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。'}</div>
             </div>
         </div>
     `;
@@ -1015,15 +1016,22 @@ async function applyLanguageToUI() {
     const realtimeDesc1 = document.getElementById('realtimeBackupDesc1');
     if (realtimeDesc1) {
         realtimeDesc1.textContent = (lang === 'en') 
-            ? 'Backs up immediately on count/structure changes*,' 
-            : '当检测到「数量/结构变化」* 时立即执行备份，';
+            ? 'Experimental: not recommended for long-term use. Realtime backup runs on count/structure changes*,' 
+            : '实验功能：不建议长期开启；当检测到「数量/结构变化」* 时会立即执行备份，';
     }
     
     const realtimeDesc2 = document.getElementById('realtimeBackupDesc2');
     if (realtimeDesc2) {
         realtimeDesc2.innerHTML = (lang === 'en')
-            ? 'example: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).'
-            : '示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。';
+            ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. A snapshot backup on/off switch may be provided in a later version.'
+            : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；后续版本可能提供“快照备份开关（开启/关闭）”。';
+    }
+
+    const realtimeDesc3 = document.getElementById('realtimeBackupDesc3');
+    if (realtimeDesc3) {
+        realtimeDesc3.innerHTML = (lang === 'en')
+            ? 'example of count/structure changes: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).'
+            : '示例（数量/结构变化）：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。';
     }
     
     // 更新常规时间的文本标签

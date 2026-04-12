@@ -18806,7 +18806,11 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         // 将 favicon URL 转换为 Base64
         try {
             const faviconUrl = changeInfo.favIconUrl || tab.favIconUrl;
-            const dataUrl = await convertFaviconToBase64(faviconUrl);
+            const dataUrl = await convertFaviconToBase64(faviconUrl, {
+                minDimensionPx: 16,
+                maxBytes: 512 * 1024,
+                timeoutMs: 4000
+            });
 
             if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
                 // 发送消息给 history.js 更新缓存
@@ -27448,34 +27452,74 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
 /**
  * 将 favicon URL 转换为 Base64 Data URL
  */
-async function convertFaviconToBase64(faviconUrl) {
-    return new Promise((resolve) => {
-        try {
-            // 使用 fetch 获取 favicon
-            fetch(faviconUrl)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Fetch failed');
-                    }
-                    return response.blob();
-                })
-                .then(blob => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        resolve(reader.result);
-                    };
-                    reader.onerror = () => {
-                        resolve(null);
-                    };
-                    reader.readAsDataURL(blob);
-                })
-                .catch(() => {
-                    resolve(null);
-                });
-        } catch (e) {
-            resolve(null);
+async function convertFaviconToBase64(faviconUrl, options = {}) {
+    if (!faviconUrl || typeof faviconUrl !== 'string') {
+        return null;
+    }
+
+    const timeoutMs = Math.max(500, Number(options.timeoutMs) || 4000);
+    const maxBytes = Math.max(1024, Number(options.maxBytes) || (512 * 1024));
+    const minDimensionPx = Math.max(1, Number(options.minDimensionPx) || 1);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+        try { controller.abort(); } catch (_) { }
+    }, timeoutMs);
+
+    try {
+        const response = await fetch(faviconUrl, { signal: controller.signal });
+        if (!response.ok) {
+            return null;
         }
-    });
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType && !contentType.startsWith('image/')) {
+            return null;
+        }
+
+        const declaredLength = Number(response.headers.get('content-length') || 0);
+        if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+            return null;
+        }
+
+        const blob = await response.blob();
+        if (!blob || blob.size <= 0 || blob.size > maxBytes) {
+            return null;
+        }
+
+        if (typeof createImageBitmap === 'function') {
+            try {
+                const bitmap = await createImageBitmap(blob);
+                const width = Number(bitmap?.width) || 0;
+                const height = Number(bitmap?.height) || 0;
+                try {
+                    if (bitmap && typeof bitmap.close === 'function') bitmap.close();
+                } catch (_) { }
+                if (width < minDimensionPx || height < minDimensionPx) {
+                    return null;
+                }
+            } catch (_) {
+                return null;
+            }
+        }
+
+        const dataUrl = await new Promise((resolve) => {
+            try {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(blob);
+            } catch (_) {
+                resolve(null);
+            }
+        });
+
+        return (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) ? dataUrl : null;
+    } catch (_) {
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 // =================================================================================

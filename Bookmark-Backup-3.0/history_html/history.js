@@ -461,6 +461,39 @@ let isPreloading = false;
 const preloadedIcons = new Map();
 const iconPreloadQueue = [];
 
+class BoundedLruMap extends Map {
+    constructor(maxEntries = 4000) {
+        super();
+        const normalized = Number(maxEntries);
+        this.maxEntries = Number.isFinite(normalized) ? Math.max(100, Math.floor(normalized)) : 4000;
+    }
+
+    _trimToLimit() {
+        while (this.size > this.maxEntries) {
+            const oldestKey = this.keys().next().value;
+            if (oldestKey === undefined) break;
+            super.delete(oldestKey);
+        }
+    }
+
+    set(key, value) {
+        if (super.has(key)) {
+            super.delete(key);
+        }
+        super.set(key, value);
+        this._trimToLimit();
+        return this;
+    }
+
+    get(key) {
+        if (!super.has(key)) return undefined;
+        const value = super.get(key);
+        super.delete(key);
+        super.set(key, value);
+        return value;
+    }
+}
+
 // Favicon 缓存管理（持久化 + 失败缓存）
 const FaviconCache = {
     db: null,
@@ -495,10 +528,10 @@ const FaviconCache = {
     cacheQualityVersionKey: 'bb_favicon_quality_version',
     firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
     firstInstallSkipDbReadsRemaining: 0,
-    memoryCache: new Map(), // {domain: faviconDataUrl}
-    dimensionCache: new Map(), // {faviconDataUrl: {width, height}}
-    visualProfileCache: new Map(), // {faviconDataUrl: visual profile}
-    failureCache: new Map(), // {domain: timestamp}
+    memoryCache: new BoundedLruMap(4000), // {domain: faviconDataUrl}
+    dimensionCache: new BoundedLruMap(3000), // {faviconDataUrl: {width, height}}
+    visualProfileCache: new BoundedLruMap(3000), // {faviconDataUrl: visual profile}
+    failureCache: new BoundedLruMap(4000), // {domain: timestamp}
     pendingRequests: new Map(), // 正在请求的URL，避免重复请求
 
     // 初始化 IndexedDB
@@ -1263,8 +1296,8 @@ const FaviconCache = {
     },
 
     // 实际请求favicon - 语言分支固定瀑布策略：
-    // 中文分支：Cravatar -> /_favicon -> Google S2
-    // 非中文分支：Google S2 -> DuckDuckGo -> t3.gstatic.cn -> /_favicon
+    // 中文分支：Cravatar -> Google S2 -> /_favicon
+    // 非中文分支：Google S2 -> DuckDuckGo -> t3.gstatic.com -> /_favicon
     async _fetchFavicon(url, options = {}) {
         return new Promise(async (resolve) => {
             try {
@@ -1477,11 +1510,11 @@ const FaviconCache = {
             for (const size of cravatarSizes) {
                 addSource(this._getCravatarFaviconUrl(domain, size));
             }
-            for (const size of browserSizes) {
-                addSource(this._getBrowserFaviconServiceUrl(url, size));
-            }
             for (const size of googleSizes) {
                 addSource(this._getGoogleS2FaviconUrl(url, size));
+            }
+            for (const size of browserSizes) {
+                addSource(this._getBrowserFaviconServiceUrl(url, size));
             }
         } else {
             for (const size of googleSizes) {
@@ -1510,7 +1543,7 @@ const FaviconCache = {
     },
 
     _getGstaticCnFaviconUrl(url, size = 128) {
-        return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
+        return `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
     },
 
     _getCravatarFaviconUrl(domain, size = 64) {

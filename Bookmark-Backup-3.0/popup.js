@@ -16345,6 +16345,39 @@ function slashPathToChipsHTML(slashPath) {
 const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
 const popupBrowserAPI = (typeof chrome !== 'undefined') ? chrome : (typeof browser !== 'undefined' ? browser : null);
 
+class BoundedLruMap extends Map {
+    constructor(maxEntries = 4000) {
+        super();
+        const normalized = Number(maxEntries);
+        this.maxEntries = Number.isFinite(normalized) ? Math.max(100, Math.floor(normalized)) : 4000;
+    }
+
+    _trimToLimit() {
+        while (this.size > this.maxEntries) {
+            const oldestKey = this.keys().next().value;
+            if (oldestKey === undefined) break;
+            super.delete(oldestKey);
+        }
+    }
+
+    set(key, value) {
+        if (super.has(key)) {
+            super.delete(key);
+        }
+        super.set(key, value);
+        this._trimToLimit();
+        return this;
+    }
+
+    get(key) {
+        if (!super.has(key)) return undefined;
+        const value = super.get(key);
+        super.delete(key);
+        super.set(key, value);
+        return value;
+    }
+}
+
 // Favicon cache (IndexedDB + negative cache) - ported from history_html/history.js
 const FaviconCache = {
     db: null,
@@ -16360,13 +16393,14 @@ const FaviconCache = {
     browserFaviconSizeCandidates: [128, 96, 64],
     publicFaviconSizeCandidates: [256, 192, 128, 96, 64],
     googleS2SizeCandidates: [128, 64],
+    cravatarSizeCandidates: [64, 128],
     cacheQualityVersion: 1,
     cacheQualityVersionKey: 'bb_favicon_quality_version',
     firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
     firstInstallSkipDbReadsRemaining: 0,
-    memoryCache: new Map(),
-    dimensionCache: new Map(),
-    failureCache: new Map(),
+    memoryCache: new BoundedLruMap(4000),
+    dimensionCache: new BoundedLruMap(3000),
+    failureCache: new BoundedLruMap(4000),
     pendingRequests: new Map(),
 
     async init() {
@@ -16757,7 +16791,7 @@ const FaviconCache = {
                 );
 
                 const strictSources = this._buildFaviconSourceList(url, domain, {
-                    includeGoogleS2: false,
+                    includeGoogleS2: true,
                     minDimensionPx: strictMinDimension,
                     maxPublicSizes: 2,
                     maxBrowserSizes: 1
@@ -16816,12 +16850,30 @@ const FaviconCache = {
         return source.slice(0, limit);
     },
 
+    _resolveNetworkLanguageBucket() {
+        const normalizedCurrentLang = String((typeof currentLang === 'string' ? currentLang : '') || '').toLowerCase();
+        if (normalizedCurrentLang.startsWith('zh')) return 'zh';
+        try {
+            const uiLang = String(chrome?.i18n?.getUILanguage?.() || navigator?.language || '').toLowerCase();
+            return uiLang.startsWith('zh') ? 'zh' : 'non_zh';
+        } catch (_) {
+            return 'non_zh';
+        }
+    },
+
+    _resolveNetworkBranchForFetch() {
+        const languageBucket = this._resolveNetworkLanguageBucket();
+        return languageBucket === 'zh' ? 'domestic' : 'overseas';
+    },
+
     _buildFaviconSourceList(url, domain, options = {}) {
         const includeGoogleS2 = !!(options && options.includeGoogleS2);
+        const branchMode = this._resolveNetworkBranchForFetch();
         const minDimensionPx = Math.max(1, Number(options?.minDimensionPx) || 1);
         const maxPublicSizes = Math.max(1, Number(options?.maxPublicSizes) || 2);
         const maxBrowserSizes = Math.max(1, Number(options?.maxBrowserSizes) || 1);
         const maxGoogleSizes = Math.max(1, Number(options?.maxGoogleSizes) || 1);
+        const maxCravatarSizes = Math.max(1, Number(options?.maxCravatarSizes) || 1);
         const sources = [];
         const seen = new Set();
         const addSource = (sourceUrl) => {
@@ -16830,22 +16882,35 @@ const FaviconCache = {
             sources.push(sourceUrl);
         };
 
-        const publicSizes = this._pickCandidateSizes(this.publicFaviconSizeCandidates, minDimensionPx, maxPublicSizes);
-        for (const size of publicSizes) {
-            addSource(this._getGstaticCnFaviconUrl(url, size));
-        }
-
-        addSource(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
-
         const browserSizes = this._pickCandidateSizes(this.browserFaviconSizeCandidates, minDimensionPx, maxBrowserSizes);
-        for (const size of browserSizes) {
-            addSource(this._getBrowserFaviconServiceUrl(url, size));
-        }
+        const googleSizes = this._pickCandidateSizes(this.googleS2SizeCandidates, minDimensionPx, maxGoogleSizes);
+        const cravatarSizes = this._pickCandidateSizes(this.cravatarSizeCandidates, minDimensionPx, maxCravatarSizes);
 
-        if (includeGoogleS2) {
-            const googleSizes = this._pickCandidateSizes(this.googleS2SizeCandidates, minDimensionPx, maxGoogleSizes);
-            for (const size of googleSizes) {
-                addSource(this._getGoogleS2FaviconUrl(url, size));
+        if (branchMode === 'domestic') {
+            for (const size of cravatarSizes) {
+                addSource(this._getCravatarFaviconUrl(domain, size));
+            }
+            if (includeGoogleS2) {
+                for (const size of googleSizes) {
+                    addSource(this._getGoogleS2FaviconUrl(url, size));
+                }
+            }
+            for (const size of browserSizes) {
+                addSource(this._getBrowserFaviconServiceUrl(url, size));
+            }
+        } else {
+            if (includeGoogleS2) {
+                for (const size of googleSizes) {
+                    addSource(this._getGoogleS2FaviconUrl(url, size));
+                }
+            }
+            addSource(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+            const publicSizes = this._pickCandidateSizes(this.publicFaviconSizeCandidates, minDimensionPx, maxPublicSizes);
+            for (const size of publicSizes) {
+                addSource(this._getGstaticCnFaviconUrl(url, size));
+            }
+            for (const size of browserSizes) {
+                addSource(this._getBrowserFaviconServiceUrl(url, size));
             }
         }
 
@@ -16863,7 +16928,11 @@ const FaviconCache = {
     },
 
     _getGstaticCnFaviconUrl(url, size = 128) {
-        return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
+        return `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=${encodeURIComponent(size)}&url=${encodeURIComponent(url)}`;
+    },
+
+    _getCravatarFaviconUrl(domain, size = 64) {
+        return `https://cn.cravatar.com/favicon/api/index.php?url=${encodeURIComponent(domain)}&size=${encodeURIComponent(size)}`;
     },
 
     _getGoogleS2FaviconUrl(url, size = 64) {

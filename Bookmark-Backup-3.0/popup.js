@@ -3424,7 +3424,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         if (byNote) return byNote;
 
         const recordType = String(record?.type || '').trim().toLowerCase();
-        if (recordType === 'restore' && String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite') {
+        if ((recordType === 'restore' || recordType === 'revert') && String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite') {
             return 'overwrite';
         }
 
@@ -3942,6 +3942,10 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         typeText = `<span style="color: #007AFF; font-weight: bold;">${dynamicTextStrings.manualText[currentLang] || '（手动）'}</span>`;
                     } else if (record.type === 'switch' || record.type === 'auto_switch') { // 兼容 'auto_switch' 以防万一
                         typeText = `<span style="color: #FF9800; font-weight: bold;">${dynamicTextStrings.switchText[currentLang] || '（切换）'}</span>`;
+                    } else if (record.type === 'restore') {
+                        typeText = `<span style="color: #0EA5E9; font-weight: bold;">${currentLang === 'en' ? '(Restore)' : '（恢复）'}</span>`;
+                    } else if (record.type === 'revert') {
+                        typeText = `<span style="color: #F59E0B; font-weight: bold;">${currentLang === 'en' ? '(Revert)' : '（撤销）'}</span>`;
                     } else { // 默认为 'auto' 或其他未明确处理的类型
                         typeText = `<span style="color: #4CAF50; font-weight: bold;">${dynamicTextStrings.autoText[currentLang] || '（自动）'}</span>`; // 修改此处的颜色为绿色
                     }

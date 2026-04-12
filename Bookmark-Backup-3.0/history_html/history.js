@@ -9707,6 +9707,22 @@ function resolveLatestOverwriteRevertDividerInsertIndex(records = []) {
     return -1;
 }
 
+function resolveLatestGenerationBoundaryDividerInsertIndex(records = []) {
+    const list = Array.isArray(records) ? records : [];
+    if (list.length < 2) return -1;
+
+    for (let i = 0; i < list.length - 1; i += 1) {
+        const newerGeneration = normalizeBookmarkComparisonGenerationManual(list[i]?.comparisonGeneration, null);
+        const olderGeneration = normalizeBookmarkComparisonGenerationManual(list[i + 1]?.comparisonGeneration, null);
+        if (newerGeneration == null || olderGeneration == null) continue;
+        if (newerGeneration !== olderGeneration) {
+            return i + 1;
+        }
+    }
+
+    return -1;
+}
+
 function buildLatestOverwriteRevertDivider(lang = currentLang) {
     const isZh = lang === 'zh_CN';
     const label = isZh
@@ -9715,6 +9731,18 @@ function buildLatestOverwriteRevertDivider(lang = currentLang) {
     return `<div class="history-warning-divider latest-overwrite-revert" role="separator" aria-label="${escapeHtml(label)}">
         <span class="history-warning-divider-line" aria-hidden="true"></span>
         <span class="history-warning-divider-label"><i class="fas fa-exclamation-triangle"></i>${escapeHtml(label)}</span>
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+    </div>`;
+}
+
+function buildLatestGenerationBoundaryDivider(lang = currentLang) {
+    const isZh = lang === 'zh_CN';
+    const label = isZh
+        ? '检测到代际切换（ID轨道已重建）'
+        : 'Generation boundary detected (ID track rebuilt)';
+    return `<div class="history-warning-divider latest-generation-boundary" role="separator" aria-label="${escapeHtml(label)}">
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+        <span class="history-warning-divider-label"><i class="fas fa-code-branch"></i>${escapeHtml(label)}</span>
         <span class="history-warning-divider-line" aria-hidden="true"></span>
     </div>`;
 }
@@ -9764,9 +9792,12 @@ function renderHistoryView() {
     const pageRecords = (syncHistoryPageRecords.length > HISTORY_PAGE_SIZE && syncHistoryPageRecords.length === totalRecords)
         ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
         : sortedRecords;
-    const latestOverwriteRevertDividerInsertIndex = currentHistoryPage === 1
+    const hasLatestOverwriteRevertMarker = getHistoryMarkerTimeMs(historyOverwriteRevertMarkerTime) > 0;
+    const latestOverwriteRevertDividerInsertIndex = (currentHistoryPage === 1 && hasLatestOverwriteRevertMarker)
         ? resolveLatestOverwriteRevertDividerInsertIndex(pageRecords)
         : -1;
+    const latestGenerationBoundaryDividerInsertIndex = resolveLatestGenerationBoundaryDividerInsertIndex(pageRecords);
+    const useGenerationBoundaryFallback = !hasLatestOverwriteRevertMarker && latestGenerationBoundaryDividerInsertIndex >= 0;
 
     // 更新分页控件 UI
     if (pagination) {
@@ -9806,6 +9837,9 @@ function renderHistoryView() {
         const overwriteRiskDivider = buildHistoryOverwriteRiskDivider(record.type, operationStrategy, currentLang);
         const latestOverwriteRevertDivider = (latestOverwriteRevertDividerInsertIndex === i && !overwriteRiskDivider)
             ? buildLatestOverwriteRevertDivider(currentLang)
+            : '';
+        const latestGenerationBoundaryDivider = (useGenerationBoundaryFallback && latestGenerationBoundaryDividerInsertIndex === i && !overwriteRiskDivider)
+            ? buildLatestGenerationBoundaryDivider(currentLang)
             : '';
 
         // 计算变化
@@ -9917,6 +9951,7 @@ function renderHistoryView() {
         return `
             <div class="history-record-group">
                 ${latestOverwriteRevertDivider}
+                ${latestGenerationBoundaryDivider}
                 ${overwriteRiskDivider}
                 <div class="commit-item" data-record-time="${record.time}">
                     <div class="commit-header">
@@ -9952,7 +9987,7 @@ function renderHistoryView() {
                                 <i class="fas fa-clock"></i> ${time}
                             </div>
                         ${renderCommitStatsInline(changes)}
-                        ${!typeBadge ? `<span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
+                        ${(!typeBadge && !isRestore && !isRevert) ? `<span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
                             <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
                             ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
                         </span>` : ''}

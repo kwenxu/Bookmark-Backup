@@ -2924,9 +2924,22 @@ async function bumpBookmarkComparisonGeneration(reason = 'manual', extra = {}) {
 async function resetBookmarkComparisonGenerationState(initialGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION) {
     const normalizedInitial = normalizeBookmarkComparisonGeneration(initialGeneration, BOOKMARK_COMPARISON_INITIAL_GENERATION);
     try {
-        await browserAPI.storage.local.set({
+        const currentStore = await browserAPI.storage.local.get(['lastBookmarkData']);
+        const updates = {
             [BOOKMARK_COMPARISON_GENERATION_KEY]: normalizedInitial
-        });
+        };
+        const currentLastBookmarkData = currentStore?.lastBookmarkData;
+        if (
+            currentLastBookmarkData
+            && typeof currentLastBookmarkData === 'object'
+            && !Array.isArray(currentLastBookmarkData)
+        ) {
+            updates.lastBookmarkData = {
+                ...currentLastBookmarkData,
+                comparisonGeneration: normalizedInitial
+            };
+        }
+        await browserAPI.storage.local.set(updates);
         await browserAPI.storage.local.remove([BOOKMARK_COMPARISON_BOUNDARY_KEY]);
     } catch (_) { }
 }
@@ -2969,7 +2982,103 @@ async function clearHistoryOverwriteRevertMarker() {
     } catch (_) { }
 }
 
+function getHistoryRecordTimeMsBg(record = null) {
+    const rawValue = record && record.time != null ? record.time : '';
+    const numeric = Number(rawValue);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    const parsed = Date.parse(String(rawValue || ''));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 0;
+}
+
+function normalizeHistoryOperationStrategyValueBg(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'patch') return 'patch';
+    if (normalized === 'overwrite') return 'overwrite';
+    if (normalized === 'merge') return 'merge';
+    return '';
+}
+
+function inferHistoryOperationStrategyFromNoteBg(note = '') {
+    const text = String(note || '').trim().toLowerCase();
+    if (!text) return '';
+    if (text.includes('补丁恢复') || text.includes('patch restore') || text.includes('patch restored') || text.includes('补丁撤销') || text.includes('patch revert')) {
+        return 'patch';
+    }
+    if (text.includes('覆盖恢复') || text.includes('overwrite restore') || text.includes('overwrite restored') || text.includes('覆盖撤销') || text.includes('overwrite revert')) {
+        return 'overwrite';
+    }
+    if (text.includes('导入合并') || text.includes('import merge') || text.includes('import merged')) {
+        return 'merge';
+    }
+    return '';
+}
+
+function resolveHistoryRecordOperationStrategyBg(record) {
+    if (!record || typeof record !== 'object') return '';
+
+    const byRestoreInfo = normalizeHistoryOperationStrategyValueBg(record?.restoreInfo?.strategy);
+    if (byRestoreInfo) return byRestoreInfo;
+
+    const byRecoveryInfo = normalizeHistoryOperationStrategyValueBg(
+        record?.recoveryInfo?.resolvedStrategy || record?.recoveryInfo?.requestedStrategy
+    );
+    if (byRecoveryInfo) return byRecoveryInfo;
+
+    const byTopLevel = normalizeHistoryOperationStrategyValueBg(record?.resolvedStrategy || record?.requestedStrategy);
+    if (byTopLevel) return byTopLevel;
+
+    const byNote = inferHistoryOperationStrategyFromNoteBg(record?.note || '');
+    if (byNote) return byNote;
+
+    const recordType = String(record?.type || '').trim().toLowerCase();
+    if ((recordType === 'restore' || recordType === 'revert') && String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite') {
+        return 'overwrite';
+    }
+
+    return '';
+}
+
+function resolveLatestOverwriteRevertMarkerFromHistory(records = []) {
+    const list = Array.isArray(records) ? records : [];
+    let latestRecord = null;
+    let latestMs = -1;
+
+    for (const record of list) {
+        if (!record || typeof record !== 'object') continue;
+        const recordType = String(record?.type || '').trim().toLowerCase();
+        if (recordType !== 'revert') continue;
+        if (resolveHistoryRecordOperationStrategyBg(record) !== 'overwrite') continue;
+
+        const recordMs = getHistoryRecordTimeMsBg(record);
+        if (recordMs > latestMs) {
+            latestMs = recordMs;
+            latestRecord = record;
+        }
+    }
+
+    if (!latestRecord) return '';
+    return String(latestRecord?.time || '').trim();
+}
+
+async function syncHistoryOverwriteRevertMarkerWithHistory(syncHistory = []) {
+    try {
+        const markerValue = resolveLatestOverwriteRevertMarkerFromHistory(syncHistory);
+        if (markerValue) {
+            await browserAPI.storage.local.set({
+                [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: markerValue
+            });
+            return markerValue;
+        }
+        await browserAPI.storage.local.remove([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
+        return '';
+    } catch (_) {
+        return '';
+    }
+}
+
 async function handleTriggerRestoreBackupMessage(message = {}) {
+    let overwriteBoundaryApplied = false;
     try {
         const note = String(message.note || '').trim();
         const sourceSeqNumber = message.sourceSeqNumber;
@@ -3072,11 +3181,12 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             BOOKMARK_COMPARISON_INITIAL_GENERATION
         );
         if (normalizedStrategy === 'overwrite') {
-            await persistBookmarkComparisonBoundaryByStrategy('overwrite', {
+            const boundaryResult = await persistBookmarkComparisonBoundaryByStrategy('overwrite', {
                 reason: 'overwrite_restore',
                 operationKind: 'restore',
                 sessionId: restoreSessionId
             });
+            overwriteBoundaryApplied = !!(boundaryResult && Number.isFinite(Number(boundaryResult?.generation)));
             try {
                 const refreshedGenerationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
                 activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
@@ -3510,6 +3620,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             success: true,
             syncTime,
             strategy,
+            overwriteBoundaryApplied,
             warning: uploadErrors.length > 0 ? uploadErrors.join('; ') : ''
         };
     } catch (error) {
@@ -3517,7 +3628,11 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
         } catch (_) { }
         console.error('[triggerRestoreBackup] 失败:', error);
-        return { success: false, error: error.message };
+        return {
+            success: false,
+            error: error.message,
+            overwriteBoundaryApplied
+        };
     }
 }
 
@@ -6365,8 +6480,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     } else if (remainingHistory.length === 0 && !cachedRecord) {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
                     }
+                    await syncHistoryOverwriteRevertMarkerWithHistory(remainingHistory);
                     if (remainingHistory.length === 0) {
-                        await clearHistoryOverwriteRevertMarker();
                         await resetBookmarkComparisonGenerationState();
                     }
 
@@ -6418,7 +6533,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         : Promise.resolve();
 
                     Promise.all([setPromise, removePromise, removeDataPromise])
-                        .then(() => {
+                        .then(async () => {
+                            await syncHistoryOverwriteRevertMarkerWithHistory(syncHistory);
                             sendResponse({ success: true });
                         })
                         .catch(error => {
@@ -6462,7 +6578,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     : Promise.resolve();
 
                 Promise.all([setPromise, removePromise, removeDataPromise])
-                    .then(() => {
+                    .then(async () => {
+                        await syncHistoryOverwriteRevertMarkerWithHistory(syncHistory);
                         const deleted = initialLength - syncHistory.length;
                         sendResponse({ success: true, deleted, remaining: syncHistory.length });
                     })
@@ -14465,7 +14582,10 @@ async function continueRestoreRecoveryTransaction() {
             transaction.operationKind === 'restore'
             && String(executionResult?.strategy || '').trim().toLowerCase() === 'overwrite'
         ) {
-            const overwriteHandledByRestoreRecord = restoreRecordResult?.success === true
+            const overwriteHandledByRestoreRecord = (
+                restoreRecordResult?.success === true
+                || restoreRecordResult?.overwriteBoundaryApplied === true
+            )
             if (!overwriteHandledByRestoreRecord) {
                 await persistBookmarkComparisonBoundaryByStrategy('overwrite', {
                     reason: 'restore_recovery_continue_restore',
@@ -26744,7 +26864,14 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                     baselineTimeOverride: String(preRestoreCapturedAtIso || '')
                 });
                 const restoreRecordSuccess = restoreRecordResult?.success === true;
-                restoreRecordHandledOverwrite = restoreRecordSuccess && appliedRestoreStrategy === 'overwrite';
+                const restoreRecordBoundaryApplied = (
+                    restoreRecordResult?.overwriteBoundaryApplied === true
+                    && appliedRestoreStrategy === 'overwrite'
+                );
+                restoreRecordHandledOverwrite = (
+                    appliedRestoreStrategy === 'overwrite'
+                    && (restoreRecordSuccess || restoreRecordBoundaryApplied)
+                );
                 restoreRecordFields = {
                     restoreRecordSuccess,
                     restoreRecordError: restoreRecordSuccess ? '' : String(restoreRecordResult?.error || 'Unknown error'),

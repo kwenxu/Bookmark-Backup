@@ -532,6 +532,9 @@ const FaviconCache = {
     dimensionCache: new BoundedLruMap(3000), // {faviconDataUrl: {width, height}}
     visualProfileCache: new BoundedLruMap(3000), // {faviconDataUrl: visual profile}
     failureCache: new BoundedLruMap(4000), // {domain: timestamp}
+    cravatarDefaultIconSha256: '2e30ff33270fd8687b0eb4d12652bfd967f23975f158bf8da93bece2ba4ab947',
+    cravatarDefaultIconBytes: 492,
+    cravatarDefaultCheckCache: new BoundedLruMap(1200), // {dataUrl: boolean}
     pendingRequests: new Map(), // 正在请求的URL，避免重复请求
 
     // 初始化 IndexedDB
@@ -631,6 +634,7 @@ const FaviconCache = {
         this.dimensionCache.clear();
         this.visualProfileCache.clear();
         this.failureCache.clear();
+        this.cravatarDefaultCheckCache.clear();
 
         if (this.db) {
             await new Promise((resolve) => {
@@ -1013,6 +1017,70 @@ const FaviconCache = {
             this.visualProfileCache.set(dataUrl, profile);
         }
         return profile;
+    },
+
+    _decodeBase64DataUrlBytes(dataUrl = '') {
+        if (!this.isStoredFaviconData(dataUrl)) return null;
+        const commaIndex = dataUrl.indexOf(',');
+        if (commaIndex <= 0) return null;
+        const header = String(dataUrl.slice(0, commaIndex)).toLowerCase();
+        if (!header.includes(';base64')) return null;
+        const encoded = dataUrl.slice(commaIndex + 1);
+        if (!encoded) return null;
+        try {
+            const binary = atob(encoded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        } catch (_) {
+            return null;
+        }
+    },
+
+    async _computeSha256HexFromBytes(bytes) {
+        try {
+            if (!(bytes instanceof Uint8Array) || bytes.byteLength <= 0) return '';
+            if (!globalThis.crypto || !globalThis.crypto.subtle || typeof globalThis.crypto.subtle.digest !== 'function') {
+                return '';
+            }
+            const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+            const view = new Uint8Array(digest);
+            return Array.from(view).map((value) => value.toString(16).padStart(2, '0')).join('');
+        } catch (_) {
+            return '';
+        }
+    },
+
+    _hasPngSignature(bytes) {
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength < 8) return false;
+        const pngSig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        for (let i = 0; i < pngSig.length; i += 1) {
+            if (bytes[i] !== pngSig[i]) return false;
+        }
+        return true;
+    },
+
+    async _isCravatarDefaultIconDataUrl(dataUrl = '') {
+        if (!this.isStoredFaviconData(dataUrl)) return false;
+        const cached = this.cravatarDefaultCheckCache.get(dataUrl);
+        if (typeof cached === 'boolean') return cached;
+
+        let isDefault = false;
+        const bytes = this._decodeBase64DataUrlBytes(dataUrl);
+        if (bytes && bytes.byteLength > 0) {
+            if (bytes.byteLength === Number(this.cravatarDefaultIconBytes) && this._hasPngSignature(bytes)) {
+                const hash = await this._computeSha256HexFromBytes(bytes);
+                const expected = String(this.cravatarDefaultIconSha256 || '').toLowerCase();
+                if (hash && expected && hash === expected) {
+                    isDefault = true;
+                }
+            }
+        }
+
+        this.cravatarDefaultCheckCache.set(dataUrl, isDefault);
+        return isDefault;
     },
 
     _classifyFaviconSource(sourceUrl = '') {
@@ -1681,6 +1749,13 @@ const FaviconCache = {
                 return {
                     dataUrl: '',
                     meta: result && result.meta ? result.meta : { attempted: true, hardFailure: false, errorCode: 'empty_data_url' }
+                };
+            }
+            const sourceKind = this._classifyFaviconSource(faviconUrl);
+            if (sourceKind === 'cravatar' && await this._isCravatarDefaultIconDataUrl(dataUrl)) {
+                return {
+                    dataUrl: '',
+                    meta: { attempted: true, hardFailure: false, errorCode: 'cravatar_default_icon' }
                 };
             }
 

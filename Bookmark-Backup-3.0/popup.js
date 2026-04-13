@@ -3478,6 +3478,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         ).trim() || '-';
         const normalizedTime = formatHistoryNoteTimeText(sourceTimeRaw || extractTrailingTimeFromHistoryNote(rawNote));
         const timeSuffix = normalizedTime ? ` (${normalizedTime})` : '';
+        const hasSourceInfo = seqText !== '-' || !!timeSuffix;
 
         if (strategy === 'merge') {
             return isEn
@@ -3499,7 +3500,17 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             return `${label} #${seqText}${timeSuffix}`;
         }
 
-        if (!rawNote) return '';
+        if (recordType === 'restore' || recordType === 'revert') {
+            if (hasSourceInfo) {
+                const genericLabel = recordType === 'revert'
+                    ? (isEn ? 'Reverted to' : '撤销至')
+                    : (isEn ? 'Restored to' : '恢复至');
+                return `${genericLabel} #${seqText}${timeSuffix}`;
+            }
+            if (!rawNote) return '';
+        } else if (!rawNote) {
+            return '';
+        }
         const trailingTime = extractTrailingTimeFromHistoryNote(rawNote);
         if (!trailingTime) return rawNote;
         const normalizedTrailing = formatHistoryNoteTimeText(trailingTime);
@@ -15942,9 +15953,19 @@ function showRestoreModal(versions, source) {
                         ? `Import merged from #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
                         : `导入合并自 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
                 }
+                if (strategy === 'patch') {
+                    return isEn
+                        ? `Patch restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                        : `补丁恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
+                }
+                if (strategy === 'overwrite') {
+                    return isEn
+                        ? `Overwrite restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                        : `覆盖恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
+                }
                 return isEn
-                    ? `Overwrite restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
-                    : `覆盖恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
+                    ? `Restored to #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`
+                    : `恢复至 #${resolvedSeq || '-'} (${selectedVersion?.displayTime || '-'})`;
             })();
             const restoreRecordMeta = {
                 note: restoreActionNote,

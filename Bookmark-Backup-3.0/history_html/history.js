@@ -14945,17 +14945,15 @@ async function refreshCachedCurrentTreeSnapshot(reason = '') {
     try {
         const snapshot = await getBookmarkTreeSnapshot();
         if (snapshot && Array.isArray(snapshot.tree)) {
-            let alignedTree = snapshot.tree;
+            let latestTree = snapshot.tree;
             let baselineTree = null;
             try {
-                const storageData = await new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve));
+                const storageData = await new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve));
                 baselineTree = storageData?.lastBookmarkData?.bookmarkTree || null;
-                const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(baselineTree, snapshot.tree, storageData || {});
-                alignedTree = generationAwareTrees?.treeForDiff || snapshot.tree;
             } catch (_) { }
 
             cachedOldTree = baselineTree;
-            cachedCurrentTree = alignedTree;
+            cachedCurrentTree = latestTree;
             cachedCurrentTreeIndex = null;
             cachedRenderTreeIndex = null;
             try { window.__canvasRenderTreeIndex = null; } catch (_) { }
@@ -15423,6 +15421,7 @@ function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
 let isRenderingTree = false;
 let pendingRenderRequest = null;
 
+// 仅用于历史导出/回放等离线口径；实时 current-changes UI 统一直接对比基线树与当前树。
 function buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData = {}) {
     const activeGeneration = normalizeBookmarkComparisonGenerationManual(
         storageData?.[BOOKMARK_COMPARISON_GENERATION_KEY],
@@ -15485,7 +15484,7 @@ async function renderTreeViewSync() {
         // 并行获取数据
         const [snapshot, storageData] = await Promise.all([
             getBookmarkTreeSnapshot(),
-            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
+            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
         ]);
         const currentTree = snapshot ? snapshot.tree : null;
         lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
@@ -15496,8 +15495,7 @@ async function renderTreeViewSync() {
         }
 
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
-        const comparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData);
-        const currentTreeForDiff = comparisonTrees.treeForDiff || currentTree;
+        const currentTreeForDiff = currentTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTreeForDiff;
         cachedCurrentTreeIndex = null;
@@ -15574,7 +15572,7 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
     try {
         const [snapshot, storageData] = await Promise.all([
             getBookmarkTreeSnapshot(),
-            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
+            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
         ]);
 
         const currentTree = snapshot ? snapshot.tree : null;
@@ -15588,8 +15586,7 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
         }
 
         const oldTree = storageData?.lastBookmarkData?.bookmarkTree || null;
-        const comparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData);
-        const currentTreeForDiff = comparisonTrees.treeForDiff || currentTree;
+        const currentTreeForDiff = currentTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTreeForDiff;
         cachedCurrentTreeIndex = null;
@@ -15607,8 +15604,7 @@ async function ensureChangesPreviewTreeDataLoaded(options = {}) {
             try {
                 const liveTree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
                 if (Array.isArray(liveTree) && liveTree.length > 0) {
-                    const liveComparisonTrees = buildGenerationAwareCurrentChangesTrees(oldTree, liveTree, storageData);
-                    const liveTreeForDiff = liveComparisonTrees.treeForDiff || liveTree;
+                    const liveTreeForDiff = liveTree;
                     const liveMap = await detectTreeChangesFast(oldTree, liveTreeForDiff);
                     if (liveMap instanceof Map && liveMap.size > 0) {
                         cachedCurrentTree = liveTreeForDiff;
@@ -15818,7 +15814,7 @@ async function renderTreeView(forceRefresh = false) {
     // 获取数据并行处理
     Promise.all([
         getBookmarkTreeSnapshot(),
-        new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData', BOOKMARK_COMPARISON_GENERATION_KEY], resolve))
+        new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
     ]).then(async ([snapshot, storageData]) => {
         const currentTree = snapshot ? snapshot.tree : null;
         const snapshotVersion = snapshot ? snapshot.version : null;
@@ -15838,10 +15834,7 @@ async function renderTreeView(forceRefresh = false) {
             return;
         }
         const oldTree = storageData?.lastBookmarkData?.bookmarkTree || null;
-        const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData || {});
-        const currentTreeForDiff = currentView === 'current-changes'
-            ? (generationAwareTrees?.treeForDiff || currentTree)
-            : currentTree;
+        const currentTreeForDiff = currentTree;
 
         // 版本快路径：优先使用 background 快照版本，避免对整棵树做 JSON 指纹（非常耗时）
         const canUseVersion = snapshotVersion !== null && typeof snapshotVersion !== 'undefined';
@@ -15916,7 +15909,7 @@ async function renderTreeView(forceRefresh = false) {
         
 
         cachedOldTree = oldTree;
-        cachedCurrentTree = currentTreeForDiff; // 缓存“按代口径”树，避免被旧口径覆盖
+        cachedCurrentTree = currentTreeForDiff;
         cachedCurrentTreeIndex = null;
 
         // 【关键修复】预热 favicon 缓存 - 从 IndexedDB 批量加载到内存
@@ -15995,7 +15988,7 @@ async function renderTreeView(forceRefresh = false) {
                     treeToRender = rebuildTreeWithDeleted(oldTree, currentTreeForDiff, treeChangeMap);
                 } catch (error) {
                     console.error('[renderTreeView] 重建树时出错:', error);
-                    treeToRender = currentTreeForDiff; // 回退到按代口径树
+                    treeToRender = currentTreeForDiff;
                 }
             }
         }
@@ -24395,49 +24388,6 @@ function mergeCurrentChangesStatsWithHistoryCounts(baseStats = {}, counts = null
     return merged;
 }
 
-function flattenCurrentChangesStatsTotals(stats = {}) {
-    const toNum = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0);
-    return {
-        added: toNum(stats?.bookmarkAdded) + toNum(stats?.folderAdded),
-        deleted: toNum(stats?.bookmarkDeleted) + toNum(stats?.folderDeleted),
-        moved: toNum(stats?.movedCount),
-        modified: toNum(stats?.modifiedCount)
-    };
-}
-
-function flattenCurrentChangesRenderableTotals(counts = null) {
-    return {
-        added: Number(counts?.added?.bookmarks || 0) + Number(counts?.added?.folders || 0),
-        deleted: Number(counts?.deleted?.bookmarks || 0) + Number(counts?.deleted?.folders || 0),
-        moved: Number(counts?.moved?.bookmarks || 0) + Number(counts?.moved?.folders || 0),
-        modified: Number(counts?.modified?.bookmarks || 0) + Number(counts?.modified?.folders || 0)
-    };
-}
-
-function computeCurrentChangesTotalsDistance(statsTotals, renderTotals) {
-    const safeStats = statsTotals && typeof statsTotals === 'object' ? statsTotals : {};
-    const safeRender = renderTotals && typeof renderTotals === 'object' ? renderTotals : {};
-    return Math.abs(Number(safeStats.added || 0) - Number(safeRender.added || 0))
-        + Math.abs(Number(safeStats.deleted || 0) - Number(safeRender.deleted || 0))
-        + Math.abs(Number(safeStats.moved || 0) - Number(safeRender.moved || 0))
-        + Math.abs(Number(safeStats.modified || 0) - Number(safeRender.modified || 0));
-}
-
-function shouldTryCurrentChangesAlignmentRescue(statsTotals, renderTotals) {
-    const statsAddedDeleted = Number(statsTotals?.added || 0) + Number(statsTotals?.deleted || 0);
-    const statsStructural = Number(statsTotals?.moved || 0) + Number(statsTotals?.modified || 0);
-    const renderAddedDeleted = Number(renderTotals?.added || 0) + Number(renderTotals?.deleted || 0);
-    const renderStructural = Number(renderTotals?.moved || 0) + Number(renderTotals?.modified || 0);
-
-    // 命中条件：
-    // - 统计口径认为“只有结构变化”（如只移动）
-    // - 但可渲染差异图出现明显增删（常见于跨代漏判）
-    return statsAddedDeleted === 0
-        && statsStructural > 0
-        && renderAddedDeleted > 0
-        && renderStructural >= 0;
-}
-
 function buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree) {
     let treeToRender = Array.isArray(currentTree) ? currentTree : [];
 
@@ -24468,65 +24418,17 @@ async function resolveCurrentChangesRenderState(changeData, options = {}) {
     const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
     const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
     const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
+    const treeToRender = buildCurrentChangesRenderableTree(changeMap, currentTree, oldTree);
+    const useRenderableCounts = changeMap.size > 0 && Array.isArray(treeToRender) && treeToRender.length > 0;
+    const counts = useRenderableCounts ? getHistoryChangeCounts(changeMap, treeToRender) : null;
     const baseStats = normalizeCurrentChangesExportStatsManual(changeData || {});
-
-    let activeChangeMap = changeMap;
-    let activeCurrentTree = currentTree;
-    let activeTreeToRender = buildCurrentChangesRenderableTree(activeChangeMap, activeCurrentTree, oldTree);
-    let useRenderableCounts = activeChangeMap.size > 0 && Array.isArray(activeTreeToRender) && activeTreeToRender.length > 0;
-    let counts = useRenderableCounts ? getHistoryChangeCounts(activeChangeMap, activeTreeToRender) : null;
-
-    // 当前变化的兜底：如果统计显示“仅移动/修改”，但预览图出现大量增删，
-    // 说明很可能命中了跨代漏判；这里强制做一次内容对齐重算。
-    if (
-        useRenderableCounts
-        && oldTree && oldTree[0]
-        && Array.isArray(activeCurrentTree) && activeCurrentTree[0]
-        && counts
-    ) {
-        const statsTotals = flattenCurrentChangesStatsTotals(baseStats);
-        const renderTotals = flattenCurrentChangesRenderableTotals(counts);
-        const originalDistance = computeCurrentChangesTotalsDistance(statsTotals, renderTotals);
-        if (shouldTryCurrentChangesAlignmentRescue(statsTotals, renderTotals)) {
-            try {
-                const alignedCurrentTree = cloneSerializableData(activeCurrentTree);
-                if (Array.isArray(alignedCurrentTree) && alignedCurrentTree[0]) {
-                    normalizeTreeIds(alignedCurrentTree, oldTree, { strictGlobalUrlMatch: true });
-                    const rescuedChangeMap = await detectTreeChangesFast(oldTree, alignedCurrentTree, {
-                        useGlobalExplicitMovedIds: false,
-                        explicitMovedIdSet: null
-                    });
-                    const rescuedTreeToRender = buildCurrentChangesRenderableTree(rescuedChangeMap, alignedCurrentTree, oldTree);
-                    const rescuedCounts = getHistoryChangeCounts(rescuedChangeMap, rescuedTreeToRender);
-                    const rescuedTotals = flattenCurrentChangesRenderableTotals(rescuedCounts);
-                    const rescuedDistance = computeCurrentChangesTotalsDistance(statsTotals, rescuedTotals);
-
-                    if (rescuedDistance < originalDistance) {
-                        activeChangeMap = rescuedChangeMap;
-                        activeCurrentTree = alignedCurrentTree;
-                        activeTreeToRender = rescuedTreeToRender;
-                        counts = rescuedCounts;
-                        useRenderableCounts = activeChangeMap.size > 0 && Array.isArray(activeTreeToRender) && activeTreeToRender.length > 0;
-
-                        // 对齐后的映射回写到当前页面缓存，保证三种视图口径一致。
-                        treeChangeMap = activeChangeMap;
-                        cachedCurrentTree = activeCurrentTree;
-                        cachedCurrentTreeIndex = null;
-                        cachedRenderTreeIndex = null;
-                        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
-                    }
-                }
-            } catch (_) { }
-        }
-    }
-
     const normalizedStats = mergeCurrentChangesStatsWithHistoryCounts(baseStats, counts, useRenderableCounts);
 
     return {
-        changeMap: activeChangeMap,
-        currentTree: activeCurrentTree,
+        changeMap,
+        currentTree,
         oldTree,
-        treeToRender: activeTreeToRender,
+        treeToRender,
         counts,
         normalizedStats,
         hasRenderableCounts: useRenderableCounts && hasAnyCounts(counts),
@@ -24601,24 +24503,14 @@ function getCurrentChangesExportExpandedIdsManual() {
     return getCurrentChangesExportViewStateManual().expandedIds;
 }
 
-async function getCurrentChangesExportTreeDataManual(mode, changeData = null) {
+async function getCurrentChangesExportTreeDataManual(mode) {
     try {
         await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: true });
     } catch (_) { }
 
-    let changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
-    let currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
+    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
+    const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
     const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
-
-    try {
-        const stabilized = await resolveCurrentChangesRenderState(changeData || {}, { requireDiffMap: false });
-        if (stabilized?.changeMap instanceof Map) {
-            changeMap = stabilized.changeMap;
-        }
-        if (Array.isArray(stabilized?.currentTree)) {
-            currentTree = stabilized.currentTree;
-        }
-    } catch (_) { }
 
     let treeToExport = currentTree;
     if (oldTree && currentTree && changeMap.size > 0) {
@@ -24918,7 +24810,7 @@ async function buildCurrentChangesExportPayloadManual(changeData, mode) {
     const isZh = currentLang === 'zh_CN';
     const lang = isZh ? 'zh_CN' : 'en';
 
-    const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode, changeData);
+    const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode);
     const viewState = normalizedMode === 'detailed'
         ? getCurrentChangesExportViewStateManual()
         : { expandedIds: new Set(), exactExpandedState: false };

@@ -2899,7 +2899,7 @@ function resolveComparisonGenerationFromHistoryRecord(syncHistory, recordTime, f
 }
 
 async function bumpBookmarkComparisonGeneration(reason = 'manual', extra = {}) {
-    const store = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
+    const store = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY, 'lastBookmarkData']);
     const previousGeneration = normalizeBookmarkComparisonGeneration(
         store?.[BOOKMARK_COMPARISON_GENERATION_KEY],
         BOOKMARK_COMPARISON_INITIAL_GENERATION
@@ -2914,10 +2914,22 @@ async function bumpBookmarkComparisonGeneration(reason = 'manual', extra = {}) {
         operationKind: String(extra?.operationKind || '').trim().toLowerCase(),
         sessionId: String(extra?.sessionId || '').trim()
     };
-    await browserAPI.storage.local.set({
+    const updates = {
         [BOOKMARK_COMPARISON_GENERATION_KEY]: nextGeneration,
         [BOOKMARK_COMPARISON_BOUNDARY_KEY]: boundary
-    });
+    };
+    const currentLastBookmarkData = store?.lastBookmarkData;
+    if (
+        currentLastBookmarkData
+        && typeof currentLastBookmarkData === 'object'
+        && !Array.isArray(currentLastBookmarkData)
+    ) {
+        updates.lastBookmarkData = {
+            ...currentLastBookmarkData,
+            comparisonGeneration: nextGeneration
+        };
+    }
+    await browserAPI.storage.local.set(updates);
     return boundary;
 }
 
@@ -3467,7 +3479,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                         }
                     }
 
-                    if (finalBookmarkStats && finalCurrentTree) {
+                    if (finalBookmarkStats && finalCurrentTree && normalizedStrategy !== 'overwrite') {
                         const changeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
                         let changePayload = null;
 
@@ -3503,6 +3515,17 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                             targetRecord.hasChangeData = true;
                             targetRecord.changeDataKey = changeDataKey;
                             targetRecord.changeDataSchemaVersion = Number(changePayload?.schemaVersion || 1);
+                        }
+                    } else if (normalizedStrategy === 'overwrite') {
+                        // 覆盖恢复视为“基线重建事件”：保留快照与统计，不保留变化载荷。
+                        const staleChangeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
+                        targetRecord.hasChangeData = false;
+                        targetRecord.changeDataKey = '';
+                        targetRecord.changeDataSchemaVersion = 0;
+                        if (staleChangeDataKey) {
+                            try {
+                                await browserAPI.storage.local.remove([staleChangeDataKey]);
+                            } catch (_) { }
                         }
                     }
                 } catch (diffError) {
@@ -16511,6 +16534,11 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         const currentBookmarkCount = countAllBookmarks(revertedTree);
         const currentFolderCount = countAllFolders(revertedTree);
         const currentPrints = generateFingerprints(revertedTree);
+        const generationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
+        const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
+            generationStore?.[BOOKMARK_COMPARISON_GENERATION_KEY],
+            BOOKMARK_COMPARISON_INITIAL_GENERATION
+        );
         const timestamp = (baselineTimestamp && String(baselineTimestamp).trim() !== '')
             ? baselineTimestamp
             : new Date().toISOString();
@@ -16522,7 +16550,8 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
                 bookmarkPrints: currentPrints.bookmarks,
                 folderPrints: currentPrints.folders,
                 bookmarkTree: revertedTree,
-                timestamp
+                timestamp,
+                comparisonGeneration: activeComparisonGeneration
             }
         });
 
@@ -16672,6 +16701,11 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
         const currentBookmarkCount = countAllBookmarks(restoredTree);
         const currentFolderCount = countAllFolders(restoredTree);
         const currentPrints = generateFingerprints(restoredTree);
+        const generationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
+        const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
+            generationStore?.[BOOKMARK_COMPARISON_GENERATION_KEY],
+            BOOKMARK_COMPARISON_INITIAL_GENERATION
+        );
         const timestamp = (baselineTimestamp && String(baselineTimestamp).trim() !== '')
             ? baselineTimestamp
             : new Date().toISOString();
@@ -16682,7 +16716,8 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
                 bookmarkPrints: currentPrints.bookmarks,
                 folderPrints: currentPrints.folders,
                 bookmarkTree: restoredTree,
-                timestamp: timestamp
+                timestamp: timestamp,
+                comparisonGeneration: activeComparisonGeneration
             }
         });
 

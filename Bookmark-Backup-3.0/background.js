@@ -8400,8 +8400,8 @@ function buildVersionedInfoLogTableLines(records, lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
     const lines = [];
     lines.push(isZh
-        ? '| 序号 | 备注 | 时间 | 哈希 | 状态 | 方向 | 方向键 | 类型 | 策略 | 快照键 | 变化 |'
-        : '| Seq | Note | Time | Hash | Status | Direction | DirectionKey | Type | Strategy | SnapshotKey | Changes |');
+        ? '| 序号 | 快照键 | 变化 | 时间 | 备注 | 哈希 | 状态 | 方向 | 方向键 | 类型 | 策略 |'
+        : '| Seq | SnapshotKey | Changes | Time | Note | Hash | Status | Direction | DirectionKey | Type | Strategy |');
     lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
 
     for (const record of records) {
@@ -8416,7 +8416,7 @@ function buildVersionedInfoLogTableLines(records, lang = 'zh_CN') {
         const strategy = escapeVersionedInfoLogCell(formatVersionedInfoLogStrategy(record, lang));
         const snapshotKey = escapeVersionedInfoLogCell(resolveSnapshotKeyForRecord(record) || '-');
         const changes = escapeVersionedInfoLogCell(formatVersionedInfoLogChanges(record, lang));
-        lines.push(`| ${seq} | ${note} | ${time} | ${hash} | ${status} | ${direction} | ${directionKey} | ${type} | ${strategy} | ${snapshotKey} | ${changes} |`);
+        lines.push(`| ${seq} | ${snapshotKey} | ${changes} | ${time} | ${note} | ${hash} | ${status} | ${direction} | ${directionKey} | ${type} | ${strategy} |`);
     }
 
     return lines;
@@ -8699,8 +8699,8 @@ function extractVersionedInfoLogTableParts(markdownText) {
 }
 
 function parseVersionedInfoLogRowTimeMs(rowLine) {
-    const cells = splitVersionedInfoLogRowCells(rowLine);
-    const rawTime = String(cells[2] || '').trim();
+    const fields = parseVersionedInfoLogRowFields(rowLine);
+    const rawTime = String(fields.time || '').trim();
     if (!rawTime || rawTime === '-') return 0;
 
     const normalized = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(rawTime)
@@ -8711,17 +8711,36 @@ function parseVersionedInfoLogRowTimeMs(rowLine) {
     return Number.isFinite(ms) ? ms : 0;
 }
 
-function buildVersionedInfoLogRowMergeKey(rowLine) {
+function parseVersionedInfoLogRowFields(rowLine) {
     const cells = splitVersionedInfoLogRowCells(rowLine);
-    const valueAt = (index) => String(cells[index] || '').trim().toLowerCase();
+    const valueAt = (index) => String(cells[index] || '').trim();
 
-    const snapshotKey = valueAt(9);
-    const hash = valueAt(3);
-    const time = valueAt(2);
-    const directionKey = valueAt(6);
-    const strategy = valueAt(8);
-    const note = valueAt(1);
-    const seq = valueAt(0);
+    // Fixed layout:
+    // seq | snapshotKey | changes | time | note | hash | status | direction | directionKey | type | strategy
+    return {
+        seq: valueAt(0),
+        snapshotKey: valueAt(1),
+        changes: valueAt(2),
+        time: valueAt(3),
+        note: valueAt(4),
+        hash: valueAt(5),
+        status: valueAt(6),
+        direction: valueAt(7),
+        directionKey: valueAt(8),
+        type: valueAt(9),
+        strategy: valueAt(10)
+    };
+}
+
+function buildVersionedInfoLogRowMergeKey(rowLine) {
+    const fields = parseVersionedInfoLogRowFields(rowLine);
+    const snapshotKey = String(fields.snapshotKey || '').trim().toLowerCase();
+    const hash = String(fields.hash || '').trim().toLowerCase();
+    const time = String(fields.time || '').trim().toLowerCase();
+    const directionKey = String(fields.directionKey || '').trim().toLowerCase();
+    const strategy = String(fields.strategy || '').trim().toLowerCase();
+    const note = String(fields.note || '').trim().toLowerCase();
+    const seq = String(fields.seq || '').trim().toLowerCase();
 
     if (snapshotKey && snapshotKey !== '__overwrite__') {
         return `snapshot:${snapshotKey}`;

@@ -10793,6 +10793,27 @@ function showRestoreModal(versions, source) {
         return localizeRestoreDisplayText(displayRaw, lang);
     };
 
+    const resolveRestoreDisplaySnapshotKey = (version) => {
+        const restoreRef = version?.restoreRef || {};
+        const candidates = [
+            restoreRef?.snapshotKey,
+            version?.snapshotKey,
+            restoreRef?.sourceSnapshotKey,
+            version?.sourceSnapshotKey
+        ];
+
+        for (const candidate of candidates) {
+            const rawValue = String(candidate || '').trim();
+            if (!rawValue) continue;
+            const lower = rawValue.toLowerCase();
+            if (lower === '__overwrite__') return '-';
+            if (lower.startsWith('__changes_artifact_')) continue;
+            return rawValue;
+        }
+
+        return '-';
+    };
+
     const resolveRestoreDisplayTimeText = (version, type = currentVersionType) => {
         const rawDisplayTime = String(version?.displayTime || '').trim();
         const rawDisplayTimeLooksValid = /^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(rawDisplayTime);
@@ -11702,6 +11723,7 @@ function showRestoreModal(versions, source) {
             preferChangesFileName,
             lang: cachedLang
         });
+        const snapshotKey = resolveRestoreDisplaySnapshotKey(version);
         const fingerprint = String(version?.fingerprint || '').trim();
         const shortFingerprint = fingerprint ? `#${fingerprint.slice(0, 7)}` : '';
         const shortFingerprintPlain = shortFingerprint.replace(/^#/, '');
@@ -11710,6 +11732,7 @@ function showRestoreModal(versions, source) {
             seqText,
             `#${seqText}`,
             displayText,
+            snapshotKey,
             fingerprint,
             shortFingerprint,
             shortFingerprintPlain,
@@ -12228,12 +12251,17 @@ function showRestoreModal(versions, source) {
 
         if (thSeq) thSeq.textContent = isEn ? 'Seq' : '序号';
         if (thNote) thNote.textContent = isEn ? 'Note/File Name' : '备注/文件名';
-        if (thHash) thHash.textContent = isEn ? 'Hash' : '哈希值';
+        if (thHash) thHash.textContent = isEn ? 'Snapshot Key' : '快照键';
         if (thTime) thTime.textContent = isEn ? 'Time' : '时间';
         if (thStats) thStats.textContent = isEn ? 'Change Records' : '变化记录';
         if (thViewMode) thViewMode.textContent = isEn ? 'View' : '视图';
 
         // Header tooltips
+        if (thHashCell) {
+            thHashCell.title = isEn
+                ? 'Snapshot key used for restore index matching.'
+                : '恢复索引匹配使用的快照键。';
+        }
         if (thStatsCell) {
             thStatsCell.title = isEn
                 ? 'Changes inside this backup history record (compared to the previous record)'
@@ -13848,8 +13876,7 @@ function showRestoreModal(versions, source) {
             const isOverwriteSnapshotRow = folderType === 'overwrite'
                 && currentVersionType === 'overwrite'
                 && getCurrentRestoreSubMode('overwrite') === 'snapshot';
-            const fingerprint = String(version?.fingerprint || '').slice(0, 7);
-            const fingerprintDisplay = fingerprint ? `#${fingerprint}` : '';
+            const snapshotKeyDisplay = resolveRestoreDisplaySnapshotKey(version);
             const displayTime = resolveRestoreDisplayTimeText(version, currentVersionType);
             const isHtml = isHtmlVersion(version);
             const seq = resolveRestoreDisplaySeq(version, globalIndex, seqContext);
@@ -13928,7 +13955,8 @@ function showRestoreModal(versions, source) {
             if (!isSnapshotMode && !hideHashColumn) {
                 tdHash = document.createElement('td');
                 tdHash.className = 'restore-cell-mono restore-cell-hash';
-                tdHash.textContent = folderType === 'overwrite' ? '-' : fingerprintDisplay;
+                tdHash.textContent = snapshotKeyDisplay;
+                tdHash.title = snapshotKeyDisplay === '-' ? '' : snapshotKeyDisplay;
             }
 
             const tdTime = document.createElement('td');
@@ -14004,10 +14032,10 @@ function showRestoreModal(versions, source) {
 
             row.appendChild(tdSelect);
             row.appendChild(tdSeq);
-            if (!hideNoteColumn) row.appendChild(tdNote);
             if (tdHash) row.appendChild(tdHash);
-            row.appendChild(tdTime);
             if (tdStats && !hideStatsColumn) row.appendChild(tdStats);
+            row.appendChild(tdTime);
+            if (!hideNoteColumn) row.appendChild(tdNote);
             if (tdViewMode && !hideViewModeColumn) row.appendChild(tdViewMode);
 
             row.addEventListener('click', () => {

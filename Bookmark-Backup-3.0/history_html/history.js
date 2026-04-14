@@ -7506,8 +7506,8 @@ async function renderChangesTreePreview(changeData) {
             `;
         }
 
-        // 之前这里调用 renderTreeViewSync()，会额外渲染一次 #bookmarkTree（完全没必要），
-        // 在“大量书签 + 大量变化”时会造成明显卡顿/黑屏感。
+        // 这里不做额外整树渲染，直接走预览数据加载；
+        // 在“大量书签 + 大量变化”时可避免明显卡顿/黑屏感。
         const hasChangesFlag = !!(changeData && changeData.hasChanges);
         const mapEmptyWithChanges = hasChangesFlag && (treeChangeMap instanceof Map) && treeChangeMap.size === 0;
         const shouldReloadPreviewData = !cachedCurrentTree || !treeChangeMap || mapEmptyWithChanges;
@@ -15479,106 +15479,6 @@ function buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageDa
         treeForDiff: currentTree,
         crossGeneration: true
     };
-}
-
-// 同步版本的树渲染（真正可 await，用于 Current Changes 预览）
-async function renderTreeViewSync() {
-    
-
-    const treeContainer = document.getElementById('bookmarkTree');
-    if (!treeContainer) {
-        console.error('[renderTreeViewSync] 容器元素未找到');
-        return;
-    }
-
-    // 清除缓存，确保重新渲染
-    cachedTreeData = null;
-    lastTreeFingerprint = null;
-    lastTreeSnapshotVersion = null;
-    cachedCurrentTreeIndex = null;
-
-    try {
-        // 并行获取数据
-        const [snapshot, storageData] = await Promise.all([
-            getBookmarkTreeSnapshot(),
-            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
-        ]);
-        const currentTree = snapshot ? snapshot.tree : null;
-        lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
-
-        if (!currentTree || currentTree.length === 0) {
-            treeContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-sitemap"></i></div><div class="empty-state-title">${i18n.emptyTree[currentLang]}</div></div>`;
-            return;
-        }
-
-        const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
-        const currentTreeForDiff = currentTree;
-        cachedOldTree = oldTree;
-        cachedCurrentTree = currentTreeForDiff;
-        cachedCurrentTreeIndex = null;
-
-        // 检测变动
-        if (oldTree && oldTree[0]) {
-            treeChangeMap = await detectTreeChangesFast(oldTree, currentTreeForDiff);
-            
-        } else {
-            treeChangeMap = new Map();
-        }
-
-        // 合并旧树和新树，显示删除的节点
-        let treeToRender = currentTreeForDiff;
-        if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
-            let hasDeletedNodes = false;
-            for (const [, change] of treeChangeMap) {
-                if (change.type && String(change.type).includes('deleted')) {
-                    hasDeletedNodes = true;
-                    break;
-                }
-            }
-            if (hasDeletedNodes) {
-                try {
-                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTreeForDiff, treeChangeMap);
-                } catch (error) {
-                    console.error('[renderTreeViewSync] 重建树时出错:', error);
-                    treeToRender = currentTreeForDiff;
-                }
-            }
-        }
-
-        // 渲染树
-        const fragment = document.createDocumentFragment();
-
-        if (treeChangeMap.size > 0) {
-            const legend = document.createElement('div');
-            legend.className = 'tree-legend';
-            legend.innerHTML = `
-                <span class="legend-item"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
-                <span class="legend-item"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
-                <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
-                <span class="legend-item"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
-            `;
-            fragment.appendChild(legend);
-        }
-
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0);
-        while (tempDiv.firstChild) {
-            fragment.appendChild(tempDiv.firstChild);
-        }
-
-        treeContainer.innerHTML = '';
-        treeContainer.appendChild(fragment);
-        treeContainer.style.display = 'block';
-
-        // 绑定事件
-        attachTreeEvents(treeContainer);
-
-        
-
-    } catch (error) {
-        console.error('[renderTreeViewSync] 渲染失败:', error);
-        treeContainer.innerHTML = `<div class="error">${currentLang === 'zh_CN' ? '加载失败' : 'Failed to load'}</div>`;
-    }
 }
 
 // 仅用于「当前变化」预览：加载 currentTree + changeMap（不触碰/渲染 #bookmarkTree DOM）

@@ -12470,11 +12470,10 @@ function showRestoreModal(versions, source) {
             return `<span class='stats-group'><span class='stats-label'>${label}</span>${pairParts.join("<span class='stats-pair-sep'>/</span>")}</span>`;
         };
 
-        const firstLineItems = [
+        const pairLineItems = [
             buildPairGroup('B', bmAdded, bmDeleted),
             buildPairGroup('F', folderAdded, folderDeleted)
         ].filter(Boolean);
-        const shouldSplitPairLines = [bmAdded, bmDeleted, folderAdded, folderDeleted].some((count) => count >= 10000);
 
         const secondLineItems = [];
         if (movedCount > 0) {
@@ -12485,15 +12484,9 @@ function showRestoreModal(versions, source) {
         }
 
         const lines = [];
-        if (firstLineItems.length > 0) {
-            if (shouldSplitPairLines && firstLineItems.length > 1) {
-                firstLineItems.forEach((item) => {
-                    lines.push(`<span class='stats-line stats-line-split'>${item}</span>`);
-                });
-            } else {
-                lines.push(`<span class='stats-line'>${firstLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
-            }
-        }
+        pairLineItems.forEach((item) => {
+            lines.push(`<span class='stats-line stats-line-split'>${item}</span>`);
+        });
         if (secondLineItems.length > 0) {
             lines.push(`<span class='stats-line'>${secondLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
         }
@@ -16434,7 +16427,7 @@ const FaviconCache = {
     dbVersion: 1,
     storeName: 'favicons',
     failureStoreName: 'failures',
-    failureTtlMs: 90 * 1000,
+    failureTtlMs: 60000,
     requestTimeoutMs: 4000,
     maxFetchedBytes: 512 * 1024,
     minFaviconDimensionPx: 96,
@@ -16443,7 +16436,7 @@ const FaviconCache = {
     publicFaviconSizeCandidates: [256, 192, 128, 96, 64],
     googleS2SizeCandidates: [128, 64],
     cravatarSizeCandidates: [64, 128],
-    cacheQualityVersion: 1,
+    cacheQualityVersion: 2,
     cacheQualityVersionKey: 'bb_favicon_quality_version',
     firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
     firstInstallSkipDbReadsRemaining: 0,
@@ -16599,6 +16592,18 @@ const FaviconCache = {
         }
     },
 
+    getHostnameKey(urlOrHostname) {
+        if (!urlOrHostname || typeof urlOrHostname !== 'string') return '';
+        const raw = String(urlOrHostname).trim();
+        if (!raw) return '';
+        try {
+            const parsed = raw.includes('://') ? new URL(raw) : new URL(`https://${raw}`);
+            return String(parsed.hostname || '').trim().toLowerCase().replace(/\.+$/, '');
+        } catch (_) {
+            return '';
+        }
+    },
+
     isStoredFaviconData(dataUrl) {
         return typeof dataUrl === 'string' && dataUrl.startsWith('data:image/');
     },
@@ -16695,7 +16700,8 @@ const FaviconCache = {
         }
 
         try {
-            const domain = new URL(url).hostname;
+            const domain = this.getHostnameKey(url);
+            if (!domain) return null;
 
             if (this._isFailureDomainActive(domain)) {
                 return 'failed';
@@ -16757,7 +16763,8 @@ const FaviconCache = {
         if (this.isInvalidUrl(url) || !this.isStoredFaviconData(dataUrl)) return;
 
         try {
-            const domain = new URL(url).hostname;
+            const domain = this.getHostnameKey(url);
+            if (!domain) return;
             this.memoryCache.set(domain, dataUrl);
 
             if (!this.db) await this.init();
@@ -16773,7 +16780,8 @@ const FaviconCache = {
     async saveFailure(url) {
         if (this.isInvalidUrl(url)) return;
         try {
-            const domain = new URL(url).hostname;
+            const domain = this.getHostnameKey(url);
+            if (!domain) return;
             this._markFailureDomain(domain);
 
             if (!this.db) await this.init();
@@ -16785,16 +16793,19 @@ const FaviconCache = {
 
     async removeFailure(domain) {
         try {
+            const normalizedDomain = this.getHostnameKey(domain);
+            if (!normalizedDomain) return;
             if (!this.db) await this.init();
             const tx = this.db.transaction([this.failureStoreName], 'readwrite');
-            tx.objectStore(this.failureStoreName).delete(domain);
+            tx.objectStore(this.failureStoreName).delete(normalizedDomain);
         } catch (_) { }
     },
 
     async clear(url) {
         if (this.isInvalidUrl(url)) return;
         try {
-            const domain = new URL(url).hostname;
+            const domain = this.getHostnameKey(url);
+            if (!domain) return;
             this.memoryCache.delete(domain);
             this.dimensionCache.clear();
             this._clearFailureDomain(domain);
@@ -16844,7 +16855,8 @@ const FaviconCache = {
         }
 
         try {
-            const domain = new URL(url).hostname;
+            const domain = this.getHostnameKey(url);
+            if (!domain) return fallbackIcon;
             const requestedMinDimension = Math.max(0, Number(options?.minDimensionPx) || 0);
             const strictMinDimension = requestedMinDimension > 0
                 ? Math.max(Math.max(1, Number(this.minFaviconDimensionPx) || 96), requestedMinDimension)
@@ -16857,7 +16869,7 @@ const FaviconCache = {
             const cacheMinDimension = requestedMinDimension > 0
                 ? Math.max(1, Number(options?.cacheMinDimensionPx) || fallbackMinDimension)
                 : 0;
-            const requestKey = `${domain}|${strictMinDimension}|${fallbackMinDimension}`;
+            const requestKey = domain;
 
             const cached = await this.get(url);
             if (cached === 'failed') return fallbackIcon;
@@ -16890,7 +16902,12 @@ const FaviconCache = {
     async _fetchFavicon(url, options = {}) {
         return new Promise(async (resolve) => {
             try {
-                const domain = new URL(url).hostname;
+                const domain = this.getHostnameKey(url);
+                if (!domain) {
+                    this.saveFailure(url);
+                    resolve(fallbackIcon);
+                    return;
+                }
 
                 const strictMinDimension = Math.max(
                     1,
@@ -17198,14 +17215,15 @@ function resolveFaviconBindingUrlFromElement(element) {
 
 function updateFaviconImages(url, dataUrl) {
     try {
-        const domain = new URL(url).hostname;
+        const domain = FaviconCache.getHostnameKey(url);
+        if (!domain) return;
         const allImages = document.querySelectorAll('img.tree-icon, img[data-bookmark-url], img[data-node-url], img[data-url]');
 
         allImages.forEach(img => {
             const itemUrl = resolveFaviconBindingUrlFromElement(img);
             if (!itemUrl) return;
             try {
-                const itemDomain = new URL(itemUrl).hostname;
+                const itemDomain = FaviconCache.getHostnameKey(itemUrl);
                 if (itemDomain === domain) {
                     img.src = dataUrl;
                 }
@@ -17243,11 +17261,45 @@ try {
 
             if (message.action === 'updateFaviconFromTab') {
                 if (message.url && message.favIconUrl) {
-                    FaviconCache.save(message.url, message.favIconUrl)
-                        .then(() => {
-                            updateFaviconImages(message.url, message.favIconUrl);
-                        })
-                        .catch(() => { });
+                    if (FaviconCache.isStoredFaviconData(message.favIconUrl)) {
+                        const incomingDataUrl = message.favIconUrl;
+                        Promise.resolve().then(async () => {
+                            const incomingDimensions = await FaviconCache.getDataUrlDimensions(incomingDataUrl);
+                            const incomingMinDimension = incomingDimensions
+                                ? Math.min(
+                                    Number(incomingDimensions.width) || 0,
+                                    Number(incomingDimensions.height) || 0
+                                )
+                                : 0;
+                            const existing = await FaviconCache.get(message.url);
+                            const hasValidPersistentCache = (
+                                typeof existing === 'string'
+                                && existing !== 'failed'
+                                && existing !== fallbackIcon
+                                && FaviconCache.isStoredFaviconData(existing)
+                            );
+                            if (hasValidPersistentCache) {
+                                const existingDimensions = await FaviconCache.getDataUrlDimensions(existing);
+                                const existingMinDimension = existingDimensions
+                                    ? Math.min(
+                                        Number(existingDimensions.width) || 0,
+                                        Number(existingDimensions.height) || 0
+                                    )
+                                    : 0;
+                                const shouldOverwrite = (
+                                    incomingMinDimension > 0
+                                    && existingMinDimension > 0
+                                    && incomingMinDimension >= existingMinDimension
+                                );
+                                if (!shouldOverwrite) {
+                                    return;
+                                }
+                            }
+
+                            await FaviconCache.save(message.url, incomingDataUrl);
+                            updateFaviconImages(message.url, incomingDataUrl);
+                        }).catch(() => { });
+                    }
                 }
             }
         });
@@ -17266,7 +17318,8 @@ function getFaviconUrl(url) {
     }
 
     try {
-        const domain = new URL(url).hostname;
+        const domain = FaviconCache.getHostnameKey(url);
+        if (!domain) return fallbackIcon;
 
         if (FaviconCache.memoryCache.has(domain)) {
             return FaviconCache.memoryCache.get(domain);

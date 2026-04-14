@@ -3370,7 +3370,7 @@
         /* ========================= */
         #restoreVersionTable th,
         #restoreVersionTable td {
-            padding: 8px 6px;
+            padding: 7px 5px;
             border-bottom: 1px solid var(--theme-border-primary);
             font-size: 12px;
             color: var(--theme-text-primary);
@@ -3379,7 +3379,7 @@
 
         #restoreVersionTable.snapshot-mode th,
         #restoreVersionTable.snapshot-mode td {
-            padding: 7px 6px;
+            padding: 6px 5px;
         }
 
         #restoreVersionTable thead th {
@@ -3424,15 +3424,15 @@
         }
 
         #restoreVersionTable td.restore-cell-select {
-            width: 22px;
-            padding-left: 4px;
-            padding-right: 2px;
+            width: 20px;
+            padding-left: 2px;
+            padding-right: 1px;
         }
 
         #restoreVersionTable td.restore-cell-seq {
-            width: 42px;
-            padding-left: 3px;
-            padding-right: 4px;
+            width: 36px;
+            padding-left: 2px;
+            padding-right: 3px;
         }
 
         #restoreVersionTable td.restore-cell-note {
@@ -3442,33 +3442,33 @@
         }
 
         #restoreVersionTable td.restore-cell-hash {
-            width: 124px;
-            min-width: 124px;
-            padding-left: 4px;
-            padding-right: 7px;
+            width: 108px;
+            min-width: 108px;
+            padding-left: 3px;
+            padding-right: 5px;
             text-align: left;
             white-space: nowrap;
         }
 
         #restoreVersionTable td.restore-cell-time {
-            width: 102px;
-            min-width: 102px;
-            padding-left: 8px;
-            padding-right: 3px;
+            width: 90px;
+            min-width: 90px;
+            padding-left: 5px;
+            padding-right: 2px;
             text-align: left;
         }
 
         #restoreVersionTable td.restore-cell-stats {
-            width: 108px;
-            min-width: 108px;
-            padding-left: 6px;
+            width: 92px;
+            min-width: 92px;
+            padding-left: 4px;
             padding-right: 0;
             text-align: left;
         }
 
         #restoreVersionTable td.restore-cell-view {
-            width: 70px;
-            min-width: 70px;
+            width: 58px;
+            min-width: 58px;
             padding-left: 0;
             padding-right: 0;
             text-align: center;
@@ -3493,14 +3493,14 @@
             font-weight: 600;
             font-size: 12px;
             display: -webkit-box;
-            line-height: 1.35;
+            line-height: 1.3;
             white-space: normal;
             overflow: hidden;
             text-overflow: ellipsis;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-            max-width: 186px;
-            max-height: calc(1.35em * 2);
+            overflow-wrap: break-word;
+            word-break: normal;
+            max-width: 100%;
+            max-height: calc(1.3em * 2);
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
         }
@@ -3535,10 +3535,11 @@
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 3px;
+            gap: 2px;
             flex-wrap: wrap;
+            font-size: 11px;
             color: var(--theme-text-secondary);
-            line-height: 1.25;
+            line-height: 1.2;
             margin-left: 0;
         }
 
@@ -3546,14 +3547,14 @@
             display: inline-flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 2px;
+            gap: 1px;
         }
 
         #restoreVersionTable .restore-stats .stats-line {
             display: inline-flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 3px;
+            gap: 2px;
             white-space: nowrap;
         }
 
@@ -6125,13 +6126,13 @@
                     <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 30px;"></th>
-                                <th style="text-align: center; width: 44px;"><span id="restoreThSeq">序号</span></th>
-                                <th style="text-align: left; width: 124px;"><span id="restoreThHash">快照键</span></th>
-                                <th style="text-align: left; width: 108px;"><span id="restoreThStats">变化记录</span></th>
-                                <th style="text-align: left; width: 102px;"><span id="restoreThTime">时间</span></th>
+                                <th style="text-align: center; width: 24px;"></th>
+                                <th style="text-align: center; width: 38px;"><span id="restoreThSeq">序号</span></th>
+                                <th style="text-align: left; width: 108px;"><span id="restoreThHash">快照键</span></th>
+                                <th style="text-align: left; width: 92px;"><span id="restoreThStats">变化记录</span></th>
+                                <th style="text-align: left; width: 90px;"><span id="restoreThTime">时间</span></th>
                                 <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
-                                <th style="text-align: center; width: 70px;"><span id="restoreThViewMode">视图</span></th>
+                                <th style="text-align: center; width: 58px;"><span id="restoreThViewMode">视图</span></th>
                             </tr>
                         </thead>
                         <tbody id="restoreVersionTableBody">

@@ -18857,21 +18857,41 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             entries.slice(0, 500).forEach(([url]) => processedFavicons.delete(url)); // 删除一半旧记录
         }
 
-        // 将 favicon URL 转换为 Base64
+        // 将 favicon URL 转换为 Base64（先使用 tab.favIconUrl，失败再回退 _favicon）
         try {
-            const faviconUrl = changeInfo.favIconUrl || tab.favIconUrl;
-            const dataUrl = await convertFaviconToBase64(faviconUrl, {
+            const primaryFaviconUrl = tab.favIconUrl || changeInfo.favIconUrl;
+            let primaryStatus = 'non_fetchable';
+            const primaryDataUrl = await convertFaviconToBase64(primaryFaviconUrl, {
                 minDimensionPx: 16,
                 maxBytes: 512 * 1024,
-                timeoutMs: 4000
+                timeoutMs: 4000,
+                onResult: (result) => {
+                    primaryStatus = String(result?.status || '').trim() || 'hard_failure';
+                }
             });
 
-            if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
+            let finalStatus = primaryStatus;
+            let finalDataUrl = primaryDataUrl;
+            if (finalStatus !== 'success') {
+                const fallbackFaviconUrl = `/_favicon?pageUrl=${encodeURIComponent(tab.url)}&size=32`;
+                let fallbackStatus = 'non_fetchable';
+                finalDataUrl = await convertFaviconToBase64(fallbackFaviconUrl, {
+                    minDimensionPx: 16,
+                    maxBytes: 512 * 1024,
+                    timeoutMs: 4000,
+                    onResult: (result) => {
+                        fallbackStatus = String(result?.status || '').trim() || 'hard_failure';
+                    }
+                });
+                finalStatus = fallbackStatus;
+            }
+
+            if (finalStatus === 'success' && typeof finalDataUrl === 'string' && finalDataUrl.startsWith('data:image/')) {
                 // 发送消息给 history.js 更新缓存
                 browserAPI.runtime.sendMessage({
                     action: 'updateFaviconFromTab',
                     url: tab.url,
-                    favIconUrl: dataUrl
+                    favIconUrl: finalDataUrl
                 }).catch(() => {
                     // 忽略错误，history.js 可能未打开
                 });
@@ -27506,8 +27526,45 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
 /**
  * 将 favicon URL 转换为 Base64 Data URL
  */
+function classifyFaviconFetchFailure(error) {
+    const errorName = String(error?.name || '').toLowerCase();
+    const errorMessage = String(error?.message || error || '').toLowerCase();
+
+    if (errorName === 'aborterror') {
+        return 'hard_failure';
+    }
+
+    if (
+        errorMessage.includes('invalid url') ||
+        errorMessage.includes('malformed url') ||
+        errorMessage.includes('url scheme') ||
+        errorMessage.includes('unsupported scheme') ||
+        errorMessage.includes('scheme is not supported') ||
+        errorMessage.includes('not supported') ||
+        errorMessage.includes('cannot fetch')
+    ) {
+        return 'non_fetchable';
+    }
+
+    return 'hard_failure';
+}
+
+function emitFaviconConvertResult(options, status, detail = {}) {
+    if (!options || typeof options.onResult !== 'function') {
+        return;
+    }
+    try {
+        options.onResult({
+            status,
+            ...detail
+        });
+    } catch (_) {
+    }
+}
+
 async function convertFaviconToBase64(faviconUrl, options = {}) {
     if (!faviconUrl || typeof faviconUrl !== 'string') {
+        emitFaviconConvertResult(options, 'non_fetchable');
         return null;
     }
 
@@ -27523,21 +27580,25 @@ async function convertFaviconToBase64(faviconUrl, options = {}) {
     try {
         const response = await fetch(faviconUrl, { signal: controller.signal });
         if (!response.ok) {
+            emitFaviconConvertResult(options, 'hard_failure', { httpStatus: response.status });
             return null;
         }
 
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
         if (contentType && !contentType.startsWith('image/')) {
+            emitFaviconConvertResult(options, 'invalid_content', { contentType });
             return null;
         }
 
         const declaredLength = Number(response.headers.get('content-length') || 0);
         if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+            emitFaviconConvertResult(options, 'invalid_content', { declaredLength });
             return null;
         }
 
         const blob = await response.blob();
         if (!blob || blob.size <= 0 || blob.size > maxBytes) {
+            emitFaviconConvertResult(options, 'invalid_content', { blobSize: Number(blob?.size) || 0 });
             return null;
         }
 
@@ -27550,9 +27611,11 @@ async function convertFaviconToBase64(faviconUrl, options = {}) {
                     if (bitmap && typeof bitmap.close === 'function') bitmap.close();
                 } catch (_) { }
                 if (width < minDimensionPx || height < minDimensionPx) {
+                    emitFaviconConvertResult(options, 'invalid_content', { width, height });
                     return null;
                 }
             } catch (_) {
+                emitFaviconConvertResult(options, 'invalid_content');
                 return null;
             }
         }
@@ -27568,8 +27631,17 @@ async function convertFaviconToBase64(faviconUrl, options = {}) {
             }
         });
 
-        return (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) ? dataUrl : null;
-    } catch (_) {
+        if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
+            emitFaviconConvertResult(options, 'success');
+            return dataUrl;
+        }
+
+        emitFaviconConvertResult(options, 'invalid_content');
+        return null;
+    } catch (error) {
+        emitFaviconConvertResult(options, classifyFaviconFetchFailure(error), {
+            error: String(error?.message || error || '')
+        });
         return null;
     } finally {
         clearTimeout(timeout);

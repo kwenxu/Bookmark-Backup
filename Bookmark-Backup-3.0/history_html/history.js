@@ -15,7 +15,6 @@ const getManualExportInfoLogFileName = (format = 'md') => {
 };
 const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
-const BOOKMARK_COMPARISON_GENERATION_KEY = 'bookmarkComparisonGeneration';
 
 let currentLang = 'zh_CN';
 // [Init] Restore custom language from storage immediately
@@ -15438,49 +15437,6 @@ function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
 let isRenderingTree = false;
 let pendingRenderRequest = null;
 
-// 仅用于历史导出/回放等离线口径；实时 current-changes UI 统一直接对比基线树与当前树。
-function buildGenerationAwareCurrentChangesTrees(oldTree, currentTree, storageData = {}) {
-    const activeGeneration = normalizeBookmarkComparisonGenerationManual(
-        storageData?.[BOOKMARK_COMPARISON_GENERATION_KEY],
-        1
-    );
-    const baselineGeneration = normalizeBookmarkComparisonGenerationManual(
-        storageData?.lastBookmarkData?.comparisonGeneration,
-        activeGeneration
-    );
-    const crossGeneration = (
-        activeGeneration != null
-        && baselineGeneration != null
-        && activeGeneration !== baselineGeneration
-    );
-    if (!crossGeneration) {
-        return {
-            treeForDiff: currentTree,
-            crossGeneration: false
-        };
-    }
-    if (!Array.isArray(oldTree) || !oldTree[0] || !Array.isArray(currentTree) || !currentTree[0]) {
-        return {
-            treeForDiff: currentTree,
-            crossGeneration: true
-        };
-    }
-    try {
-        const alignedTree = cloneSerializableData(currentTree);
-        if (Array.isArray(alignedTree) && alignedTree[0]) {
-            normalizeTreeIds(alignedTree, oldTree, { strictGlobalUrlMatch: true });
-            return {
-                treeForDiff: alignedTree,
-                crossGeneration: true
-            };
-        }
-    } catch (_) { }
-    return {
-        treeForDiff: currentTree,
-        crossGeneration: true
-    };
-}
-
 // 仅用于「当前变化」预览：加载 currentTree + changeMap（不触碰/渲染 #bookmarkTree DOM）
 // 目标：避免 renderTreeViewSync 的整树 DOM 构建导致“黑屏/卡顿感”。
 async function ensureChangesPreviewTreeDataLoaded(options = {}) {
@@ -27677,18 +27633,26 @@ async function prepareDataForExport(record) {
         } catch (_) { }
     }
     if (previousRecord && previousRecord.bookmarkTree) {
-        const generationAwareTrees = buildGenerationAwareCurrentChangesTrees(
-            previousRecord.bookmarkTree,
-            record.bookmarkTree,
-            {
-                lastBookmarkData: {
-                    comparisonGeneration: previousRecord?.comparisonGeneration
-                },
-                [BOOKMARK_COMPARISON_GENERATION_KEY]: record?.comparisonGeneration
-            }
+        const previousGeneration = normalizeBookmarkComparisonGenerationManual(previousRecord?.comparisonGeneration, null);
+        const currentGeneration = normalizeBookmarkComparisonGenerationManual(record?.comparisonGeneration, previousGeneration);
+        const crossGeneration = (
+            previousGeneration != null
+            && currentGeneration != null
+            && previousGeneration !== currentGeneration
         );
-        const currentTreeForDiff = generationAwareTrees?.treeForDiff || record.bookmarkTree;
-        const explicitMovedIdsForRecord = generationAwareTrees?.crossGeneration === true
+
+        let currentTreeForDiff = record.bookmarkTree;
+        if (crossGeneration && Array.isArray(previousRecord.bookmarkTree) && previousRecord.bookmarkTree[0] && Array.isArray(record.bookmarkTree) && record.bookmarkTree[0]) {
+            try {
+                const alignedTree = cloneSerializableData(record.bookmarkTree);
+                if (Array.isArray(alignedTree) && alignedTree[0]) {
+                    normalizeTreeIds(alignedTree, previousRecord.bookmarkTree, { strictGlobalUrlMatch: true });
+                    currentTreeForDiff = alignedTree;
+                }
+            } catch (_) { }
+        }
+
+        const explicitMovedIdsForRecord = crossGeneration === true
             ? null
             : ((record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
                 ? record.bookmarkStats.explicitMovedIds

@@ -1,5 +1,8 @@
 /* ==================== 主题变量 ==================== */
 :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Segoe UI Variable", "SF Pro Text", "Roboto", "Helvetica", "Arial", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
     /* Light Theme */
     --bg-primary: #f5f7fa;
     --bg-secondary: #eef2f6;
@@ -143,7 +146,7 @@ html {
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    font-family: var(--font-sans);
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
@@ -151,6 +154,14 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+input,
+textarea,
+select,
+button,
+option {
+    font: inherit;
 }
 
 /* ==================== 头部导航 ==================== */
@@ -4637,7 +4648,7 @@ a.tree-label.tree-bookmark-link:hover {
     border-radius: 8px;
     margin-bottom: 24px;
     overflow: hidden;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-sans);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -9709,7 +9720,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .range-slider-labels span {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 500;
     color: var(--text-tertiary);

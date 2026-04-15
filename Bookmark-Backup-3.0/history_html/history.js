@@ -26468,11 +26468,11 @@ function renderGlobalExportPage() {
             <td style="text-align: center;">
                 <input type="checkbox" class="global-export-row-checkbox" data-time="${record.time}" ${isChecked ? 'checked' : ''}>
             </td>
-            <td style="text-align: center; font-family: monospace; color: var(--text-secondary);">${seqNumber}</td>
+            <td style="text-align: center; font-family: var(--font-mono, monospace); color: var(--text-secondary);">${seqNumber}</td>
             <td style="width: 204px; padding-right: 6px;">
                 <div style="max-width: 204px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4;">${noteDisplay}</div>
             </td>
-            <td style="width: 92px; padding-left: 4px; font-family: monospace; color: var(--text-secondary);">${fingerprint}</td>
+            <td style="width: 92px; padding-left: 4px; font-family: var(--font-mono, monospace); color: var(--text-secondary);">${fingerprint}</td>
             <td>
             <div class="global-export-toggle-group" data-time="${record.time}">
                 <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>

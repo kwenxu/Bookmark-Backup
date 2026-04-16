@@ -523,7 +523,7 @@ const FaviconCache = {
     networkBranchReevaluationCooldownMs: 3000,
     networkBranchSwitchReason: '',
     networkBranchLastReevaluationReason: '',
-    cacheQualityVersion: 2,
+    cacheQualityVersion: 3,
     cacheQualityVersionKey: 'bb_favicon_quality_version',
     firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
     firstInstallSkipDbReadsRemaining: 0,
@@ -728,7 +728,7 @@ const FaviconCache = {
     },
 
     // 从缓存获取favicon
-    async get(url) {
+    async get(url, options = {}) {
         if (this.isInvalidUrl(url)) {
             return null;
         }
@@ -736,9 +736,10 @@ const FaviconCache = {
         try {
             const domain = this.getHostnameKey(url);
             if (!domain) return null;
+            const ignoreFailureCache = options && options.ignoreFailureCache === true;
 
             // 检查失败缓存
-            if (this._isFailureDomainActive(domain)) {
+            if (!ignoreFailureCache && this._isFailureDomainActive(domain)) {
                 return 'failed';
             }
 
@@ -763,7 +764,7 @@ const FaviconCache = {
                 const failureRequest = failureStore.get(domain);
 
                 failureRequest.onsuccess = () => {
-                    if (failureRequest.result) {
+                    if (!ignoreFailureCache && failureRequest.result) {
                         // 检查失败缓存是否过期（24小时）
                         const age = Date.now() - failureRequest.result.timestamp;
                         if (age < this.failureTtlMs) {
@@ -1341,7 +1342,7 @@ const FaviconCache = {
             const requestKey = domain;
 
             // 1. 检查缓存
-            const cached = await this.get(url);
+            const cached = await this.get(url, options);
             if (cached === 'failed') {
                 return fallbackIcon;
             }
@@ -1489,10 +1490,7 @@ const FaviconCache = {
                 });
 
                 activeBranchMode = this._normalizeNetworkBranchMode(this.networkBranchMode || activeBranchMode);
-                const useFastFirstCandidate = strictMinDimension <= Math.max(16, Number(this.minFaviconDimensionPx) || 16);
-                let chosenCandidate = useFastFirstCandidate
-                    ? (strictCandidates[0] || null)
-                    : await this._selectBestCandidateWithConflictRule(strictCandidates);
+                let chosenCandidate = await this._selectBestCandidateWithConflictRule(strictCandidates);
 
                 // 第二轮：放宽到兜底阈值（默认 >= 32，拒绝 16x16）
                 if (!chosenCandidate && fallbackMinDimension < strictMinDimension) {
@@ -2176,6 +2174,13 @@ function getFaviconUrl(url) {
 
         // 检查失败缓存
         if (FaviconCache._isFailureDomainActive(domain)) {
+            FaviconCache.fetch(url, {
+                ignoreFailureCache: true
+            }).then(dataUrl => {
+                if (dataUrl && dataUrl !== fallbackIcon) {
+                    updateFaviconImages(url, dataUrl);
+                }
+            }).catch(() => { });
             return fallbackIcon;
         }
 
@@ -2205,11 +2210,13 @@ function resolveFaviconBindingUrlFromElement(element) {
             if (node.dataset.bookmarkUrl) return node.dataset.bookmarkUrl;
             if (node.dataset.nodeUrl) return node.dataset.nodeUrl;
             if (node.dataset.url) return node.dataset.url;
+            if (node.dataset.faviconUrl) return node.dataset.faviconUrl;
         }
         if (typeof node.getAttribute === 'function') {
             return node.getAttribute('data-bookmark-url')
                 || node.getAttribute('data-node-url')
                 || node.getAttribute('data-url')
+                || node.getAttribute('data-favicon-url')
                 || '';
         }
         return '';
@@ -2217,7 +2224,7 @@ function resolveFaviconBindingUrlFromElement(element) {
 
     let itemUrl = readFrom(element);
     if (!itemUrl && typeof element.closest === 'function') {
-        const item = element.closest('[data-node-url], [data-bookmark-url], [data-url]');
+        const item = element.closest('[data-node-url], [data-bookmark-url], [data-url], [data-favicon-url]');
         itemUrl = readFrom(item);
     }
     return typeof itemUrl === 'string' ? itemUrl.trim() : '';
@@ -2231,7 +2238,7 @@ function updateFaviconImages(url, dataUrl) {
         if (!domain) return 0;
 
         const allImages = document.querySelectorAll(
-            'img.tree-icon, img.change-tree-item-icon, img.search-result-favicon, img[data-bookmark-url], img[data-node-url], img[data-url]'
+            'img.tree-icon, img.change-tree-item-icon, img.search-result-favicon, img[class*="favicon"], img[data-bookmark-url], img[data-node-url], img[data-url], img[data-favicon-url]'
         );
 
         allImages.forEach(img => {
@@ -2273,15 +2280,21 @@ function updateFaviconImages(url, dataUrl) {
 // 全局图片错误处理（使用事件委托，避免CSP内联事件处理器）
 function setupGlobalImageErrorHandler() {
     document.addEventListener('error', (e) => {
-        if (e.target.tagName === 'IMG' &&
-            (e.target.classList.contains('tree-icon') ||
-                e.target.classList.contains('change-tree-item-icon') ||
-                e.target.classList.contains('search-result-favicon'))) {
-            // 只在src不是fallbackIcon时才替换，避免无限循环
-            // fallbackIcon 是 data URL，不会加载失败
-            if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
-                e.target.src = fallbackIcon;
-            }
+        if (e.target.tagName !== 'IMG') return;
+
+        const classNames = e.target.classList ? Array.from(e.target.classList) : [];
+        const hasKnownIconClass = (
+            e.target.classList.contains('tree-icon') ||
+            e.target.classList.contains('change-tree-item-icon') ||
+            e.target.classList.contains('search-result-favicon')
+        );
+        const hasGenericFaviconClass = classNames.some((className) => String(className || '').includes('favicon'));
+        if (!hasKnownIconClass && !hasGenericFaviconClass) return;
+
+        // 只在src不是fallbackIcon时才替换，避免无限循环
+        // fallbackIcon 是 data URL，不会加载失败
+        if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
+            e.target.src = fallbackIcon;
         }
     }, true); // 使用捕获阶段
 }
@@ -9504,7 +9517,7 @@ function renderChangeTreeItem(bookmark, type) {
 
     return `
         <div class="change-tree-item" data-bookmark-url="${escapeHtml(bookmark.url || '')}">
-            ${favicon ? `<img class="change-tree-item-icon" 
+            ${favicon ? `<img class="change-tree-item-icon" data-bookmark-url="${escapeHtml(bookmark.url || '')}"
                  src="${favicon}" 
                  alt="">` : ''}
             <div class="change-tree-item-info">
@@ -17743,7 +17756,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 <div class="tree-node">
                     <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-level="${level}" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                         <span class="tree-toggle" style="opacity: 0"></span>
-                        ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                        ${favicon ? `<img class="tree-icon" data-bookmark-url="${escapeHtml(node.url || '')}" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
@@ -18028,7 +18041,7 @@ async function applyIncrementalCreateToTree(id, bookmark) {
         <div class="tree-node">
             <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title || '')}" data-node-url="${escapeHtml(bookmark.url || '')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
-                ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
+                ${bookmark.url ? (favicon ? `<img class="tree-icon" data-bookmark-url="${escapeHtml(bookmark.url || '')}" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
                 ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title || '')}</a>` : `<span class="tree-label" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title || '')}</span>`}
                 <span class="change-badges"><span class="change-badge added"><span class="badge-symbol">+</span></span></span>
             </div>
@@ -19993,7 +20006,7 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
             <div class="tree-node">
                 <div class="tree-item ${treeItemClass}" data-node-id="${escapeHtml(nodeId)}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                     <span class="tree-toggle" style="opacity: 0"></span>
-                    ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : '<i class="tree-icon fas fa-bookmark"></i>'}
+                    ${favicon ? `<img class="tree-icon" data-bookmark-url="${escapeHtml(url || '')}" src="${escapeHtml(favicon)}" alt="">` : '<i class="tree-icon fas fa-bookmark"></i>'}
                     <a href="${escapeHtml(url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
                     <span class="change-badges">${statusIcon}</span>
                 </div>
@@ -20385,9 +20398,9 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
             const favicon = typeof getFaviconUrl === 'function' ? getFaviconUrl(node.url) : '';
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="bookmark" data-node-level="${level}">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-level="${level}">
                         <span class="tree-toggle" style="opacity: 0"></span>
-                        ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                        ${favicon ? `<img class="tree-icon" data-bookmark-url="${escapeHtml(node.url || '')}" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url || '')}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
                         <span class="change-badges">${statusIcon}</span>
                     </div>

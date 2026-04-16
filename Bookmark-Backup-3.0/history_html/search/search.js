@@ -450,13 +450,28 @@ function renderSearchDomainGroupChildren(item, groupIdRaw, options = {}) {
             const hostBadgeHtml = (shouldShowHostBadge && childHost)
                 ? `<span class="${childHostClass}" title="${escapeHtml(childHost)}">${escapeHtml(childHost)}</span>`
                 : '';
+            const childBookmarkFallbackIcon = `<span class="search-result-icon-box-inline" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; flex-shrink:0;">
+                <i class="fas fa-bookmark" style="color:#f59e0b; font-size:11px;"></i>
+            </span>`;
+            let childIconHtml = childBookmarkFallbackIcon;
+            if (child?.url && typeof getFaviconUrl === 'function' && typeof fallbackIcon !== 'undefined') {
+                const childFaviconSrc = getFaviconUrl(child.url);
+                if (childFaviconSrc && !String(childFaviconSrc).startsWith('data:image/svg+xml')) {
+                    childIconHtml = `<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc)}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="width:14px; height:14px; object-fit:contain;">`;
+                } else {
+                    childIconHtml = `${childBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc || '')}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="display:none; width:14px; height:14px; object-fit:contain; position:absolute;">`;
+                }
+            } else if (child?.url && typeof getFaviconUrl === 'function') {
+                const childFaviconSrc = getFaviconUrl(child.url);
+                childIconHtml = `<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc || '')}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="width:14px; height:14px; object-fit:contain;">`;
+            }
             return `
                 <div class="${childRowClass}" data-domain-group-id="${groupId}" data-domain-child-id="${escapeHtml(childIdRaw)}">
                     <div class="${childMainClass}">
                         <div class="${childTitleClass}">
                             ${childBadgesHtml}
                             ${hostBadgeHtml}
-                            <i class="fas fa-bookmark" style="color:#f59e0b; font-size:11px;"></i>
+                            ${childIconHtml}
                             <span>${childTitle}</span>
                         </div>
                         ${child?.url ? `<div class="${childMetaClass}">${renderSearchUrlLink(child.url, { text: child.url })}</div>` : ''}
@@ -5420,11 +5435,31 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
             ? String(item.meta)
             : (item.nodeType === 'bookmark' && item.url ? String(item.url) : '');
         const metaHtml = renderSearchMetaContent(item, metaText);
-        const typeIconHtml = item.nodeType === 'folder'
-            ? '<i class="fas fa-folder" style="color:#2563eb; font-size:12px;"></i>'
-            : (item.nodeType === 'domain_group'
-                ? '<i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>'
-                : '<i class="fas fa-bookmark" style="color:#f59e0b; font-size:12px;"></i>');
+        const detailBookmarkFallbackIcon = `<span class="search-result-icon-box-inline" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex-shrink:0;">
+            <i class="fas fa-bookmark" style="color:#f59e0b; font-size:12px;"></i>
+        </span>`;
+        let typeIconHtml = '';
+        if (item.nodeType === 'bookmark' && item.url) {
+            if (typeof getFaviconUrl === 'function' && typeof fallbackIcon !== 'undefined') {
+                const faviconSrc = getFaviconUrl(item.url);
+                if (faviconSrc && !String(faviconSrc).startsWith('data:image/svg+xml')) {
+                    typeIconHtml = `<img class="search-result-favicon" src="${escapeHtml(faviconSrc)}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="width:16px; height:16px; object-fit:contain;">`;
+                } else {
+                    typeIconHtml = `${detailBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="display:none; width:16px; height:16px; object-fit:contain; position:absolute;">`;
+                }
+            } else if (typeof getFaviconUrl === 'function') {
+                const faviconSrc = getFaviconUrl(item.url);
+                typeIconHtml = `<img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="width:16px; height:16px; object-fit:contain;">`;
+            } else {
+                typeIconHtml = detailBookmarkFallbackIcon;
+            }
+        } else if (item.nodeType === 'folder') {
+            typeIconHtml = '<i class="fas fa-folder" style="color:#2563eb; font-size:12px;"></i>';
+        } else if (item.nodeType === 'domain_group') {
+            typeIconHtml = '<i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>';
+        } else {
+            typeIconHtml = detailBookmarkFallbackIcon;
+        }
 
         return `
             <div class="search-result-item" role="option" data-index="${idx}" data-node-id="${escapeHtml(item.id)}" data-change-type="${escapeHtml(item.changeType || '')}">

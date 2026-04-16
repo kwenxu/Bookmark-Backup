@@ -18873,7 +18873,10 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             let finalStatus = primaryStatus;
             let finalDataUrl = primaryDataUrl;
             if (finalStatus !== 'success') {
-                const fallbackFaviconUrl = `/_favicon?pageUrl=${encodeURIComponent(tab.url)}&size=32`;
+                const fallbackPath = `/_favicon?pageUrl=${encodeURIComponent(tab.url)}&size=32`;
+                const fallbackFaviconUrl = browserAPI?.runtime?.getURL
+                    ? browserAPI.runtime.getURL(fallbackPath)
+                    : fallbackPath;
                 let fallbackStatus = 'non_fetchable';
                 finalDataUrl = await convertFaviconToBase64(fallbackFaviconUrl, {
                     minDimensionPx: 16,
@@ -27562,8 +27565,35 @@ function emitFaviconConvertResult(options, status, detail = {}) {
     }
 }
 
+function isFetchableFaviconUrl(rawUrl) {
+    const text = String(rawUrl || '').trim();
+    if (!text) return false;
+    if (text.startsWith('/')) return true;
+
+    let extensionProtocol = '';
+    try {
+        extensionProtocol = String(new URL(browserAPI.runtime.getURL('/')).protocol || '').toLowerCase();
+    } catch (_) { }
+
+    try {
+        const protocol = String(new URL(text).protocol || '').toLowerCase();
+        if (!protocol) return false;
+        if (protocol === 'http:' || protocol === 'https:' || protocol === 'data:' || protocol === 'blob:') {
+            return true;
+        }
+        return !!(extensionProtocol && protocol === extensionProtocol);
+    } catch (_) {
+        return false;
+    }
+}
+
 async function convertFaviconToBase64(faviconUrl, options = {}) {
     if (!faviconUrl || typeof faviconUrl !== 'string') {
+        emitFaviconConvertResult(options, 'non_fetchable');
+        return null;
+    }
+    const normalizedFaviconUrl = String(faviconUrl).trim();
+    if (!isFetchableFaviconUrl(normalizedFaviconUrl)) {
         emitFaviconConvertResult(options, 'non_fetchable');
         return null;
     }
@@ -27578,7 +27608,7 @@ async function convertFaviconToBase64(faviconUrl, options = {}) {
     }, timeoutMs);
 
     try {
-        const response = await fetch(faviconUrl, { signal: controller.signal });
+        const response = await fetch(normalizedFaviconUrl, { signal: controller.signal });
         if (!response.ok) {
             emitFaviconConvertResult(options, 'hard_failure', { httpStatus: response.status });
             return null;

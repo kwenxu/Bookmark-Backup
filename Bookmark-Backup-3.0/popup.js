@@ -16436,7 +16436,7 @@ const FaviconCache = {
     publicFaviconSizeCandidates: [256, 192, 128, 96, 64],
     googleS2SizeCandidates: [128, 64],
     cravatarSizeCandidates: [64, 128],
-    cacheQualityVersion: 2,
+    cacheQualityVersion: 3,
     cacheQualityVersionKey: 'bb_favicon_quality_version',
     firstInstallFastPathKey: 'bb_favicon_first_install_fast_path_done',
     firstInstallSkipDbReadsRemaining: 0,
@@ -16694,7 +16694,7 @@ const FaviconCache = {
         return false;
     },
 
-    async get(url) {
+    async get(url, options = {}) {
         if (this.isInvalidUrl(url)) {
             return null;
         }
@@ -16702,8 +16702,9 @@ const FaviconCache = {
         try {
             const domain = this.getHostnameKey(url);
             if (!domain) return null;
+            const ignoreFailureCache = options && options.ignoreFailureCache === true;
 
-            if (this._isFailureDomainActive(domain)) {
+            if (!ignoreFailureCache && this._isFailureDomainActive(domain)) {
                 return 'failed';
             }
 
@@ -16724,7 +16725,7 @@ const FaviconCache = {
                 const failureReq = failureStore.get(domain);
 
                 failureReq.onsuccess = () => {
-                    if (failureReq.result) {
+                    if (!ignoreFailureCache && failureReq.result) {
                         const age = Date.now() - failureReq.result.timestamp;
                         if (age < this.failureTtlMs) {
                             this._markFailureDomain(domain, failureReq.result.timestamp);
@@ -16871,7 +16872,7 @@ const FaviconCache = {
                 : 0;
             const requestKey = domain;
 
-            const cached = await this.get(url);
+            const cached = await this.get(url, options);
             if (cached === 'failed') return fallbackIcon;
             if (cached) {
                 if (cacheMinDimension <= 0 || await this.isDataUrlAtLeast(cached, cacheMinDimension)) {
@@ -17326,6 +17327,13 @@ function getFaviconUrl(url) {
         }
 
         if (FaviconCache._isFailureDomainActive(domain)) {
+            FaviconCache.fetch(url, {
+                ignoreFailureCache: true
+            }).then((dataUrl) => {
+                try {
+                    updateFaviconImages(url, dataUrl);
+                } catch (_) { }
+            }).catch(() => { });
             return fallbackIcon;
         }
 

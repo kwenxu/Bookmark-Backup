@@ -459,7 +459,7 @@ function renderSearchDomainGroupChildren(item, groupIdRaw, options = {}) {
                 if (childFaviconSrc && !String(childFaviconSrc).startsWith('data:image/svg+xml')) {
                     childIconHtml = `<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc)}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="width:14px; height:14px; object-fit:contain;">`;
                 } else {
-                    childIconHtml = `${childBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc || '')}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="display:none; width:14px; height:14px; object-fit:contain; position:absolute;">`;
+                    childIconHtml = `${childBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(childFaviconSrc || '')}" data-bookmark-url="${escapeHtml(child.url)}" alt="" style="display:none; width:14px; height:14px; object-fit:contain;">`;
                 }
             } else if (child?.url && typeof getFaviconUrl === 'function') {
                 const childFaviconSrc = getFaviconUrl(child.url);
@@ -706,9 +706,10 @@ function getCurrentChangesSearchSignature() {
 }
 
 function getHistoryDetailSearchSignature(options = {}) {
-    const { changeMap, currentTree, oldTree, recordTime } = options;
+    const { changeMap, currentTree, oldTree, recordTime, artifact } = options;
     return [
         String(recordTime || ''),
+        String(artifact || 'changes'),
         getSearchChangeMapDigest(changeMap),
         getSearchTreeDigest(currentTree),
         getSearchTreeDigest(oldTree)
@@ -4724,6 +4725,7 @@ const historyDetailSearchDbMap = new Map();
  */
 const historyDetailSearchState = {
     recordTime: null,           // 当前打开的记录时间戳
+    artifact: 'changes',        // changes | snapshot
     query: '',                  // 当前搜索关键词
     selectedIndex: -1,          // 选中的结果索引
     results: [],                // 搜索结果
@@ -4851,7 +4853,7 @@ function mergeHistoryDetailIdPathCandidates(...paths) {
  * @param {string} options.recordTime - 记录时间戳（作为缓存键）
  */
 function buildHistoryDetailSearchDb(options) {
-    const { changeMap, currentTree, oldTree, recordTime } = options;
+    const { changeMap, currentTree, oldTree, recordTime, artifact = 'changes' } = options;
     const cacheKey = String(recordTime);
     const signature = getHistoryDetailSearchSignature(options);
 
@@ -5067,7 +5069,8 @@ function buildHistoryDetailSearchDb(options) {
 
     const db = {
         signature,
-        size: ids.length,
+        artifact,
+        size: artifact === 'snapshot' ? items.length : ids.length,
         items,
         itemById,
         changedItems,
@@ -5090,6 +5093,11 @@ function buildHistoryDetailSearchDb(options) {
 }
 
 function getHistoryDetailSearchScopeMode(modalContainer) {
+    try {
+        const artifact = String(modalContainer?.dataset?.searchArtifact || historyDetailSearchState.artifact || '').toLowerCase();
+        if (artifact === 'snapshot') return 'snapshot';
+    } catch (_) { }
+
     try {
         const activeBtn = modalContainer?.querySelector('#historyDetailModeToggleModal .toggle-btn.active[data-mode]');
         const mode = String(activeBtn?.dataset?.mode || '').toLowerCase();
@@ -5118,6 +5126,10 @@ function getHistoryDetailScopedSearchMeta(db, modalContainer) {
     const dataOrderMap = db && db.dataOrderMap instanceof Map
         ? db.dataOrderMap
         : buildCurrentChangesDomOrderMap(treeContainer, { visibleOnly: false });
+
+    if (mode === 'snapshot') {
+        return { items: allItems, orderMap: dataOrderMap, mode };
+    }
 
     if (mode === 'collection') {
         const collectionScopedIdSet = db && db.collectionScopedIdSet instanceof Set ? db.collectionScopedIdSet : null;
@@ -5236,7 +5248,8 @@ function rerenderHistoryDetailSearchForQuery(modalContainer, options = {}) {
     const results = searchHistoryDetailChanges(query, searchDb, { modalContainer });
     renderHistoryDetailSearchResults(results, modalContainer, {
         query,
-        recordTime: historyDetailSearchState.recordTime
+        recordTime: historyDetailSearchState.recordTime,
+        artifact: historyDetailSearchState.artifact
     });
 
     const selectedIndex = Number.isFinite(Number(options.selectedIndex))
@@ -5326,7 +5339,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     const panel = getHistoryDetailSearchPanel(modalContainer);
     if (!panel) return;
 
-    const { query = '', recordTime = null } = options;
+    const { query = '', recordTime = null, artifact = null } = options;
     try {
         const searchInput = modalContainer?.querySelector('.detail-search-input');
         const currentQ = (searchInput && typeof searchInput.value === 'string')
@@ -5335,9 +5348,12 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
         const expectedQ = String(query || '').trim().toLowerCase();
         const activeRecordTime = String(modalContainer?.dataset?.searchRecordTime || historyDetailSearchState.recordTime || '');
         const expectedRecordTime = String(recordTime != null ? recordTime : historyDetailSearchState.recordTime || '');
+        const activeArtifact = String(modalContainer?.dataset?.searchArtifact || historyDetailSearchState.artifact || 'changes');
+        const expectedArtifact = String(artifact || historyDetailSearchState.artifact || 'changes');
         if (currentQ !== expectedQ) return;
         if (historyDetailSearchState.isActive === false) return;
         if (expectedRecordTime && activeRecordTime && expectedRecordTime !== activeRecordTime) return;
+        if (expectedArtifact && activeArtifact && expectedArtifact !== activeArtifact) return;
     } catch (_) { }
 
     const sourceResults = Array.isArray(results) ? results : [];
@@ -5445,7 +5461,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
                 if (faviconSrc && !String(faviconSrc).startsWith('data:image/svg+xml')) {
                     typeIconHtml = `<img class="search-result-favicon" src="${escapeHtml(faviconSrc)}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="width:16px; height:16px; object-fit:contain;">`;
                 } else {
-                    typeIconHtml = `${detailBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="display:none; width:16px; height:16px; object-fit:contain; position:absolute;">`;
+                    typeIconHtml = `${detailBookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(item.url)}" alt="" style="display:none; width:16px; height:16px; object-fit:contain;">`;
                 }
             } else if (typeof getFaviconUrl === 'function') {
                 const faviconSrc = getFaviconUrl(item.url);
@@ -5969,22 +5985,25 @@ async function activateHistoryDetailSearchResult(index, modalContainer) {
  * @param {Array} oldTree - 旧树（上一条记录的书签树，可选）
  * @param {Element} modalContainer - 模态框容器
  */
-function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalContainer) {
+function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalContainer, options = {}) {
     if (!record || !modalContainer) return;
 
     const recordTime = String(record.time);
+    const artifact = String(options?.artifact || 'changes').toLowerCase() === 'snapshot' ? 'snapshot' : 'changes';
     try {
         modalContainer.dataset.searchRecordTime = recordTime;
+        modalContainer.dataset.searchArtifact = artifact;
     } catch (_) { }
     historyDetailSearchState.recordTime = recordTime;
+    historyDetailSearchState.artifact = artifact;
     historyDetailSearchState.typeFilter = null;
     historyDetailSearchState.typeCounts = null;
     historyDetailSearchState.expandedDomainGroups = new Set();
     historyDetailSearchState.domainGroupHostFilters = new Map();
     historyDetailSearchState.isActive = true;
 
-    // 检查是否有变化可搜索
-    if (!changeMap || changeMap.size === 0) {
+    // 变化搜索没有变化时隐藏；快照搜索允许空 changeMap，因为它索引整棵快照树。
+    if (artifact !== 'snapshot' && (!changeMap || changeMap.size === 0)) {
         // 隐藏搜索按钮或显示禁用状态
         const searchBtn = modalContainer.querySelector('.detail-search-btn');
         if (searchBtn) searchBtn.style.display = 'none';
@@ -6010,7 +6029,8 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
             changeMap,
             currentTree,
             oldTree,
-            recordTime
+            recordTime,
+            artifact
         });
         dbBuilt = true;
         return db;
@@ -6039,7 +6059,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
 
             const searchDb = buildDbIfNeeded();
             const results = searchHistoryDetailChanges(query, searchDb, { modalContainer });
-            renderHistoryDetailSearchResults(results, modalContainer, { query, recordTime });
+            renderHistoryDetailSearchResults(results, modalContainer, { query, recordTime, artifact });
         }, 200);
     };
 
@@ -6225,6 +6245,7 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
     if (modalContainer) {
         try {
             delete modalContainer.dataset.searchRecordTime;
+            delete modalContainer.dataset.searchArtifact;
         } catch (_) { }
         delete modalContainer._historyDetailSearchBuildDb;
     }
@@ -6241,6 +6262,7 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
 
     // 重置状态
     historyDetailSearchState.recordTime = null;
+    historyDetailSearchState.artifact = 'changes';
     historyDetailSearchState.query = '';
     historyDetailSearchState.selectedIndex = -1;
     historyDetailSearchState.results = [];

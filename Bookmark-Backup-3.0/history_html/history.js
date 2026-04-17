@@ -216,6 +216,8 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
 let currentDetailRecordMode = null;
 let currentDetailRecord = null;
 let currentDetailRecordTime = null; // 当前打开的详情面板对应的记录时间
+let currentDetailArtifact = 'changes'; // changes | snapshot
+let detailRenderRequestId = 0;
 let currentExportHistoryTreeContainer = null;
 let currentRestoreRecord = null;
 let restoreGeneralPreflight = null;
@@ -2275,6 +2277,9 @@ function updateFaviconImages(url, dataUrl) {
                 img.src = dataUrl;
                 if (img.style.display === 'none') {
                     img.style.display = '';
+                    img.style.position = '';
+                    img.style.left = '';
+                    img.style.top = '';
                     const prevSibling = img.previousElementSibling;
                     if (prevSibling && prevSibling.classList.contains('search-result-icon-box-inline')) {
                         prevSibling.style.display = 'none';
@@ -3479,15 +3484,14 @@ function applyLanguage() {
     const historyDetailModeCollectionModalText = document.getElementById('historyDetailModeCollectionModalText');
     if (historyDetailModeCollectionModalText) historyDetailModeCollectionModalText.textContent = i18n.historyDetailModeCollection[currentLang];
 
-    const modalTitle = document.getElementById('modalTitle');
-    if (modalTitle) modalTitle.textContent = i18n.modalTitle[currentLang];
+    updateDetailArtifactToggleUI(currentDetailArtifact);
     const detailSearchChangesBtn = document.getElementById('detailSearchChangesBtn');
     if (detailSearchChangesBtn) {
-        detailSearchChangesBtn.title = currentLang === 'zh_CN' ? '搜索变化' : 'Search Changes';
+        detailSearchChangesBtn.title = getHistoryDetailSearchTitle(currentDetailArtifact);
     }
     const detailSearchModalTitle = document.getElementById('detailSearchModalTitle');
     if (detailSearchModalTitle) {
-        detailSearchModalTitle.textContent = currentLang === 'zh_CN' ? '搜索变化' : 'Search Changes';
+        detailSearchModalTitle.textContent = getHistoryDetailSearchTitle(currentDetailArtifact);
     }
     const detailSearchModalClose = document.getElementById('detailSearchModalClose');
     if (detailSearchModalClose) {
@@ -3495,9 +3499,7 @@ function applyLanguage() {
     }
     const detailSearchInput = document.getElementById('detailSearchInput');
     if (detailSearchInput) {
-        detailSearchInput.placeholder = currentLang === 'zh_CN'
-            ? '搜索书签/文件夹变化...'
-            : 'Search bookmark/folder changes...';
+        detailSearchInput.placeholder = getHistoryDetailSearchPlaceholder(currentDetailArtifact);
     }
     const detailExportChangesBtn = document.getElementById('detailExportChangesBtn');
     if (detailExportChangesBtn) {
@@ -3679,6 +3681,7 @@ function initializeUI() {
 
     // 初始化备份历史详情模式切换按钮
     initHistoryDetailModeToggle();
+    initDetailArtifactToggle();
     initDetailModalActions();
 
     
@@ -18728,6 +18731,89 @@ async function autoExpandHistoryDetailTreeToChanges(record, treeContainer) {
     }
 }
 
+function normalizeHistoryDetailArtifact(value) {
+    return String(value || '').toLowerCase() === 'snapshot' ? 'snapshot' : 'changes';
+}
+
+function getHistoryDetailArtifactLabel(artifact, isZh = currentLang === 'zh_CN') {
+    return normalizeHistoryDetailArtifact(artifact) === 'snapshot'
+        ? (isZh ? '快照' : 'Snapshot')
+        : (isZh ? '变化' : 'Changes');
+}
+
+function getHistoryDetailModalTitle(artifact = currentDetailArtifact) {
+    const isZh = currentLang === 'zh_CN';
+    return normalizeHistoryDetailArtifact(artifact) === 'snapshot'
+        ? (isZh ? '当前快照' : 'Current Snapshot')
+        : (i18n?.modalTitle?.[currentLang] || (isZh ? '变化详情' : 'Change Details'));
+}
+
+function getHistoryDetailSearchTitle(artifact = currentDetailArtifact) {
+    const isZh = currentLang === 'zh_CN';
+    return normalizeHistoryDetailArtifact(artifact) === 'snapshot'
+        ? (isZh ? '搜索快照' : 'Search Snapshot')
+        : (isZh ? '搜索变化' : 'Search Changes');
+}
+
+function getHistoryDetailSearchPlaceholder(artifact = currentDetailArtifact) {
+    const isZh = currentLang === 'zh_CN';
+    return normalizeHistoryDetailArtifact(artifact) === 'snapshot'
+        ? (isZh ? '搜索当前快照里的书签/文件夹...' : 'Search bookmarks/folders in this snapshot...')
+        : (isZh ? '搜索书签/文件夹变化...' : 'Search bookmark/folder changes...');
+}
+
+function updateDetailArtifactToggleUI(artifact = currentDetailArtifact) {
+    const normalized = normalizeHistoryDetailArtifact(artifact);
+    const changesBtn = document.getElementById('detailArtifactChangesBtn');
+    const snapshotBtn = document.getElementById('detailArtifactSnapshotBtn');
+    const changesText = document.getElementById('detailArtifactChangesText');
+    const snapshotText = document.getElementById('detailArtifactSnapshotText');
+    const modalTitle = document.getElementById('modalTitle');
+
+    if (changesText) changesText.textContent = getHistoryDetailArtifactLabel('changes');
+    if (snapshotText) snapshotText.textContent = getHistoryDetailArtifactLabel('snapshot');
+    if (modalTitle) modalTitle.textContent = getHistoryDetailModalTitle(normalized);
+
+    if (changesBtn) {
+        const active = normalized === 'changes';
+        changesBtn.classList.toggle('active', active);
+        changesBtn.setAttribute('aria-selected', active ? 'true' : 'false');
+        changesBtn.title = getHistoryDetailArtifactLabel('changes');
+    }
+    if (snapshotBtn) {
+        const active = normalized === 'snapshot';
+        snapshotBtn.classList.toggle('active', active);
+        snapshotBtn.setAttribute('aria-selected', active ? 'true' : 'false');
+        snapshotBtn.title = getHistoryDetailArtifactLabel('snapshot');
+    }
+
+    const searchBtn = document.getElementById('detailSearchChangesBtn');
+    if (searchBtn) searchBtn.title = getHistoryDetailSearchTitle(normalized);
+    const detailSearchModalTitle = document.getElementById('detailSearchModalTitle');
+    if (detailSearchModalTitle) detailSearchModalTitle.textContent = getHistoryDetailSearchTitle(normalized);
+    const detailSearchInput = document.getElementById('detailSearchInput');
+    if (detailSearchInput) detailSearchInput.placeholder = getHistoryDetailSearchPlaceholder(normalized);
+}
+
+function initDetailArtifactToggle() {
+    const toggle = document.getElementById('detailArtifactToggle');
+    if (!toggle || toggle.hasAttribute('data-listener-attached')) return;
+
+    toggle.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('.detail-artifact-toggle-btn[data-artifact]');
+        if (!button || !toggle.contains(button)) return;
+        const nextArtifact = normalizeHistoryDetailArtifact(button.dataset.artifact);
+        if (normalizeHistoryDetailArtifact(currentDetailArtifact) === nextArtifact) return;
+        currentDetailArtifact = nextArtifact;
+        updateDetailArtifactToggleUI(nextArtifact);
+        if (currentDetailRecord) {
+            renderDetailModalContent(currentDetailRecord, currentDetailRecordMode || getRecordDetailMode(currentDetailRecord.time));
+        }
+    });
+
+    toggle.setAttribute('data-listener-attached', 'true');
+}
+
 function updateDetailModalToggleUI(mode) {
     const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
     const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
@@ -18781,6 +18867,7 @@ function initDetailModalActions() {
             const treeContainer = document.querySelector('#modalBody .history-tree-container');
             showHistoryExportChangesModal(currentDetailRecord.time, {
                 preferredMode: currentDetailRecordMode || getRecordDetailMode(currentDetailRecord.time),
+                preferredArtifact: currentDetailArtifact,
                 useDomTreeContainer: true,
                 treeContainer
             });
@@ -18822,18 +18909,27 @@ function renderDetailModalContent(record, mode) {
     if (!body) return;
 
     const normalizedMode = normalizeHistoryDetailMode(mode || getRecordDetailMode(record?.time));
+    const detailArtifact = normalizeHistoryDetailArtifact(currentDetailArtifact);
+    const modalContentBeforeRender = body.closest('.modal-content');
+    if (modalContentBeforeRender && typeof cleanupHistoryDetailSearch === 'function') {
+        cleanupHistoryDetailSearch(currentDetailRecordTime, modalContentBeforeRender);
+    }
+    const renderRequestId = ++detailRenderRequestId;
 
     body.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
 
-    generateDetailContent(record, normalizedMode).then(html => {
+    generateDetailContent(record, normalizedMode, detailArtifact).then(html => {
+        if (renderRequestId !== detailRenderRequestId) return;
         body.innerHTML = html;
 
         setTimeout(() => {
+            if (renderRequestId !== detailRenderRequestId) return;
             initDetailModalActions();
             updateDetailModalToggleUI(normalizedMode);
+            updateDetailArtifactToggleUI(detailArtifact);
             const treeContainer = body.querySelector('.history-tree-container');
             if (treeContainer) {
-                if (normalizedMode === 'detailed') {
+                if (detailArtifact === 'changes' && normalizedMode === 'detailed') {
                     const manualExpandedIds = getRecordExpandedState(record.time);
                     const hasManualExpandedState = manualExpandedIds instanceof Set && manualExpandedIds.size > 0;
                     if (hasManualExpandedState) {
@@ -18917,7 +19013,7 @@ function renderDetailModalContent(record, mode) {
                             }
                         }
 
-                        if (normalizedMode === 'detailed') {
+                        if (detailArtifact === 'changes' && normalizedMode === 'detailed') {
                             const nodeId = treeItem.getAttribute('data-node-id');
                             if (nodeId) saveRecordExpandedState(record.time, nodeId, isExpanding);
                         }
@@ -19017,34 +19113,46 @@ function renderDetailModalContent(record, mode) {
                     }
                 });
 
-                // 异步初始化搜索（需要 changeMap）
+                // 异步初始化搜索：变化与快照分别建索引；索引本身仍延迟到首次输入时构建。
                 (async () => {
                     try {
-                        const prepared = await prepareDataForExport(record);
-                        const treeToSearch = prepared?.treeToExport || record.bookmarkTree;
-                        const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+                        if (renderRequestId !== detailRenderRequestId) return;
+                        const isSnapshotDetail = detailArtifact === 'snapshot';
+                        let treeToSearch = null;
+                        let oldTreeToSearch = null;
+                        let changeMap = new Map();
+
+                        if (isSnapshotDetail) {
+                            await ensureRecordBookmarkTree(record);
+                            treeToSearch = record.bookmarkTree || null;
+                        } else {
+                            const prepared = await prepareDataForExport(record);
+                            treeToSearch = prepared?.treeToExport || record.bookmarkTree;
+                            changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+                            oldTreeToSearch = prepared?.comparisonBaseTree || null;
+
+                            // 变化搜索没有变化时隐藏；快照搜索允许空 changeMap，因为它搜索整棵快照树。
+                            if (changeMap.size === 0) {
+                                searchBtn.style.display = 'none';
+                                return;
+                            }
+                        }
 
                         if (!treeToSearch) {
-                            
                             searchBtn.style.display = 'none';
                             return;
                         }
 
-                        // 检查是否有变化可搜索
-                        if (changeMap.size === 0) {
-                            
-                            searchBtn.style.display = 'none';
-                            return;
-                        }
-
+                        if (renderRequestId !== detailRenderRequestId) return;
                         // 初始化搜索模块
                         if (typeof initHistoryDetailSearch === 'function') {
                             initHistoryDetailSearch(
                                 record,
                                 changeMap,
                                 treeToSearch,
-                                prepared?.comparisonBaseTree || null,
-                                modalContent
+                                oldTreeToSearch,
+                                modalContent,
+                                { artifact: detailArtifact }
                             );
                         }
                     } catch (e) {
@@ -19067,6 +19175,7 @@ function renderDetailModalContent(record, mode) {
             } catch (_) { }
         }, 0);
     }).catch(error => {
+        if (renderRequestId !== detailRenderRequestId) return;
         console.error('[详情弹窗] 生成失败:', error);
         body.innerHTML = `<div class="detail-empty"><i class="fas fa-exclamation-circle"></i>加载失败: ${escapeHtml(error && error.message ? error.message : String(error))}</div>`;
     });
@@ -19088,8 +19197,10 @@ function showDetailModal(record, options = {}) {
     currentDetailRecordTime = record.time;
     currentDetailRecord = record;
     currentDetailRecordMode = getRecordDetailMode(record.time);
+    currentDetailArtifact = normalizeHistoryDetailArtifact(options?.artifact || 'changes');
 
     updateDetailModalToggleUI(currentDetailRecordMode);
+    updateDetailArtifactToggleUI(currentDetailArtifact);
 
     const exportBtn = document.getElementById('detailExportChangesBtn');
     if (exportBtn) {
@@ -19102,6 +19213,7 @@ function showDetailModal(record, options = {}) {
 }
 
 function closeModal() {
+    detailRenderRequestId += 1;
     setDetailSearchModalVisibility(document.getElementById('modalBody'), false);
 
     // ==================== Phase 2.5: 清理历史详情搜索 ====================
@@ -19145,6 +19257,7 @@ function closeModal() {
             currentDetailRecordTime = null;
             currentDetailRecord = null;
             currentDetailRecordMode = null;
+            currentDetailArtifact = 'changes';
         }, 100);
     }
 }
@@ -19194,9 +19307,13 @@ function initHistoryDetailModeToggle() {
 }
 
 // 生成详情内容（异步）
-async function generateDetailContent(record, mode) {
+async function generateDetailContent(record, mode, artifact = 'changes') {
     const stats = record.bookmarkStats || {};
     const detailMode = normalizeHistoryDetailMode(mode || getRecordDetailMode(record.time));
+    const detailArtifact = normalizeHistoryDetailArtifact(artifact);
+    const isSnapshotDetail = detailArtifact === 'snapshot';
+    const searchTitle = getHistoryDetailSearchTitle(detailArtifact);
+    const searchPlaceholder = getHistoryDetailSearchPlaceholder(detailArtifact);
 
     let html = '';
 
@@ -19219,12 +19336,13 @@ async function generateDetailContent(record, mode) {
                     </button>
                 </span>
                 <div class="detail-actions-right">
-                    <button id="detailSearchChangesBtn" class="action-btn compact detail-search-btn" title="${currentLang === 'zh_CN' ? '搜索变化' : 'Search Changes'}">
+                    <button id="detailSearchChangesBtn" class="action-btn compact detail-search-btn" title="${escapeHtml(searchTitle)}">
                         <i class="fas fa-search"></i>
                     </button>
                     <button id="detailExportChangesBtn" class="action-btn compact" title="${currentLang === 'zh_CN' ? '导出' : 'Export'}">
                         <i class="fas fa-file-export"></i>
                     </button>
+                    ${isSnapshotDetail ? '' : `
                     <div class="toggle-btn-group" id="historyDetailModeToggleModal">
                         <button id="historyDetailModeSimpleModal" class="toggle-btn ${detailMode === 'simple' ? 'active' : ''}" data-mode="simple" title="${currentLang === 'zh_CN' ? '简略模式' : 'Simple mode'}">
                             <svg class="icon-compact" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -19256,13 +19374,14 @@ async function generateDetailContent(record, mode) {
                             <span id="historyDetailModeCollectionModalText">${currentLang === 'zh_CN' ? '集合' : 'Collection'}</span>
                         </button>
                     </div>
+                    `}
                 </div>
             </div>
             <!-- Phase 2.5: 搜索弹窗（样式对齐导出变化弹窗） -->
             <div class="detail-search-container" id="detailSearchContainer">
                 <div class="detail-search-modal-panel modal-content">
                     <div class="modal-header compact">
-                        <h3 id="detailSearchModalTitle">${currentLang === 'zh_CN' ? '搜索变化' : 'Search Changes'}</h3>
+                        <h3 id="detailSearchModalTitle">${escapeHtml(searchTitle)}</h3>
                         <button class="modal-close" id="detailSearchModalClose" aria-label="${currentLang === 'zh_CN' ? '关闭' : 'Close'}">
                             <i class="fas fa-times"></i>
                         </button>
@@ -19270,7 +19389,7 @@ async function generateDetailContent(record, mode) {
                     <div class="modal-body detail-search-modal-body">
                         <div class="detail-search-input-wrapper">
                             <i class="fas fa-search search-icon"></i>
-                            <input type="text" class="detail-search-input" id="detailSearchInput" placeholder="${currentLang === 'zh_CN' ? '搜索书签/文件夹变化...' : 'Search bookmark/folder changes...'}">
+                            <input type="text" class="detail-search-input" id="detailSearchInput" placeholder="${escapeHtml(searchPlaceholder)}">
                         </div>
                         <div class="detail-search-results-panel" id="detailSearchResultsPanel">
                             <!-- 搜索结果将动态填充 -->
@@ -19281,9 +19400,11 @@ async function generateDetailContent(record, mode) {
         </div>
     `;
 
-    // 尝试获取详细变化 - 使用树形视图
+    // 尝试获取详细内容 - 默认变化；切到快照时才加载完整快照树。
     try {
-        const treeHtml = await generateTreeBasedChanges(record, detailMode);
+        const treeHtml = isSnapshotDetail
+            ? await generateSnapshotDetailTree(record)
+            : await generateTreeBasedChanges(record, detailMode);
         if (treeHtml) {
             html += treeHtml;
         } else {
@@ -19291,9 +19412,13 @@ async function generateDetailContent(record, mode) {
                 <div class="detail-section">
                     <div class="detail-empty">
                         <i class="fas fa-info-circle"></i>
-                        ${currentLang === 'zh_CN'
-                    ? '无详细变化记录（该记录可能来自旧版本）'
-                    : 'No detailed changes available (this record may be from an older version)'}
+                        ${isSnapshotDetail
+                    ? (currentLang === 'zh_CN'
+                        ? '无快照数据（该记录可能来自旧版本）'
+                        : 'No snapshot data available (this record may be from an older version)')
+                    : (currentLang === 'zh_CN'
+                        ? '无详细变化记录（该记录可能来自旧版本）'
+                        : 'No detailed changes available (this record may be from an older version)')}
                     </div>
                 </div>
             `;
@@ -19304,7 +19429,9 @@ async function generateDetailContent(record, mode) {
             <div class="detail-section">
                 <div class="detail-empty">
                     <i class="fas fa-exclamation-circle"></i>
-                    ${currentLang === 'zh_CN' ? '加载变化详情失败' : 'Failed to load change details'}
+                    ${isSnapshotDetail
+                ? (currentLang === 'zh_CN' ? '加载当前快照失败' : 'Failed to load current snapshot')
+                : (currentLang === 'zh_CN' ? '加载变化详情失败' : 'Failed to load change details')}
                 </div>
             </div>
         `;
@@ -19504,6 +19631,23 @@ async function getPreviousHistoryRecordMeta(recordTime) {
 
             resolve(response.record || null);
         });
+    });
+}
+
+async function generateSnapshotDetailTree(record) {
+    await ensureRecordBookmarkTree(record);
+    if (!record?.bookmarkTree) {
+        return null;
+    }
+
+    const isZh = currentLang === 'zh_CN';
+    return generateHistoryTreeHtml(record.bookmarkTree, new Map(), 'detailed', {
+        recordTime: record.time,
+        lazyKey: `${record.time}:snapshot`,
+        customTitle: isZh ? '当前快照' : 'Current Snapshot',
+        hideLegend: true,
+        hideModeLabel: true,
+        expandDepth: 0
     });
 }
 
@@ -23389,7 +23533,7 @@ function showExportChangesModal(changeData) {
 // 显示备份历史的导出变化模态框
 async function showHistoryExportChangesModal(recordTime, options = {}) {
     
-    const { preferredMode, useDomTreeContainer, treeContainer } = options;
+    const { preferredMode, preferredArtifact, useDomTreeContainer, treeContainer } = options;
 
     // 查找记录
     const record = syncHistory.find(r => r.time === recordTime);
@@ -23416,14 +23560,16 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
     currentExportHistoryRecord = record;
     currentExportBookmarkTree = treeToExport;
     currentExportHistoryTreeContainer = useDomTreeContainer ? (treeContainer || document.querySelector('#modalBody .history-tree-container')) : null;
-    currentExportHistoryArtifactType = 'changes';
+    currentExportHistoryArtifactType = normalizeHistoryExportArtifactType(preferredArtifact, 'changes');
 
     // 显示模态框
     const modal = document.getElementById('exportChangesModal');
     if (modal) {
         modal.classList.add('show');
+        const historyArtifactInput = modal.querySelector(`input[name="historyExportArtifactType"][value="${currentExportHistoryArtifactType}"]`);
         const historyArtifactChangesInput = modal.querySelector('input[name="historyExportArtifactType"][value="changes"]');
-        if (historyArtifactChangesInput) historyArtifactChangesInput.checked = true;
+        if (historyArtifactInput) historyArtifactInput.checked = true;
+        else if (historyArtifactChangesInput) historyArtifactChangesInput.checked = true;
         // 重置为默认值
         const formatJson = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
         const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');

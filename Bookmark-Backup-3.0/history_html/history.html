@@ -439,6 +439,16 @@
             <div class="modal-header">
                 <div class="modal-header-left">
                     <h3 id="modalTitle">变化详情</h3>
+                    <div id="detailArtifactToggle" class="detail-artifact-toggle" role="tablist" aria-label="详情类型">
+                        <button id="detailArtifactChangesBtn" class="detail-artifact-toggle-btn active" type="button"
+                            data-artifact="changes" role="tab" aria-selected="true">
+                            <span id="detailArtifactChangesText">变化</span>
+                        </button>
+                        <button id="detailArtifactSnapshotBtn" class="detail-artifact-toggle-btn" type="button"
+                            data-artifact="snapshot" role="tab" aria-selected="false">
+                            <span id="detailArtifactSnapshotText">快照</span>
+                        </button>
+                    </div>
                 </div>
                 <button class="modal-close" id="modalClose">
                     <i class="fas fa-times"></i>

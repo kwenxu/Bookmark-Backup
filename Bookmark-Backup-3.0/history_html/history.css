@@ -3641,6 +3641,42 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-primary);
 }
 
+.detail-artifact-toggle {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.detail-artifact-toggle-btn {
+    appearance: none;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 7px 12px;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.detail-artifact-toggle-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.detail-artifact-toggle-btn.active {
+    color: #fff;
+    background: var(--accent-primary);
+    box-shadow: 0 1px 4px rgba(var(--accent-rgb), 0.25);
+}
+
 .modal-close {
     width: 32px;
     height: 32px;

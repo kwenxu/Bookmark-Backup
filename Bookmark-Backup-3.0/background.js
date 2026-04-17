@@ -1498,6 +1498,9 @@ function resetOperationStatus() {
         recentModifiedIds: [],
         recentAddedIds: []
     });
+    try {
+        browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
+    } catch (_) { }
 }
 
 
@@ -1623,7 +1626,7 @@ function initializeOperationTracking() {
 
     // 监听书签创建事件
     browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
-        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) return;
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) return;
         cachedBookmarkAnalysis = null; // Invalidate cache
         // 记录新增的节点
         try {
@@ -1639,7 +1642,7 @@ function initializeOperationTracking() {
 
     // 监听书签删除事件
     browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
-        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) return;
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) return;
         cachedBookmarkAnalysis = null; // Invalidate cache
         // 从所有记录中移除该节点（书签Git风格）
         try {
@@ -1649,7 +1652,7 @@ function initializeOperationTracking() {
 
     // 监听书签移动事件
     browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
-        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) return;
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) return;
         cachedBookmarkAnalysis = null; // Invalidate cache
         // 确定被移动的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
@@ -1690,7 +1693,7 @@ function initializeOperationTracking() {
         if (browserAPI.bookmarks.onChildrenReordered) {
             browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
                 cachedBookmarkAnalysis = null; // Invalidate cache
-                if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+                if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) {
                     return;
                 }
                 try {
@@ -1716,7 +1719,7 @@ function initializeOperationTracking() {
 
     // 监听书签修改事件
     browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
-        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) return;
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) return;
         cachedBookmarkAnalysis = null; // Invalidate cache
         // 确定被修改的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
@@ -2196,10 +2199,37 @@ let isBookmarkRestoring = false; // 书签恢复期间暂停监听
 let isBookmarkRestoringFromUiFlag = false; // 仅由前端页面临时置位的恢复锁（防止按钮永久不可点）
 let isBookmarkBulkChanging = false; // 大量变化期间：暂停昂贵计算
 let bookmarkImportFlushTimer = null;
+const BOOKMARK_RESTORE_EVENT_GRACE_MS = 1200;
+let bookmarkRestoreEventResumeAt = 0;
+
+function isBookmarkRestoreEventGraceActive() {
+    const ts = Number(bookmarkRestoreEventResumeAt || 0);
+    return ts > Date.now();
+}
+
+function setBookmarkRestoringRuntimeState(nextValue, options = {}) {
+    const prev = isBookmarkRestoring === true;
+    const next = nextValue === true;
+    isBookmarkRestoring = next;
+
+    if (next) {
+        bookmarkRestoreEventResumeAt = 0;
+        return;
+    }
+
+    if (prev) {
+        bookmarkRestoreEventResumeAt = Date.now() + BOOKMARK_RESTORE_EVENT_GRACE_MS;
+        if (options.clearExplicitMoved !== false) {
+            try {
+                browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
+            } catch (_) { }
+        }
+    }
+}
 
 async function clearUiRestoreGuardFlagIfNeeded() {
     if (!(isBookmarkRestoring && isBookmarkRestoringFromUiFlag)) return false;
-    isBookmarkRestoring = false;
+    setBookmarkRestoringRuntimeState(false);
     isBookmarkRestoringFromUiFlag = false;
     try {
         await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
@@ -2762,130 +2792,6 @@ function normalizeBookmarkComparisonGeneration(value, fallback = BOOKMARK_COMPAR
     return BOOKMARK_COMPARISON_INITIAL_GENERATION;
 }
 
-function cloneBookmarkTreeSerializable(tree) {
-    if (!Array.isArray(tree)) return tree;
-    try {
-        return JSON.parse(JSON.stringify(tree));
-    } catch (_) {
-        return tree;
-    }
-}
-
-function computeStableTextHash(text) {
-    const input = String(text || '');
-    let hash = 2166136261;
-    for (let i = 0; i < input.length; i += 1) {
-        hash ^= input.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function buildBookmarkTreeContentSignature(tree) {
-    if (!Array.isArray(tree) || tree.length === 0) return '';
-    try {
-        const prints = generateFingerprints(tree);
-        const bookmarkPrints = Array.isArray(prints?.bookmarks)
-            ? prints.bookmarks.slice().sort()
-            : [];
-        const folderPrints = Array.isArray(prints?.folders)
-            ? prints.folders.slice().sort()
-            : [];
-        const body = `${bookmarkPrints.join('\n')}\n---\n${folderPrints.join('\n')}`;
-        return `${bookmarkPrints.length}:${folderPrints.length}:${computeStableTextHash(body)}`;
-    } catch (_) {
-        return '';
-    }
-}
-
-function buildGenerationAwareComparisonContext({ previousTree, currentTree, previousGeneration = null, currentGeneration = null }) {
-    const normalizedCurrentGeneration = normalizeBookmarkComparisonGeneration(currentGeneration);
-    const normalizedPreviousGeneration = normalizeBookmarkComparisonGeneration(previousGeneration, normalizedCurrentGeneration);
-    const crossGeneration = normalizedPreviousGeneration !== normalizedCurrentGeneration;
-
-    let treeForDiff = currentTree;
-    let usedCrossGenerationAlignment = false;
-    let alignmentReport = null;
-
-    if (
-        crossGeneration
-        && Array.isArray(previousTree)
-        && previousTree[0]
-        && Array.isArray(currentTree)
-        && currentTree[0]
-    ) {
-        try {
-            const clonedCurrentTree = cloneBookmarkTreeSerializable(currentTree);
-            if (Array.isArray(clonedCurrentTree) && clonedCurrentTree[0]) {
-                alignmentReport = normalizeTreeIds(clonedCurrentTree, previousTree, {
-                    strictGlobalUrlMatch: true
-                });
-                treeForDiff = clonedCurrentTree;
-                usedCrossGenerationAlignment = true;
-            }
-        } catch (_) {
-            treeForDiff = currentTree;
-            usedCrossGenerationAlignment = false;
-            alignmentReport = null;
-        }
-    }
-
-    return {
-        previousGeneration: normalizedPreviousGeneration,
-        currentGeneration: normalizedCurrentGeneration,
-        crossGeneration,
-        usedCrossGenerationAlignment,
-        alignmentReport,
-        treeForDiff,
-        baselineSignature: buildBookmarkTreeContentSignature(previousTree),
-        currentSignature: buildBookmarkTreeContentSignature(currentTree)
-    };
-}
-
-function computeBookmarkGitDiffSummaryByGeneration(options = {}) {
-    const previousTree = Array.isArray(options.previousTree) ? options.previousTree : null;
-    const currentTree = Array.isArray(options.currentTree) ? options.currentTree : null;
-    const explicitMovedIds = options.explicitMovedIds instanceof Set ? options.explicitMovedIds : null;
-
-    const context = buildGenerationAwareComparisonContext({
-        previousTree,
-        currentTree,
-        previousGeneration: options.previousGeneration,
-        currentGeneration: options.currentGeneration
-    });
-
-    const summary = computeBookmarkGitDiffSummary(previousTree, context.treeForDiff || currentTree, {
-        explicitMovedIds: context.crossGeneration ? null : explicitMovedIds
-    });
-
-    return {
-        summary,
-        context
-    };
-}
-
-function detectTreeChangesFastBgByGeneration(options = {}) {
-    const previousTree = Array.isArray(options.previousTree) ? options.previousTree : null;
-    const currentTree = Array.isArray(options.currentTree) ? options.currentTree : null;
-    const explicitMovedIdSet = options.explicitMovedIdSet instanceof Set ? options.explicitMovedIdSet : null;
-
-    const context = buildGenerationAwareComparisonContext({
-        previousTree,
-        currentTree,
-        previousGeneration: options.previousGeneration,
-        currentGeneration: options.currentGeneration
-    });
-
-    const changeMap = detectTreeChangesFastBg(previousTree, context.treeForDiff || currentTree, {
-        explicitMovedIdSet: context.crossGeneration ? null : explicitMovedIdSet
-    });
-
-    return {
-        changeMap,
-        context
-    };
-}
-
 function resolveComparisonGenerationFromHistoryRecord(syncHistory, recordTime, fallbackGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION) {
     const normalizedTime = String(recordTime || '').trim();
     if (!normalizedTime || !Array.isArray(syncHistory)) {
@@ -2896,6 +2802,59 @@ function resolveComparisonGenerationFromHistoryRecord(syncHistory, recordTime, f
         return normalizeBookmarkComparisonGeneration(fallbackGeneration);
     }
     return normalizeBookmarkComparisonGeneration(match?.comparisonGeneration, fallbackGeneration);
+}
+
+async function commitCurrentTreeAsBaselineSnapshot(options = {}) {
+    const treeOverride = options?.treeOverride;
+    const timestampRaw = String(options?.timestamp || '').trim();
+    const clearChangesCache = options?.clearChangesCache !== false;
+    const explicitGeneration = options?.comparisonGeneration;
+
+    const currentTree = (Array.isArray(treeOverride) && treeOverride.length > 0)
+        ? treeOverride
+        : await browserAPI.bookmarks.getTree();
+    if (!isBookmarkTreeShapeValid(currentTree)) {
+        return { success: false, error: 'invalid_current_tree' };
+    }
+
+    const currentBookmarkCount = countAllBookmarks(currentTree);
+    const currentFolderCount = countAllFolders(currentTree);
+    const currentPrints = generateFingerprints(currentTree);
+    const generationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
+    const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
+        explicitGeneration,
+        normalizeBookmarkComparisonGeneration(
+            generationStore?.[BOOKMARK_COMPARISON_GENERATION_KEY],
+            BOOKMARK_COMPARISON_INITIAL_GENERATION
+        )
+    );
+    const timestamp = timestampRaw || new Date().toISOString();
+
+    await browserAPI.storage.local.set({
+        lastBookmarkData: {
+            bookmarkCount: currentBookmarkCount,
+            folderCount: currentFolderCount,
+            bookmarkPrints: currentPrints.bookmarks,
+            folderPrints: currentPrints.folders,
+            bookmarkTree: currentTree,
+            timestamp,
+            comparisonGeneration: activeComparisonGeneration
+        }
+    });
+
+    if (clearChangesCache) {
+        try {
+            await browserAPI.storage.local.remove([CURRENT_CHANGES_CACHE_KEY, LEGACY_CURRENT_CHANGES_CACHE_KEY]);
+        } catch (_) { }
+        await setBookmarkChangesDirty(false);
+    }
+
+    return {
+        success: true,
+        tree: currentTree,
+        comparisonGeneration: activeComparisonGeneration,
+        timestamp
+    };
 }
 
 async function bumpBookmarkComparisonGeneration(reason = 'manual', extra = {}) {
@@ -3255,6 +3214,13 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             return latestTree;
         };
         const bookmarks = await captureStableBookmarks();
+        try {
+            await commitCurrentTreeAsBaselineSnapshot({
+                treeOverride: bookmarks,
+                timestamp: syncTime,
+                comparisonGeneration: activeComparisonGeneration
+            });
+        } catch (_) { }
         const sharedSnapshotHtml = convertToEdgeHTML(bookmarks);
 
         const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
@@ -4635,7 +4601,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;  // 保持消息通道开放
         } else if (message.action === "setBookmarkRestoringFlag") {
             const next = !!message.value;
-            isBookmarkRestoring = next;
+            setBookmarkRestoringRuntimeState(next);
             isBookmarkRestoringFromUiFlag = next;
             try {
                 browserAPI.storage.local.set({ bookmarkRestoringFlag: isBookmarkRestoring }, () => { });
@@ -4693,7 +4659,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 };
 
                 try {
-                    isBookmarkRestoring = true;
+                    setBookmarkRestoringRuntimeState(true);
                     isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
@@ -4973,7 +4939,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     console.error('[revertAllToLastBackup] Failed:', error);
                     sendResponse(response);
                 } finally {
-                    isBookmarkRestoring = false;
+                    setBookmarkRestoringRuntimeState(false);
                     isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
@@ -5005,7 +4971,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 };
 
                 try {
-                    isBookmarkRestoring = true;
+                    setBookmarkRestoringRuntimeState(true);
                     isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
@@ -5527,7 +5493,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     console.error('[restoreToHistoryRecord] Failed:', error);
                     sendResponse(response);
                 } finally {
-                    isBookmarkRestoring = false;
+                    setBookmarkRestoringRuntimeState(false);
                     isBookmarkRestoringFromUiFlag = false;
                     try {
                         await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
@@ -6939,7 +6905,7 @@ browserAPI.alarms.onAlarm.addListener(async (alarm) => {
 
 // 添加书签变化监听器（同时做“当前变化缓存”的增量更新）
 browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
-    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging;
+    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
     if (!shouldSkipDelta) {
         try {
             enqueueChangeCacheDelta({
@@ -6955,7 +6921,7 @@ browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
     handleBookmarkChange();
 });
 browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
-    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging;
+    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
     if (!shouldSkipDelta) {
         try {
             const sid = (id != null) ? String(id) : '';
@@ -6976,7 +6942,7 @@ browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
     handleBookmarkChange();
 });
 browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
-    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging;
+    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
     if (!shouldSkipDelta) {
         try {
             const idx = BookmarkSnapshotCache.index;
@@ -6995,7 +6961,7 @@ browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
     handleBookmarkChange();
 });
 browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
-    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging;
+    const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
     if (!shouldSkipDelta) {
         try {
             const idx = BookmarkSnapshotCache.index;
@@ -7127,7 +7093,7 @@ async function handleBookmarkChange() {
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
             // 导入/恢复/大量变化期间：避免触发昂贵的分析/通信/可能的实时备份
-            if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+            if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive()) {
                 return;
             }
             // 读取自动模式和自动备份定时器设置
@@ -9371,22 +9337,12 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
     const baseData = await browserAPI.storage.local.get([
         'lastBookmarkData',
         'currentChangesViewMode',
-        'lastBookmarkChangeTime',
-        BOOKMARK_COMPARISON_GENERATION_KEY
+        'lastBookmarkChangeTime'
     ]);
     const previousTree = usePreviousBookmarks
         ? (Array.isArray(previousBookmarks) && previousBookmarks.length ? previousBookmarks : null)
         : (baseData?.lastBookmarkData?.bookmarkTree || null);
     const hasPreviousTree = Array.isArray(previousTree) && previousTree.length > 0;
-    const normalizedCurrentGeneration = normalizeBookmarkComparisonGeneration(
-        currentGeneration,
-        normalizeBookmarkComparisonGeneration(baseData?.[BOOKMARK_COMPARISON_GENERATION_KEY], BOOKMARK_COMPARISON_INITIAL_GENERATION)
-    );
-    const normalizedPreviousGeneration = normalizeBookmarkComparisonGeneration(
-        previousGeneration,
-        normalizeBookmarkComparisonGeneration(baseData?.lastBookmarkData?.comparisonGeneration, normalizedCurrentGeneration)
-    );
-
     if (skipInitialFullExport && !hasPreviousTree) {
         return [];
     }
@@ -9417,27 +9373,13 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
     );
 
     if (previousTree && Array.isArray(previousTree) && previousTree.length) {
-        const changeMapResult = detectTreeChangesFastBgByGeneration({
-            previousTree,
-            currentTree,
-            explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null,
-            previousGeneration: normalizedPreviousGeneration,
-            currentGeneration: normalizedCurrentGeneration
+        changeMap = await detectTreeChangesFastBg(previousTree, currentTree, {
+            useGlobalExplicitMovedIds: false,
+            explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null
         });
-        const comparisonContext = changeMapResult?.context || null;
-        const effectiveCurrentTree = Array.isArray(comparisonContext?.treeForDiff) && comparisonContext.treeForDiff.length > 0
-            ? comparisonContext.treeForDiff
-            : currentTree;
-        changeMap = changeMapResult?.changeMap instanceof Map ? changeMapResult.changeMap : new Map();
-
-        const diffSummaryResult = computeBookmarkGitDiffSummaryByGeneration({
-            previousTree,
-            currentTree,
-            explicitMovedIds: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null,
-            previousGeneration: normalizedPreviousGeneration,
-            currentGeneration: normalizedCurrentGeneration
-        });
-        diffSummary = diffSummaryResult?.summary || diffSummary;
+        diffSummary = computeBookmarkGitDiffSummary(previousTree, currentTree, {
+            explicitMovedIds: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null
+        }) || diffSummary;
 
         let hasDeleted = false;
         for (const [, change] of changeMap) {
@@ -9448,12 +9390,12 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
         }
         if (hasDeleted) {
             try {
-                treeToExport = rebuildTreeWithDeletedBg(previousTree, effectiveCurrentTree, changeMap);
+                treeToExport = rebuildTreeWithDeletedBg(previousTree, currentTree, changeMap);
             } catch (_) {
-                treeToExport = effectiveCurrentTree;
+                treeToExport = currentTree;
             }
         } else {
-            treeToExport = effectiveCurrentTree;
+            treeToExport = currentTree;
         }
     } else {
         const allNodes = flattenBookmarkTreeBg(currentTree);
@@ -9710,19 +9652,13 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
     let changeMap = new Map();
     let treeToRender = currentBookmarks;
     let hasDeleted = false;
+    const normalizedCurrentGeneration = normalizeBookmarkComparisonGeneration(currentGeneration, BOOKMARK_COMPARISON_INITIAL_GENERATION);
+    const normalizedBaselineGeneration = normalizeBookmarkComparisonGeneration(baselineGeneration, normalizedCurrentGeneration);
+    const isCrossGeneration = normalizedBaselineGeneration !== normalizedCurrentGeneration;
 
-    const diffResult = detectTreeChangesFastBgByGeneration({
-        previousTree: previousBookmarks,
-        currentTree: currentBookmarks,
-        explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null,
-        previousGeneration: baselineGeneration,
-        currentGeneration
+    changeMap = detectTreeChangesFastBg(previousBookmarks, currentBookmarks, {
+        explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null
     });
-    const comparisonContext = diffResult?.context || null;
-    const effectiveCurrentTree = Array.isArray(comparisonContext?.treeForDiff) && comparisonContext.treeForDiff.length > 0
-        ? comparisonContext.treeForDiff
-        : currentBookmarks;
-    changeMap = diffResult?.changeMap instanceof Map ? diffResult.changeMap : new Map();
 
     for (const [, change] of changeMap) {
         if (change?.type && String(change.type).includes('deleted')) {
@@ -9733,12 +9669,12 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
 
     if (hasDeleted) {
         try {
-            treeToRender = rebuildTreeWithDeletedBg(previousBookmarks, effectiveCurrentTree, changeMap);
+            treeToRender = rebuildTreeWithDeletedBg(previousBookmarks, currentBookmarks, changeMap);
         } catch (_) {
-            treeToRender = effectiveCurrentTree;
+            treeToRender = currentBookmarks;
         }
     } else {
-        treeToRender = effectiveCurrentTree;
+        treeToRender = currentBookmarks;
     }
 
     const safeStats = stats && typeof stats === 'object' ? { ...stats } : {};
@@ -9754,15 +9690,12 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
         recordTime: recordTime != null ? String(recordTime) : '',
         generatedAt: new Date().toISOString(),
         stats: safeStats,
-        comparisonGeneration: normalizeBookmarkComparisonGeneration(comparisonContext?.currentGeneration, currentGeneration),
-        baselineGeneration: normalizeBookmarkComparisonGeneration(
-            comparisonContext?.previousGeneration,
-            baselineGeneration != null ? baselineGeneration : currentGeneration
-        ),
-        crossGeneration: comparisonContext?.crossGeneration === true,
-        usedCrossGenerationAlignment: comparisonContext?.usedCrossGenerationAlignment === true,
-        comparisonBaselineSignature: comparisonContext?.baselineSignature || '',
-        comparisonCurrentSignature: comparisonContext?.currentSignature || '',
+        comparisonGeneration: normalizedCurrentGeneration,
+        baselineGeneration: normalizedBaselineGeneration,
+        crossGeneration: isCrossGeneration,
+        usedCrossGenerationAlignment: false,
+        comparisonBaselineSignature: '',
+        comparisonCurrentSignature: '',
         hasDeleted,
         changeEntries: serializeHistoryRecordChangeEntries(changeMap),
         collectionChildren: Array.isArray(collectionChildren) ? collectionChildren : [],
@@ -14520,7 +14453,7 @@ async function continueRestoreRecoveryTransaction() {
     const activeSessionId = String(transaction.sessionId || '').trim()
 
     try {
-        isBookmarkRestoring = true
+        setBookmarkRestoringRuntimeState(true)
         isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true })
@@ -14676,7 +14609,7 @@ async function continueRestoreRecoveryTransaction() {
         console.error('[continueRestoreRecoveryTransaction] Failed:', error)
         return response
     } finally {
-        isBookmarkRestoring = false
+        setBookmarkRestoringRuntimeState(false)
         isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false })
@@ -14751,7 +14684,7 @@ async function rollbackRestoreRecoveryTransaction() {
     const activeSessionId = String(transaction.sessionId || '').trim()
 
     try {
-        isBookmarkRestoring = true
+        setBookmarkRestoringRuntimeState(true)
         isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true })
@@ -14865,7 +14798,7 @@ async function rollbackRestoreRecoveryTransaction() {
         console.error('[rollbackRestoreRecoveryTransaction] Failed:', error)
         return response
     } finally {
-        isBookmarkRestoring = false
+        setBookmarkRestoringRuntimeState(false)
         isBookmarkRestoringFromUiFlag = false
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false })
@@ -16549,34 +16482,9 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
 
     // 与覆盖恢复一致：更新 lastBookmarkData、重置状态并刷新分析缓存
     try {
-        const revertedTree = await browserAPI.bookmarks.getTree();
-        const currentBookmarkCount = countAllBookmarks(revertedTree);
-        const currentFolderCount = countAllFolders(revertedTree);
-        const currentPrints = generateFingerprints(revertedTree);
-        const generationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
-        const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
-            generationStore?.[BOOKMARK_COMPARISON_GENERATION_KEY],
-            BOOKMARK_COMPARISON_INITIAL_GENERATION
-        );
-        const timestamp = (baselineTimestamp && String(baselineTimestamp).trim() !== '')
-            ? baselineTimestamp
-            : new Date().toISOString();
-
-        await browserAPI.storage.local.set({
-            lastBookmarkData: {
-                bookmarkCount: currentBookmarkCount,
-                folderCount: currentFolderCount,
-                bookmarkPrints: currentPrints.bookmarks,
-                folderPrints: currentPrints.folders,
-                bookmarkTree: revertedTree,
-                timestamp,
-                comparisonGeneration: activeComparisonGeneration
-            }
+        await commitCurrentTreeAsBaselineSnapshot({
+            timestamp: baselineTimestamp
         });
-
-        try {
-            await browserAPI.storage.local.remove([CURRENT_CHANGES_CACHE_KEY, LEGACY_CURRENT_CHANGES_CACHE_KEY]);
-        } catch (_) { }
     } catch (_) { }
 
     resetOperationStatus();
@@ -16714,37 +16622,9 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
 
     // 更新 lastBookmarkData 为当前还原后的树，避免视图根据旧ID计算出大量标识/diff
     try {
-        const restoredTree = await new Promise((resolve) => {
-            browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
+        await commitCurrentTreeAsBaselineSnapshot({
+            timestamp: baselineTimestamp
         });
-        const currentBookmarkCount = countAllBookmarks(restoredTree);
-        const currentFolderCount = countAllFolders(restoredTree);
-        const currentPrints = generateFingerprints(restoredTree);
-        const generationStore = await browserAPI.storage.local.get([BOOKMARK_COMPARISON_GENERATION_KEY]);
-        const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
-            generationStore?.[BOOKMARK_COMPARISON_GENERATION_KEY],
-            BOOKMARK_COMPARISON_INITIAL_GENERATION
-        );
-        const timestamp = (baselineTimestamp && String(baselineTimestamp).trim() !== '')
-            ? baselineTimestamp
-            : new Date().toISOString();
-        await browserAPI.storage.local.set({
-            lastBookmarkData: {
-                bookmarkCount: currentBookmarkCount,
-                folderCount: currentFolderCount,
-                bookmarkPrints: currentPrints.bookmarks,
-                folderPrints: currentPrints.folders,
-                bookmarkTree: restoredTree,
-                timestamp: timestamp,
-                comparisonGeneration: activeComparisonGeneration
-            }
-        });
-
-        // 基准更新后，清理“当前变化”持久缓存（避免复用旧的变化列表）
-        try {
-            await browserAPI.storage.local.remove([CURRENT_CHANGES_CACHE_KEY, LEGACY_CURRENT_CHANGES_CACHE_KEY]);
-        } catch (_) { }
-        await setBookmarkChangesDirty(false);
     } catch (e) {
         // 不影响主流程
     }
@@ -16993,7 +16873,6 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             // 计算净变化（与上次备份的 bookmarkTree 对比）：
             // - 支持“+/-同时存在但净差为0”的显示
             // - 支持“移动/修改后又改回去”自动归零
-            let diffComparisonContext = null;
             try {
                 if (hasLastSnapshotTree) {
                     const explicitMovedIdSet = new Set(
@@ -17001,21 +16880,11 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                             .map(r => r && r.id)
                             .filter(Boolean)
                     );
-                    const diffSummaryResult = computeBookmarkGitDiffSummaryByGeneration({
-                        previousTree: lastBookmarkData.bookmarkTree,
-                        currentTree: localBookmarks,
-                        explicitMovedIds: explicitMovedIdSet,
-                        previousGeneration: lastBookmarkData?.comparisonGeneration,
-                        currentGeneration: activeComparisonGeneration
-                    });
-                    const diffSummary = diffSummaryResult.summary;
-                    diffComparisonContext = diffSummaryResult.context || null;
-                    if (diffComparisonContext) {
-                        baselineComparisonGenerationForRecord = normalizeBookmarkComparisonGeneration(
-                            diffComparisonContext.previousGeneration,
-                            baselineComparisonGenerationForRecord
-                        );
-                    }
+                    const diffSummary = computeBookmarkGitDiffSummary(
+                        lastBookmarkData.bookmarkTree,
+                        localBookmarks,
+                        { explicitMovedIds: explicitMovedIdSet }
+                    );
 
                     bookmarkAdded = diffSummary.bookmarkAdded;
                     bookmarkDeleted = diffSummary.bookmarkDeleted;
@@ -17036,8 +16905,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     // - recentMovedIds 可能包含“移动后又移回去”的操作，这里按净变化过滤
                     // - 仅保存数量受控的 ID 列表，避免记录过大
                     try {
-                        const skipExplicitMovedTracking = diffComparisonContext?.crossGeneration === true;
-                        if (!skipExplicitMovedTracking && explicitMovedIdSet.size > 0) {
+                        if (explicitMovedIdSet.size > 0) {
                             const oldIndex = buildTreeIndexForDiff(lastBookmarkData.bookmarkTree);
                             const newIndex = buildTreeIndexForDiff(localBookmarks);
 
@@ -17094,8 +16962,6 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                             if (explicitMovedIdListForRecord.length > MAX_EXPLICIT_MOVED_IDS) {
                                 explicitMovedIdListForRecord = explicitMovedIdListForRecord.slice(0, MAX_EXPLICIT_MOVED_IDS);
                             }
-                        } else if (skipExplicitMovedTracking) {
-                            explicitMovedIdListForRecord = [];
                         }
                     } catch (e) {
                         
@@ -17121,9 +16987,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 explicitMovedIds: explicitMovedIdListForRecord,
                 comparisonGeneration: activeComparisonGeneration,
                 baselineComparisonGeneration: baselineComparisonGenerationForRecord,
-                usedCrossGenerationAlignment: diffComparisonContext?.usedCrossGenerationAlignment === true,
-                comparisonBaselineSignature: diffComparisonContext?.baselineSignature || '',
-                comparisonCurrentSignature: diffComparisonContext?.currentSignature || '',
+                usedCrossGenerationAlignment: false,
+                comparisonBaselineSignature: '',
+                comparisonCurrentSignature: '',
 
                 // 结构变化（优先用净变化；回退到操作标记）
                 bookmarkMoved: (movedBookmarkCount > 0) || lastSyncOperations.bookmarkMoved || bookmarkMoved,
@@ -18187,7 +18053,6 @@ async function analyzeBookmarkChanges() {
 
     // 优先使用“与上次备份对比”的净变化（Git 风格）
     let diffSummary = null;
-    let diffComparisonContext = null;
     try {
         if (lastBookmarkData && lastBookmarkData.bookmarkTree) {
             const explicitMovedIdSet = new Set(
@@ -18195,21 +18060,14 @@ async function analyzeBookmarkChanges() {
                     .map(r => r && r.id)
                     .filter(Boolean)
             );
-            const diffSummaryResult = computeBookmarkGitDiffSummaryByGeneration({
-                previousTree: lastBookmarkData.bookmarkTree,
-                currentTree: localBookmarks,
-                explicitMovedIds: explicitMovedIdSet,
-                previousGeneration: lastBookmarkData?.comparisonGeneration,
-                currentGeneration: storedComparisonGeneration
+            diffSummary = computeBookmarkGitDiffSummary(lastBookmarkData.bookmarkTree, localBookmarks, {
+                explicitMovedIds: explicitMovedIdSet
             });
-            diffSummary = diffSummaryResult.summary;
-            diffComparisonContext = diffSummaryResult.context || null;
 
             // 归并/清理 recentXxxIds：回滚后不再显示；新增的也不算移动/修改
             try {
                 const oldTree = lastBookmarkData.bookmarkTree;
-                const skipRecentIdsReconcile = diffComparisonContext?.crossGeneration === true;
-                if (!skipRecentIdsReconcile && Array.isArray(oldTree) && oldTree[0]) {
+                if (Array.isArray(oldTree) && oldTree[0]) {
                     const oldIndex = buildTreeIndexForDiff(oldTree);
                     const newIndex = buildTreeIndexForDiff(localBookmarks);
 
@@ -18430,7 +18288,7 @@ async function analyzeBookmarkChanges() {
             lastBookmarkData?.comparisonGeneration,
             normalizeBookmarkComparisonGeneration(storedComparisonGeneration, BOOKMARK_COMPARISON_INITIAL_GENERATION)
         ),
-        usedCrossGenerationAlignment: diffComparisonContext?.usedCrossGenerationAlignment === true,
+        usedCrossGenerationAlignment: false,
         ...diffSummary
     };
 }
@@ -26759,7 +26617,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
     };
 
     try {
-        isBookmarkRestoring = true;
+        setBookmarkRestoringRuntimeState(true);
         isBookmarkRestoringFromUiFlag = false;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
@@ -26930,6 +26788,11 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
 
         const finalizeRestoreSuccess = async (payload = {}) => {
             await browserAPI.storage.local.set({ initialized: true });
+            try {
+                await commitCurrentTreeAsBaselineSnapshot({
+                    timestamp: ''
+                });
+            } catch (_) { }
 
             let restoreRecordFields = {};
             const appliedRestoreStrategy = String(payload?.strategy || 'overwrite').trim().toLowerCase() || 'overwrite';
@@ -27367,7 +27230,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         }
         return response;
     } finally {
-        isBookmarkRestoring = false;
+        setBookmarkRestoringRuntimeState(false);
         isBookmarkRestoringFromUiFlag = false;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });

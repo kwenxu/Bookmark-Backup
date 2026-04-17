@@ -1798,6 +1798,7 @@ let permanentTreeCopySyncScheduled = false;
 let permanentTreeCopySyncTimer = null;
 const HISTORY_BOOKMARK_UI_MUTE_KEYS = ['bookmarkRestoringFlag', 'bookmarkImportingFlag', 'bookmarkBulkChangeFlag', 'canvasMarkerBulkMode'];
 const HISTORY_CANVAS_MARKER_BULK_MODE_TTL_MS = 10 * 60 * 1000;
+const HISTORY_BOOKMARK_EVENT_RESUME_GRACE_MS = 1200;
 let historyBookmarkUiMuteState = {
     restoring: false,
     importing: false,
@@ -1806,6 +1807,7 @@ let historyBookmarkUiMuteState = {
     markerSource: '',
     markerReason: ''
 };
+let historyBookmarkEventResumeAt = 0;
 let historyPendingMutedTreeRenderForceRefresh = false;
 let historyPendingMutedCurrentChangesRefresh = false;
 let historyPendingMutedStorageReload = false;
@@ -1837,6 +1839,7 @@ function setHistoryBookmarkUiMuteStateFromStore(store = {}) {
 }
 
 function applyHistoryBookmarkUiMuteStateChanges(changes = {}) {
+    const prevState = { ...historyBookmarkUiMuteState };
     const nextState = { ...historyBookmarkUiMuteState };
     if (Object.prototype.hasOwnProperty.call(changes, 'bookmarkRestoringFlag')) {
         nextState.restoring = changes.bookmarkRestoringFlag?.newValue === true;
@@ -1854,6 +1857,17 @@ function applyHistoryBookmarkUiMuteStateChanges(changes = {}) {
         nextState.markerReason = markerState.reason;
     }
     historyBookmarkUiMuteState = nextState;
+
+    const restoreJustFinished = prevState.restoring === true && nextState.restoring !== true;
+    if (restoreJustFinished) {
+        historyBookmarkEventResumeAt = Date.now() + HISTORY_BOOKMARK_EVENT_RESUME_GRACE_MS;
+        try { explicitMovedIds = new Map(); } catch (_) { }
+        try { resetPermanentSectionChangeMarkers(); } catch (_) { }
+        setTimeout(() => {
+            flushDeferredHistoryBookmarkUiWork('restore-grace-end').catch(() => { });
+        }, HISTORY_BOOKMARK_EVENT_RESUME_GRACE_MS + 32);
+    }
+
     return historyBookmarkUiMuteState;
 }
 
@@ -1873,6 +1887,15 @@ function isHistoryBookmarkUiMuted() {
         || isLocalCanvasBookmarkBulkModeActive();
 }
 
+function isHistoryBookmarkEventGraceActive() {
+    const ts = Number(historyBookmarkEventResumeAt || 0);
+    return ts > Date.now();
+}
+
+function shouldMuteHistoryBookmarkRealtimeEventHandling() {
+    return isHistoryBookmarkUiMuted() || isHistoryBookmarkEventGraceActive();
+}
+
 function getHistoryBookmarkUiMuteReason() {
     const markerLabel = `${historyBookmarkUiMuteState.markerSource} ${historyBookmarkUiMuteState.markerReason}`.trim().toLowerCase();
     if (historyBookmarkUiMuteState.restoring || markerLabel.includes('restore')) return 'restore';
@@ -1881,7 +1904,7 @@ function getHistoryBookmarkUiMuteReason() {
 }
 
 async function flushDeferredHistoryBookmarkUiWork(trigger = '') {
-    if (isHistoryBookmarkUiMuted()) return;
+    if (isHistoryBookmarkUiMuted() || isHistoryBookmarkEventGraceActive()) return;
 
     const shouldReload = historyPendingMutedStorageReload;
     const shouldRefreshCurrent = historyPendingMutedCurrentChangesRefresh;
@@ -19391,89 +19414,11 @@ function normalizeBookmarkComparisonGenerationManual(value, fallback = 1) {
     return 1;
 }
 
-function computeStableTextHashManual(text) {
-    const input = String(text || '');
-    let hash = 2166136261;
-    for (let i = 0; i < input.length; i += 1) {
-        hash ^= input.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function buildBookmarkTreeContentSignatureManual(tree) {
-    if (!Array.isArray(tree) || tree.length === 0) return '';
-    try {
-        const prints = generateFingerprintsFromTree(tree);
-        const bookmarkPrints = Array.isArray(prints?.bookmarks)
-            ? prints.bookmarks.slice().sort()
-            : [];
-        const folderPrints = Array.isArray(prints?.folders)
-            ? prints.folders.slice().sort()
-            : [];
-        const body = `${bookmarkPrints.join('\n')}\n---\n${folderPrints.join('\n')}`;
-        return `${bookmarkPrints.length}:${folderPrints.length}:${computeStableTextHashManual(body)}`;
-    } catch (_) {
-        return '';
-    }
-}
-
 function shouldUsePersistedChangeDataForRecord(options = {}) {
-    const record = options?.record || null;
-    const previousRecord = options?.previousRecord || null;
     const persistedChangeData = options?.persistedChangeData || null;
-    const comparisonBaseTree = options?.comparisonBaseTree || null;
-    const currentTree = record?.bookmarkTree || null;
 
     if (!persistedChangeData || typeof persistedChangeData !== 'object') return false;
     if (!Array.isArray(persistedChangeData.changeEntries)) return false;
-
-    const currentGeneration = normalizeBookmarkComparisonGenerationManual(record?.comparisonGeneration, null);
-    const previousGeneration = normalizeBookmarkComparisonGenerationManual(
-        previousRecord?.comparisonGeneration,
-        currentGeneration
-    );
-    const persistedCurrentGeneration = normalizeBookmarkComparisonGenerationManual(
-        persistedChangeData?.comparisonGeneration,
-        null
-    );
-    const persistedBaselineGeneration = normalizeBookmarkComparisonGenerationManual(
-        persistedChangeData?.baselineGeneration,
-        persistedCurrentGeneration
-    );
-    const isCrossGenerationRecord = (
-        currentGeneration != null
-        && previousGeneration != null
-        && currentGeneration !== previousGeneration
-    );
-    const schemaVersion = Number(persistedChangeData?.schemaVersion || 0);
-
-    if (schemaVersion >= 2) {
-        if (currentGeneration != null && persistedCurrentGeneration != null && persistedCurrentGeneration !== currentGeneration) {
-            return false;
-        }
-        if (previousGeneration != null && persistedBaselineGeneration != null && persistedBaselineGeneration !== previousGeneration) {
-            return false;
-        }
-
-        const expectedBaselineSignature = buildBookmarkTreeContentSignatureManual(comparisonBaseTree);
-        const expectedCurrentSignature = buildBookmarkTreeContentSignatureManual(currentTree);
-        const persistedBaselineSignature = String(persistedChangeData?.comparisonBaselineSignature || '').trim();
-        const persistedCurrentSignature = String(persistedChangeData?.comparisonCurrentSignature || '').trim();
-
-        if (persistedBaselineSignature && expectedBaselineSignature && persistedBaselineSignature !== expectedBaselineSignature) {
-            return false;
-        }
-        if (persistedCurrentSignature && expectedCurrentSignature && persistedCurrentSignature !== expectedCurrentSignature) {
-            return false;
-        }
-        return true;
-    }
-
-    // 旧 schema 没有代与签名：跨代记录默认不信任旧 payload，直接回退重算
-    if (isCrossGenerationRecord) {
-        return false;
-    }
     return true;
 }
 
@@ -21372,7 +21317,7 @@ function setupBookmarkListener() {
 browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
         
         try {
-            if (isHistoryBookmarkUiMuted()) {
+            if (shouldMuteHistoryBookmarkRealtimeEventHandling()) {
                 clearCanvasLazyChangeHints('onCreated-muted');
                 markCurrentChangesDataStale('onCreated-muted');
                 scheduleCachedCurrentTreeSnapshotRefresh('onCreated-muted');
@@ -21393,7 +21338,7 @@ browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
 browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
         
         try {
-            if (isHistoryBookmarkUiMuted()) {
+            if (shouldMuteHistoryBookmarkRealtimeEventHandling()) {
                 clearCanvasLazyChangeHints('onRemoved-muted');
                 markCurrentChangesDataStale('onRemoved-muted');
                 scheduleCachedCurrentTreeSnapshotRefresh('onRemoved-muted');
@@ -21414,7 +21359,7 @@ browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
 browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         
         try {
-            if (isHistoryBookmarkUiMuted()) {
+            if (shouldMuteHistoryBookmarkRealtimeEventHandling()) {
                 clearCanvasLazyChangeHints('onChanged-muted');
                 markCurrentChangesDataStale('onChanged-muted');
                 scheduleCachedCurrentTreeSnapshotRefresh('onChanged-muted');
@@ -21438,7 +21383,7 @@ browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         
 
         try {
-            if (isHistoryBookmarkUiMuted()) {
+            if (shouldMuteHistoryBookmarkRealtimeEventHandling()) {
                 clearCanvasLazyChangeHints('onMoved-muted');
                 markCurrentChangesDataStale('onMoved-muted');
                 scheduleCachedCurrentTreeSnapshotRefresh('onMoved-muted');
@@ -27646,33 +27591,11 @@ async function prepareDataForExport(record) {
         } catch (_) { }
     }
     if (previousRecord && previousRecord.bookmarkTree) {
-        const previousGeneration = normalizeBookmarkComparisonGenerationManual(previousRecord?.comparisonGeneration, null);
-        const currentGeneration = normalizeBookmarkComparisonGenerationManual(record?.comparisonGeneration, previousGeneration);
-        const crossGeneration = (
-            previousGeneration != null
-            && currentGeneration != null
-            && previousGeneration !== currentGeneration
-        );
-
-        let currentTreeForDiff = record.bookmarkTree;
-        if (crossGeneration && Array.isArray(previousRecord.bookmarkTree) && previousRecord.bookmarkTree[0] && Array.isArray(record.bookmarkTree) && record.bookmarkTree[0]) {
-            try {
-                const alignedTree = cloneSerializableData(record.bookmarkTree);
-                if (Array.isArray(alignedTree) && alignedTree[0]) {
-                    normalizeTreeIds(alignedTree, previousRecord.bookmarkTree, { strictGlobalUrlMatch: true });
-                    currentTreeForDiff = alignedTree;
-                }
-            } catch (_) { }
-        }
-
-        const explicitMovedIdsForRecord = crossGeneration === true
-            ? null
-            : ((record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
-                ? record.bookmarkStats.explicitMovedIds
-                : null);
-        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, currentTreeForDiff, {
+        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
             useGlobalExplicitMovedIds: false,
-            explicitMovedIdSet: explicitMovedIdsForRecord
+            explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
+                ? record.bookmarkStats.explicitMovedIds
+                : null
         });
 
         // 重建删除节点
@@ -27685,12 +27608,12 @@ async function prepareDataForExport(record) {
         }
         if (hasDeleted) {
             try {
-                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, currentTreeForDiff, changeMap);
+                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
             } catch (error) {
-                treeToExport = currentTreeForDiff; // fallback
+                treeToExport = record.bookmarkTree; // fallback
             }
         } else {
-            treeToExport = currentTreeForDiff;
+            treeToExport = record.bookmarkTree;
         }
     } else if (record.isFirstBackup) {
         const allNodes = flattenBookmarkTree(record.bookmarkTree);

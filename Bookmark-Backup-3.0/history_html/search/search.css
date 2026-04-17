@@ -296,6 +296,8 @@
 
 .search-result-url-link {
     color: var(--accent-primary, #2563eb);
+    font-size: 11px;
+    line-height: 1.25;
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
@@ -813,13 +815,13 @@
 
 .detail-search-results-panel .detail-bookmark-group-item[data-expanded="true"] {
     display: block;
-    padding: 10px 12px 12px;
+    padding: 8px 10px 10px;
 }
 
 .detail-search-results-panel .detail-bookmark-group-item[data-expanded="true"] > .search-result-row {
     width: 100%;
     min-width: 0;
-    padding-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 1px dashed var(--border-color-light, var(--border-color));
 }
 
@@ -847,16 +849,16 @@
     white-space: normal;
     text-overflow: ellipsis;
     line-height: 1.32;
-    font-size: 12px;
-    font-weight: 650;
+    font-size: 11px;
+    font-weight: 620;
     color: var(--text-primary);
 }
 
 .detail-search-results-panel .detail-bookmark-result-meta {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-top: 4px;
+    gap: 1px;
+    margin-top: 2px;
     min-width: 0;
 }
 
@@ -912,8 +914,8 @@
 .detail-search-results-panel .detail-bookmark-group-children {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 8px;
+    gap: 5px;
+    margin-top: 6px;
     padding-left: 0;
     width: 100%;
     min-width: 0;
@@ -923,8 +925,8 @@
     display: block;
     width: 100%;
     min-width: 0;
-    padding: 8px 10px;
-    border-radius: 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     cursor: pointer;
@@ -940,7 +942,7 @@
 .detail-search-results-panel .detail-bookmark-group-child-topline {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
 }
 
@@ -948,14 +950,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 7px;
     border: 1px solid var(--border-color);
     background: var(--bg-tertiary);
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     flex: 0 0 auto;
 }
@@ -980,15 +982,15 @@
 }
 
 .search-result-link-row {
-    margin-top: 3px;
+    margin-top: 2px;
     min-width: 0;
     overflow: hidden;
 }
 
 .search-result-path-hint {
-    margin-top: 3px;
-    font-size: 11px;
-    line-height: 1.45;
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 1.28;
     color: var(--text-secondary);
     opacity: 0.86;
     max-width: 100%;

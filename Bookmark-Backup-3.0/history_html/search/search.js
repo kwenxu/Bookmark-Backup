@@ -5783,14 +5783,15 @@ function renderHistoryDetailBookmarkGroupChildRow(item, groupItem, childIndex, o
     const titleText = item.title || (isZh ? '（无标题）' : '(Untitled)');
     const titleHtml = renderSearchHighlightedText(titleText, query);
     const iconHtml = renderHistoryDetailBookmarkResultIconHtml(item, {
-        iconWrapStyle: 'display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex-shrink:0;',
-        iconSize: '12px',
-        fallbackIconSize: '12px',
-        faviconSize: '16px'
+        iconWrapStyle: 'display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; flex-shrink:0;',
+        iconSize: '11px',
+        fallbackIconSize: '11px',
+        faviconSize: '14px'
     });
     const rootLabel = isZh ? '根目录' : 'Root';
     const pathList = getSearchItemPathListForDisplay(item);
-    const pathHtml = renderSearchPathHintWithTailPreview(pathList, rootLabel, item.nodeType === 'folder' ? 'is-folder' : 'is-bookmark');
+    const pathHintTypeClass = item.nodeType === 'folder' ? 'is-folder' : 'is-bookmark';
+    const pathHtml = `<div class="search-result-path-hint ${pathHintTypeClass}"><span class="search-result-path-text">${renderSearchPathListWithFolderUnderline(pathList, rootLabel)}</span></div>`;
     const url = String(item?.url || '').trim();
     const urlHtml = url
         ? `<div class="search-result-link-row">${renderSearchUrlLink(url, { text: url })}</div>`

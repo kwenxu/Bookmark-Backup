@@ -18758,8 +18758,8 @@ function getHistoryDetailSearchTitle(artifact = currentDetailArtifact) {
 function getHistoryDetailSearchPlaceholder(artifact = currentDetailArtifact) {
     const isZh = currentLang === 'zh_CN';
     return normalizeHistoryDetailArtifact(artifact) === 'snapshot'
-        ? (isZh ? '搜索当前快照里的书签/文件夹...' : 'Search bookmarks/folders in this snapshot...')
-        : (isZh ? '搜索书签/文件夹变化...' : 'Search bookmark/folder changes...');
+        ? (isZh ? '搜索当前快照里的书签 / 文件夹 / URL / 域名 / 子域名...' : 'Search bookmarks / folders / URLs / domains / subdomains in this snapshot...')
+        : (isZh ? '搜索书签 / 文件夹 / URL / 域名 / 子域名变化...' : 'Search bookmark / folder / URL / domain / subdomain changes...');
 }
 
 function updateDetailArtifactToggleUI(artifact = currentDetailArtifact) {

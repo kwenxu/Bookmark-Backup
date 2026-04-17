@@ -354,6 +354,28 @@ function renderSearchMetaContent(item, metaText) {
     return text ? escapeHtml(text) : '';
 }
 
+function renderSearchHighlightedText(text, query) {
+    const safe = escapeHtml(String(text || ''));
+    const tokens = String(query || '')
+        .trim()
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+    if (!tokens.length) return safe;
+
+    const escapedTokens = Array.from(new Set(tokens))
+        .sort((a, b) => b.length - a.length)
+        .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (!escapedTokens.length) return safe;
+
+    try {
+        const re = new RegExp(`(${escapedTokens.join('|')})`, 'gi');
+        return safe.replace(re, '<mark>$1</mark>');
+    } catch (_) {
+        return safe;
+    }
+}
+
 function buildSearchChangeBadgesHtml(item, options = {}) {
     const isZh = !!options.isZh;
     const parts = Array.isArray(item?.changeTypeParts) ? item.changeTypeParts : [];
@@ -363,6 +385,124 @@ function buildSearchChangeBadgesHtml(item, options = {}) {
     if (parts.includes('moved')) badges.push(`<span class="search-change-prefix moved"${isZh ? ' title="移动"' : ' title="Moved"'}>>></span>`);
     if (parts.includes('modified')) badges.push(`<span class="search-change-prefix modified"${isZh ? ' title="修改"' : ' title="Modified"'}>~</span>`);
     return badges.length ? `<span class="search-change-icons">${badges.join('')}</span>` : '';
+}
+
+function parseSearchPathParts(pathText) {
+    const raw = String(pathText || '').trim();
+    if (!raw) return [];
+    return raw.split('>').map((part) => String(part || '').trim()).filter(Boolean);
+}
+
+function renderSearchPathTextWithFolderUnderline(pathText) {
+    const parts = parseSearchPathParts(pathText);
+    if (!parts.length) return '';
+
+    return parts.map((part, index) => {
+        const safePart = `<span class="search-result-path-part">${escapeHtml(part)}</span>`;
+        if (index >= parts.length - 1) return safePart;
+        return `${safePart}<span class="search-result-path-sep"> &gt; </span>`;
+    }).join('');
+}
+
+function renderSearchPathListWithFolderUnderline(paths, rootLabel) {
+    const normalized = (Array.isArray(paths) ? paths : [])
+        .map((path) => String(path || '').trim())
+        .filter(Boolean);
+
+    if (!normalized.length) {
+        return `<span class="search-result-path-part">${escapeHtml(rootLabel)}</span>`;
+    }
+
+    return normalized.map((path, index) => {
+        const safe = renderSearchPathTextWithFolderUnderline(path);
+        if (index >= normalized.length - 1) return safe;
+        return `${safe}<span class="search-result-path-list-sep"> ｜ </span>`;
+    }).join('');
+}
+
+function renderCollapsedSearchPathListWithTailPreview(paths, rootLabel, maxDepth = 3) {
+    const normalized = (Array.isArray(paths) ? paths : [])
+        .map((path) => String(path || '').trim())
+        .filter(Boolean);
+
+    if (!normalized.length) {
+        return {
+            html: `<span class="search-result-path-part">${escapeHtml(rootLabel)}</span>`,
+            hasTruncated: false
+        };
+    }
+
+    const primaryPath = normalized[0];
+    const parts = parseSearchPathParts(primaryPath);
+    if (!parts.length) {
+        return {
+            html: `<span class="search-result-path-part">${escapeHtml(rootLabel)}</span>`,
+            hasTruncated: normalized.length > 1
+        };
+    }
+
+    const isPathDeep = parts.length > maxDepth;
+    const hasMultiplePath = normalized.length > 1;
+    const needsEllipsis = isPathDeep || hasMultiplePath;
+    const visibleParts = isPathDeep ? parts.slice(parts.length - maxDepth) : parts;
+    const visibleHtml = visibleParts.map((part, partIndex) => {
+        const safePart = `<span class="search-result-path-part">${escapeHtml(part)}</span>`;
+        if (partIndex >= visibleParts.length - 1) return safePart;
+        return `${safePart}<span class="search-result-path-sep"> &gt; </span>`;
+    }).join('');
+    const ellipsisTitle = getSearchLangKey() === 'zh_CN' ? '展开完整路径' : 'Show full path';
+    const ellipsisHtml = needsEllipsis
+        ? `<button class="search-result-path-ellipsis-toggle" type="button" title="${escapeHtml(ellipsisTitle)}" aria-label="${escapeHtml(ellipsisTitle)}">...</button><span class="search-result-path-sep"> &gt; </span>`
+        : '';
+
+    return {
+        html: `${ellipsisHtml}${visibleHtml}`,
+        hasTruncated: needsEllipsis
+    };
+}
+
+function renderSearchPathHintWithTailPreview(paths, rootLabel, pathHintTypeClass = '') {
+    const collapsed = renderCollapsedSearchPathListWithTailPreview(paths, rootLabel, 3);
+    const className = ['search-result-path-hint', pathHintTypeClass].filter(Boolean).join(' ');
+    if (!collapsed.hasTruncated) {
+        return `<div class="${className}"><span class="search-result-path-text">${collapsed.html}</span></div>`;
+    }
+
+    const fullHtml = renderSearchPathListWithFolderUnderline(paths, rootLabel);
+    return `<div class="${className}" data-path-expandable="true">
+        <span class="search-result-path-text">
+            <span class="search-result-path-preview">${collapsed.html}</span>
+            <span class="search-result-path-full">${fullHtml}</span>
+        </span>
+    </div>`;
+}
+
+function getSearchItemParentPathForDisplay(item) {
+    const fullPath = String(item?.newNamedPath || item?.namedPath || item?.oldNamedPath || '').trim();
+    if (!fullPath) return '';
+
+    const parts = parseSearchPathParts(fullPath);
+    if (!parts.length) return '';
+
+    const title = String(item?.title || '').trim();
+    const last = String(parts[parts.length - 1] || '').trim();
+    if (title && last && last.toLowerCase() === title.toLowerCase()) {
+        parts.pop();
+    } else if (!title) {
+        parts.pop();
+    }
+
+    return parts.join(' > ');
+}
+
+function getSearchItemPathListForDisplay(item) {
+    if (Array.isArray(item?.parentPaths) && item.parentPaths.length > 0) {
+        return item.parentPaths
+            .map((path) => String(path || '').trim())
+            .filter((path, index, arr) => path && arr.findIndex((other) => other.toLowerCase() === path.toLowerCase()) === index);
+    }
+    const parentPath = getSearchItemParentPathForDisplay(item);
+    return parentPath ? [parentPath] : [];
 }
 
 function normalizeSearchDomainHostValue(host) {
@@ -385,6 +525,8 @@ function resolveSearchDomainSubgroupSelection(item, selectedHost) {
 }
 
 function renderSearchDomainGroupSelectorRow(item, groupIdRaw, options = {}) {
+    if (item && item.domainGroupBy === 'host') return '';
+
     const variant = options.variant === 'detail' ? 'detail' : 'main';
     const groupId = escapeHtml(String(groupIdRaw || ''));
     const rowClass = variant === 'detail' ? 'detail-domain-selector-row' : 'changes-domain-selector-row';
@@ -524,7 +666,7 @@ function renderSearchResultsPanel(results, options = {}) {
         if (!(searchUiState.currentChangesDomainGroupHostFilters instanceof Map)) {
             searchUiState.currentChangesDomainGroupHostFilters = new Map();
         }
-        if (currentChangesTypeFilter !== 'domain') {
+        if (!isSearchDomainTypeFilter(currentChangesTypeFilter)) {
             searchUiState.currentChangesExpandedDomainGroups.clear();
             searchUiState.currentChangesDomainGroupHostFilters.clear();
         }
@@ -554,6 +696,7 @@ function renderSearchResultsPanel(results, options = {}) {
             const metaText = item.meta ? escapeHtml(item.meta) : '';
             const isExpanded = searchUiState.currentChangesExpandedDomainGroups.has(groupIdRaw);
             const chevronClass = isExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
+            const domainIconClass = item.domainGroupBy === 'host' ? 'fa-sitemap' : 'fa-globe';
             const selectedHost = searchUiState.currentChangesDomainGroupHostFilters instanceof Map
                 ? (searchUiState.currentChangesDomainGroupHostFilters.get(groupIdRaw) || '')
                 : '';
@@ -568,7 +711,7 @@ function renderSearchResultsPanel(results, options = {}) {
                             <div class="search-result-title">
                                 <span class="search-result-index">${idx + 1}</span>
                                 <span class="changes-domain-group-chevron"><i class="fas ${chevronClass}"></i></span>
-                                <i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>
+                                <i class="fas ${domainIconClass}" style="color:#0ea5e9; font-size:12px;"></i>
                                 <span>${safeTitle}</span>
                             </div>
                             ${metaText ? `<div class="search-result-meta">${metaText}</div>` : ''}
@@ -756,12 +899,25 @@ function collectNodeInfoForIds(tree, idSet) {
 }
 
 const SEARCH_MULTI_LEVEL_DOMAIN_SUFFIXES = new Set([
-    'co.uk', 'org.uk', 'gov.uk', 'ac.uk',
-    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
-    'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
-    'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp',
-    'co.kr', 'ne.kr', 'or.kr', 'ac.kr', 'go.kr',
-    'co.in', 'net.in', 'org.in', 'gov.in', 'ac.in', 'edu.in'
+    'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'net.uk', 'sch.uk', 'nhs.uk', 'police.uk', 'mod.uk', 'me.uk', 'plc.uk', 'ltd.uk',
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'id.au', 'asn.au',
+    'com.br', 'net.br', 'org.br', 'gov.br',
+    'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'ac.cn',
+    'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp', 'ad.jp', 'ed.jp',
+    'co.kr', 'ne.kr', 'or.kr', 'ac.kr', 'go.kr', 'pe.kr', 're.kr',
+    'co.in', 'net.in', 'org.in', 'gov.in', 'ac.in', 'edu.in', 'res.in',
+    'co.nz', 'net.nz', 'org.nz', 'gov.nz', 'ac.nz',
+    'com.hk', 'edu.hk', 'gov.hk', 'org.hk', 'net.hk',
+    'com.tw', 'edu.tw', 'gov.tw', 'org.tw', 'net.tw',
+    'com.sg', 'edu.sg', 'gov.sg', 'org.sg', 'net.sg',
+    'com.my', 'edu.my', 'gov.my', 'org.my', 'net.my',
+    'com.tr', 'edu.tr', 'gov.tr', 'org.tr', 'net.tr',
+    'com.sa', 'edu.sa', 'gov.sa', 'org.sa', 'net.sa',
+    'com.ar', 'edu.ar', 'gov.ar', 'org.ar', 'net.ar',
+    'com.mx', 'edu.mx', 'gob.mx', 'org.mx', 'net.mx',
+    'com.ru', 'net.ru', 'org.ru', 'edu.ru', 'gov.ru',
+    'com.id', 'net.id', 'org.id', 'go.id', 'ac.id', 'co.id',
+    'co.il', 'co.za', 'co.ke', 'co.ug', 'co.tz', 'co.th', 'co.ve'
 ]);
 
 function extractSearchHostFromUrl(url) {
@@ -792,12 +948,49 @@ function getSearchRegistrableDomain(host) {
     return last2;
 }
 
+function isSearchDomainTypeFilter(typeFilter) {
+    const type = String(typeFilter || '').trim().toLowerCase();
+    return type === 'domain' || type === 'subdomain';
+}
+
+function getSearchDomainGroupByForType(typeFilter) {
+    return String(typeFilter || '').trim().toLowerCase() === 'subdomain' ? 'host' : 'root';
+}
+
+function getSearchDomainGroupKeyFromItem(item, groupBy = 'root') {
+    if (!item || item.nodeType !== 'bookmark') return '';
+    const host = String(item.__dh || extractSearchHostFromUrl(item.url || '') || '').trim().toLowerCase();
+    if (!host) return '';
+    if (groupBy === 'host') return host;
+    return String(item.__dr || getSearchRegistrableDomain(host) || host).trim().toLowerCase();
+}
+
+function mergeSearchDomainCandidateItems(primaryItems, domainMatchedItems) {
+    const merged = [];
+    const seen = new Set();
+    const push = (item) => {
+        if (!item || item.nodeType !== 'bookmark' || !item.__dh) return;
+        const id = String(item.id || '').trim();
+        const key = id || `${String(item.title || '').trim().toLowerCase()}::${String(item.url || '').trim().toLowerCase()}`;
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(item);
+    };
+
+    (Array.isArray(primaryItems) ? primaryItems : []).forEach(push);
+    (Array.isArray(domainMatchedItems) ? domainMatchedItems : []).forEach(push);
+    return merged;
+}
+
 function getSearchTypeCounts(items, options = {}) {
     const list = Array.isArray(items) ? items : [];
-    const domainSource = Array.isArray(options.domainItems) ? options.domainItems : null;
+    const domainSource = Array.isArray(options.domainItems)
+        ? mergeSearchDomainCandidateItems(list, options.domainItems)
+        : list;
     let bookmarkCount = 0;
     let folderCount = 0;
-    let domainCount = 0;
+    const domainKeySet = new Set();
+    const subdomainKeySet = new Set();
 
     for (const item of list) {
         if (!item) continue;
@@ -810,31 +1003,39 @@ function getSearchTypeCounts(items, options = {}) {
         }
     }
 
-    const domainList = domainSource || list;
+    const domainList = domainSource || [];
     for (const item of domainList) {
-        if (item && item.nodeType === 'bookmark' && item.__dh) {
-            domainCount += 1;
-        }
+        const rootKey = getSearchDomainGroupKeyFromItem(item, 'root');
+        const hostKey = getSearchDomainGroupKeyFromItem(item, 'host');
+        if (rootKey) domainKeySet.add(rootKey);
+        if (hostKey) subdomainKeySet.add(hostKey);
     }
 
-    return { bookmarkCount, folderCount, domainCount };
+    return {
+        bookmarkCount,
+        folderCount,
+        domainCount: domainKeySet.size,
+        subdomainCount: subdomainKeySet.size
+    };
 }
 
 function resolveSearchTypeFilter(typeFilter, counts) {
     const requested = String(typeFilter || '').trim().toLowerCase();
-    const { bookmarkCount = 0, folderCount = 0, domainCount = 0 } = counts || {};
+    const { bookmarkCount = 0, folderCount = 0, domainCount = 0, subdomainCount = 0 } = counts || {};
 
     if (requested === 'bookmark' && bookmarkCount > 0) return 'bookmark';
     if (requested === 'folder' && folderCount > 0) return 'folder';
     if (requested === 'domain' && domainCount > 0) return 'domain';
+    if (requested === 'subdomain' && subdomainCount > 0) return 'subdomain';
     return null;
 }
 
-function buildSearchDomainGroupedResults(items) {
+function buildSearchDomainGroupedResults(items, options = {}) {
     const list = Array.isArray(items) ? items : [];
     if (!list.length) return [];
 
     const isZh = typeof currentLang !== 'undefined' && currentLang === 'zh_CN';
+    const groupBy = options.groupBy === 'host' ? 'host' : 'root';
     const groupMap = new Map();
     let firstOrderSeed = 0;
 
@@ -844,13 +1045,14 @@ function buildSearchDomainGroupedResults(items) {
         const host = String(item.__dh || extractSearchHostFromUrl(item.url || '') || '').trim().toLowerCase();
         if (!host) continue;
         const root = String(item.__dr || getSearchRegistrableDomain(host) || host).trim().toLowerCase();
-        const key = root || host;
+        const key = groupBy === 'host' ? host : (root || host);
         if (!key) continue;
 
         let group = groupMap.get(key);
         if (!group) {
             group = {
                 key,
+                root,
                 items: [],
                 hostSet: new Set(),
                 subgroups: new Map(),
@@ -867,7 +1069,7 @@ function buildSearchDomainGroupedResults(items) {
             subgroup = {
                 key: host,
                 host,
-                isRootHost: host === key,
+                isRootHost: host === root,
                 items: [],
                 firstOrder: group.subgroups.size
             };
@@ -878,7 +1080,11 @@ function buildSearchDomainGroupedResults(items) {
 
     const groups = Array.from(groupMap.values());
     groups.sort((a, b) => {
-        return (a.firstOrder || 0) - (b.firstOrder || 0);
+        const countDelta = (Array.isArray(b.items) ? b.items.length : 0) - (Array.isArray(a.items) ? a.items.length : 0);
+        if (countDelta !== 0) return countDelta;
+        const hostDelta = (b.hostSet?.size || 0) - (a.hostSet?.size || 0);
+        if (hostDelta !== 0) return hostDelta;
+        return String(a.key || '').localeCompare(String(b.key || ''));
     });
 
     return groups.map((group, idx) => {
@@ -886,20 +1092,28 @@ function buildSearchDomainGroupedResults(items) {
         const bookmarkCount = group.items.length;
         const hostCount = group.hostSet.size;
         const domainSubgroups = Array.from(group.subgroups.values())
-            .sort((a, b) => (a.firstOrder || 0) - (b.firstOrder || 0))
+            .sort((a, b) => String(a.host || '').localeCompare(String(b.host || '')))
             .map((subgroup) => ({
                 host: subgroup.host,
                 isRootHost: !!subgroup.isRootHost,
                 bookmarkCount: subgroup.items.length,
-                items: subgroup.items
+                items: subgroup.items.slice().sort((a, b) => {
+                    const titleDelta = String(a?.title || a?.url || '').localeCompare(String(b?.title || b?.url || ''));
+                    if (titleDelta !== 0) return titleDelta;
+                    return String(a?.url || '').localeCompare(String(b?.url || ''));
+                })
             }));
         const subdomainCount = domainSubgroups.filter((subgroup) => !subgroup.isRootHost).length;
-        const meta = isZh
-            ? `${bookmarkCount} 个书签${subdomainCount > 0 ? `，${subdomainCount} 个子域名` : ''}`
-            : `${bookmarkCount} bookmarks${subdomainCount > 0 ? `, ${subdomainCount} subdomains` : ''}`;
+        const meta = groupBy === 'host'
+            ? (isZh
+                ? `${bookmarkCount} 个书签${group.root && group.root !== group.key ? `，主域名 ${group.root}` : ''}`
+                : `${bookmarkCount} bookmarks${group.root && group.root !== group.key ? `, root ${group.root}` : ''}`)
+            : (isZh
+                ? `${bookmarkCount} 个书签${subdomainCount > 0 ? `，${subdomainCount} 个子域名` : ''}`
+                : `${bookmarkCount} bookmarks${subdomainCount > 0 ? `, ${subdomainCount} subdomains` : ''}`);
 
         return {
-            id: primary.id || `domain-group-${group.key}-${idx}`,
+            id: `domain-group-${groupBy}-${group.key}-${idx}`,
             title: group.key,
             meta,
             url: '',
@@ -911,6 +1125,8 @@ function buildSearchDomainGroupedResults(items) {
             domainChildren: group.items,
             domainSubgroups,
             domainKey: group.key,
+            domainRoot: group.root || '',
+            domainGroupBy: groupBy,
             domainBookmarkCount: bookmarkCount,
             domainHostCount: hostCount
         };
@@ -920,8 +1136,15 @@ function buildSearchDomainGroupedResults(items) {
 function filterSearchItemsByType(items, typeFilter, options = {}) {
     const list = Array.isArray(items) ? items : [];
     const domainMatchedItems = Array.isArray(options.domainMatchedItems) ? options.domainMatchedItems : null;
-    const counts = getSearchTypeCounts(list, { domainItems: domainMatchedItems });
-    const activeFilter = resolveSearchTypeFilter(typeFilter, counts);
+    const domainCandidateItems = mergeSearchDomainCandidateItems(list, domainMatchedItems);
+    const counts = getSearchTypeCounts(list, { domainItems: domainCandidateItems });
+    let activeFilter = resolveSearchTypeFilter(typeFilter, counts);
+    if (!activeFilter && options.defaultTypeFilter) {
+        activeFilter = resolveSearchTypeFilter(options.defaultTypeFilter, counts);
+        if (!activeFilter && options.defaultTypeFilter === 'bookmark') {
+            activeFilter = resolveSearchTypeFilter('folder', counts) || resolveSearchTypeFilter('domain', counts);
+        }
+    }
     const domainGrouped = options && options.domainGrouped !== false;
 
     let filtered = list;
@@ -929,11 +1152,15 @@ function filterSearchItemsByType(items, typeFilter, options = {}) {
         filtered = list.filter(item => item && item.nodeType === 'bookmark');
     } else if (activeFilter === 'folder') {
         filtered = list.filter(item => item && item.nodeType === 'folder');
-    } else if (activeFilter === 'domain') {
-        const domainItems = Array.isArray(domainMatchedItems)
-            ? domainMatchedItems.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh)
-            : list.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh);
-        filtered = domainGrouped ? buildSearchDomainGroupedResults(domainItems) : domainItems;
+    } else if (isSearchDomainTypeFilter(activeFilter)) {
+        const domainItems = domainCandidateItems.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh);
+        filtered = domainGrouped
+            ? buildSearchDomainGroupedResults(domainItems, { groupBy: getSearchDomainGroupByForType(activeFilter) })
+            : domainItems;
+    } else if (!list.length && counts.domainCount > 0) {
+        activeFilter = 'domain';
+        const domainItems = domainCandidateItems.filter(item => item && item.nodeType === 'bookmark' && !!item.__dh);
+        filtered = domainGrouped ? buildSearchDomainGroupedResults(domainItems, { groupBy: 'root' }) : domainItems;
     }
 
     return { filtered, counts, activeFilter };
@@ -959,14 +1186,16 @@ function buildSearchTypeToggleHtml(typeCounts, activeFilter, options = {}) {
     const bookmarkLabel = isZh ? '书签' : 'Bookmark';
     const folderLabel = isZh ? '文件夹' : 'Folder';
     const domainLabel = isZh ? '域名' : 'Domain';
+    const subdomainLabel = isZh ? '子域名' : 'Subdomain';
 
     const bookmarkBtn = makeBtn('bookmark', bookmarkLabel, 'fa-bookmark', counts.bookmarkCount, '#f59e0b');
     const folderBtn = makeBtn('folder', folderLabel, 'fa-folder', counts.folderCount, '#2563eb');
     const domainBtn = makeBtn('domain', domainLabel, 'fa-globe', counts.domainCount, '#0ea5e9');
+    const subdomainBtn = makeBtn('subdomain', subdomainLabel, 'fa-sitemap', counts.subdomainCount, '#06b6d4');
 
-    if (!bookmarkBtn && !folderBtn && !domainBtn) return '';
+    if (!bookmarkBtn && !folderBtn && !domainBtn && !subdomainBtn) return '';
 
-    return `<div class="${rowClass}">${bookmarkBtn}${folderBtn}${domainBtn}</div>`;
+    return `<div class="${rowClass}">${bookmarkBtn}${folderBtn}${domainBtn}${subdomainBtn}</div>`;
 }
 
 function createSearchSignatureHasher() {
@@ -1818,6 +2047,7 @@ function getSearchTokenLength(token) {
  */
 function scoreCurrentChangesSearchItem(item, tokens, options = {}) {
     const allowPathMatch = !!(options && options.allowPathMatch === true);
+    const allowUrlMatch = options && options.allowUrlMatch === false ? false : true;
     const domainOnly = !!(options && options.domainOnly === true);
     const normalizedQuery = String(options && options.query ? options.query : '').trim().toLowerCase();
     let score = 0;
@@ -1837,6 +2067,7 @@ function scoreCurrentChangesSearchItem(item, tokens, options = {}) {
         const allowTitleContains = isCjk || tokenLen >= 3;
         const allowDomainFieldMatch = isUrlLike || tokenLen >= 4;
         const allowPathFieldMatch = allowPathMatch && (isUrlLike || isCjk || tokenLen >= 2);
+        const allowUrlFieldMatch = allowUrlMatch && !domainOnly && (isUrlLike || tokenLen >= 2);
 
         let matched = false;
         if (!domainOnly) {
@@ -1850,6 +2081,11 @@ function scoreCurrentChangesSearchItem(item, tokens, options = {}) {
             else if (item.__dh && item.__dh.startsWith(t)) { score += 88; matched = true; }
             else if (item.__dh && item.__dh.includes(t)) { score += 82; matched = true; }
             else if (item.__dr && item.__dr.includes(t)) { score += 78; matched = true; }
+        }
+
+        if (!matched && allowUrlFieldMatch && item.__u && item.__u.includes(t)) {
+            score += isUrlLike ? 86 : 58;
+            matched = true;
         }
 
         if (!matched && !domainOnly && allowPathFieldMatch) {
@@ -1933,6 +2169,121 @@ function compareScopedSearchMatches(a, b, scopedOrderMap) {
     return (aItem?.url || '').localeCompare((bItem?.url || ''));
 }
 
+function compareSnapshotBookmarkSearchMatches(a, b, scopedOrderMap) {
+    const aScore = Number(a?.s);
+    const bScore = Number(b?.s);
+    if (Number.isFinite(aScore) && Number.isFinite(bScore) && bScore !== aScore) {
+        return bScore - aScore;
+    }
+
+    const aItem = a && a.item ? a.item : null;
+    const bItem = b && b.item ? b.item : null;
+    const aId = String(aItem?.id || '').trim();
+    const bId = String(bItem?.id || '').trim();
+    const aOrder = scopedOrderMap instanceof Map && scopedOrderMap.has(aId)
+        ? scopedOrderMap.get(aId)
+        : Number.POSITIVE_INFINITY;
+    const bOrder = scopedOrderMap instanceof Map && scopedOrderMap.has(bId)
+        ? scopedOrderMap.get(bId)
+        : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    const aTypeWeight = aItem?.nodeType === 'bookmark' ? 0 : 1;
+    const bTypeWeight = bItem?.nodeType === 'bookmark' ? 0 : 1;
+    if (aTypeWeight !== bTypeWeight) return aTypeWeight - bTypeWeight;
+
+    const titleDelta = String(aItem?.title || '').localeCompare(String(bItem?.title || ''));
+    if (titleDelta !== 0) return titleDelta;
+    return String(aItem?.url || '').localeCompare(String(bItem?.url || ''));
+}
+
+function getHistoryDetailBookmarkGroupKey(item) {
+    if (!item) return '';
+    const title = String(item.title || '').trim().toLowerCase();
+    const url = String(item.url || '').trim().toLowerCase();
+    if (item.nodeType === 'bookmark') {
+        return `BM::${url}::${title}`;
+    }
+    if (item.nodeType === 'folder') {
+        return title ? `FOLDER::${title}` : `FOLDER::${String(item.id || '').trim().toLowerCase()}`;
+    }
+    return '';
+}
+
+function getHistoryDetailBookmarkLocationKey(item) {
+    if (!item) return '__unknown__';
+    const parentPath = getSearchItemParentPathForDisplay(item);
+    const pathKey = parentPath ? parentPath.trim().toLowerCase() : '__root__';
+    return `${String(item.nodeType || '').trim().toLowerCase()}::${pathKey}`;
+}
+
+function buildHistoryDetailBookmarkGroupedResults(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return [];
+
+    const groups = [];
+    const groupByKey = new Map();
+
+    for (const item of list) {
+        if (!item || (item.nodeType !== 'bookmark' && item.nodeType !== 'folder')) continue;
+
+        const key = getHistoryDetailBookmarkGroupKey(item);
+        if (!key) continue;
+
+        let group = groupByKey.get(key);
+        if (!group) {
+            group = {
+                key,
+                firstItem: item,
+                children: [],
+                parentPaths: [],
+                locationKeys: new Set()
+            };
+            groupByKey.set(key, group);
+            groups.push(group);
+        }
+
+        const parentPath = getSearchItemParentPathForDisplay(item);
+        const parentPathKey = parentPath ? parentPath.toLowerCase() : '__root__';
+        const hasPath = group.parentPaths.some((path) => String(path || '').toLowerCase() === parentPathKey);
+        if (!hasPath) group.parentPaths.push(parentPath);
+
+        const locationKey = getHistoryDetailBookmarkLocationKey(item);
+        if (group.locationKeys.has(locationKey)) continue;
+        group.locationKeys.add(locationKey);
+        group.children.push(item);
+    }
+
+    return groups.map((group, index) => {
+        const first = group.firstItem || {};
+        const targetItem = group.children[0] || first;
+        const groupKey = String(group.key || '').trim();
+        const groupId = getHistoryDetailSnapshotGroupId(groupKey)
+            || `history-detail-bookmark-group-${index}-${String(first.id || '').trim()}`;
+        const isFolderGroup = first.nodeType === 'folder';
+        return {
+            ...first,
+            id: groupId,
+            type: isFolderGroup ? 'folder-group' : 'bookmark-group',
+            groupType: 'content',
+            groupKey,
+            nodeType: first.nodeType,
+            title: first.title,
+            url: first.url || '',
+            targetItem,
+            targetId: String(targetItem?.id || first.id || '').trim(),
+            targetItems: group.children,
+            childItems: group.children,
+            parentPaths: group.parentPaths,
+            matchesCount: group.children.length,
+            idPathCandidates: Array.isArray(targetItem?.idPathCandidates) ? targetItem.idPathCandidates : first.idPathCandidates,
+            targetIdPathCandidates: Array.isArray(targetItem?.idPathCandidates) ? targetItem.idPathCandidates : first.idPathCandidates,
+            changeType: targetItem?.changeType || first.changeType || '',
+            changeTypeParts: Array.isArray(targetItem?.changeTypeParts) ? targetItem.changeTypeParts : (first.changeTypeParts || [])
+        };
+    });
+}
+
 /**
  * 执行当前变化搜索并渲染结果
  * @param {string} query - 搜索关键词
@@ -2012,7 +2363,7 @@ function searchCurrentChangesAndRender(query) {
     const results = filtered.slice(0, MAX_RESULTS);
     searchUiState.currentChangesTypeCounts = counts;
     searchUiState.currentChangesTypeFilter = activeFilter;
-    if (activeFilter !== 'domain') {
+    if (!isSearchDomainTypeFilter(activeFilter)) {
         searchUiState.currentChangesExpandedDomainGroups.clear();
         searchUiState.currentChangesDomainGroupHostFilters.clear();
     }
@@ -3038,13 +3389,13 @@ function handleSearchResultsPanelClick(e) {
         } catch (_) { }
 
         const type = String(typeBtn.dataset.type || '').trim().toLowerCase();
-        if (type !== 'bookmark' && type !== 'folder' && type !== 'domain') return;
+        if (type !== 'bookmark' && type !== 'folder' && type !== 'domain' && type !== 'subdomain') return;
 
         searchUiState.currentChangesTypeFilter = type;
-        if (type !== 'domain' && searchUiState.currentChangesExpandedDomainGroups instanceof Set) {
+        if (!isSearchDomainTypeFilter(type) && searchUiState.currentChangesExpandedDomainGroups instanceof Set) {
             searchUiState.currentChangesExpandedDomainGroups.clear();
         }
-        if (type !== 'domain' && searchUiState.currentChangesDomainGroupHostFilters instanceof Map) {
+        if (!isSearchDomainTypeFilter(type) && searchUiState.currentChangesDomainGroupHostFilters instanceof Map) {
             searchUiState.currentChangesDomainGroupHostFilters.clear();
         }
         const input = document.getElementById('searchInput');
@@ -3477,21 +3828,21 @@ const SEARCH_MODE_GUIDES = {
             en: 'Title / URL / Domain / Path Search'
         },
         summary: {
-            zh_CN: '可搜索标题、URL、域名、路径（新路径/旧路径）；并支持书签/文件夹/域名分类切换。',
-            en: 'Search title, URL, domain, and path (new/old path); supports bookmark/folder/domain type filters.'
+            zh_CN: '可搜索标题、URL、域名、路径（新路径/旧路径）；并支持书签/文件夹/域名/子域名分类切换。',
+            en: 'Search title, URL, domain, and path (new/old path); supports bookmark/folder/domain/subdomain type filters.'
         },
         rules: {
             zh_CN: [
                 '多个关键词用空格分隔，按“并且（AND）”匹配',
                 '搜索范围按当前视图模式决定：简略/集合按当前可见变化范围，详细按当前书签全量范围',
-                '结果顶部可切换：书签 / 文件夹 / 域名',
+                '结果顶部可切换：书签 / 文件夹 / 域名 / 子域名',
                 '按匹配度排序，最多显示 20 条',
                 '不支持序号/哈希/日期筛选'
             ],
             en: [
                 'Use spaces between keywords (AND match)',
                 'Scope follows current view: Compact/Collection use current visible changes; Detailed uses full current bookmark tree',
-                'Use top toggles: Bookmark / Folder / Domain',
+                'Use top toggles: Bookmark / Folder / Domain / Subdomain',
                 'Sorted by relevance, up to 20 results',
                 'No seq/hash/date filters in this mode'
             ]
@@ -4729,9 +5080,10 @@ const historyDetailSearchState = {
     query: '',                  // 当前搜索关键词
     selectedIndex: -1,          // 选中的结果索引
     results: [],                // 搜索结果
-    typeFilter: null,           // 当前筛选类型（bookmark/folder/domain）
+    typeFilter: null,           // 当前筛选类型（bookmark/folder/domain/subdomain）
     typeCounts: null,           // 当前筛选计数
     expandedDomainGroups: new Set(), // 域名分组展开状态
+    expandedSnapshotGroups: new Set(), // snapshot 书签/文件夹聚合展开状态
     domainGroupHostFilters: new Map(), // 域名组内子域名筛选
     isActive: false             // 是否激活搜索
 };
@@ -4842,6 +5194,30 @@ function mergeHistoryDetailIdPathCandidates(...paths) {
     return candidates;
 }
 
+function getHistoryDetailSnapshotGroupKey(item) {
+    if (!item) return '';
+
+    if (item.nodeType === 'bookmark') {
+        const title = String(item.title || '').trim().toLowerCase();
+        const url = String(item.url || '').trim().toLowerCase();
+        return `BM::${url}::${title}`;
+    }
+
+    if (item.nodeType === 'folder') {
+        const title = String(item.title || '').trim().toLowerCase();
+        const id = String(item.id || '').trim().toLowerCase();
+        return title ? `FOLDER::${title}` : `FOLDER::${id}`;
+    }
+
+    return '';
+}
+
+function getHistoryDetailSnapshotGroupId(groupKey) {
+    const key = String(groupKey || '').trim();
+    if (!key) return '';
+    return `history-detail-snapshot-group-${encodeURIComponent(key)}`;
+}
+
 // ==================== Phase 2.5: 搜索索引构建 ====================
 
 /**
@@ -4854,6 +5230,8 @@ function mergeHistoryDetailIdPathCandidates(...paths) {
  */
 function buildHistoryDetailSearchDb(options) {
     const { changeMap, currentTree, oldTree, recordTime, artifact = 'changes' } = options;
+    const isSnapshotArtifact = String(artifact || '').toLowerCase() === 'snapshot';
+    const effectiveOldTree = isSnapshotArtifact ? null : oldTree;
     const cacheKey = String(recordTime);
     const signature = getHistoryDetailSearchSignature(options);
 
@@ -4868,9 +5246,9 @@ function buildHistoryDetailSearchDb(options) {
 
     // 收集节点信息（复用 Phase 1 的函数）
     const currentInfo = collectNodeInfoForIds(currentTree, idSet);
-    const oldInfo = oldTree ? collectNodeInfoForIds(oldTree, idSet) : new Map();
+    const oldInfo = effectiveOldTree ? collectNodeInfoForIds(effectiveOldTree, idSet) : new Map();
     const currentParentIndex = buildNodeParentIndexForHistorySearch(currentTree);
-    const oldParentIndex = oldTree ? buildNodeParentIndexForHistorySearch(oldTree) : new Map();
+    const oldParentIndex = effectiveOldTree ? buildNodeParentIndexForHistorySearch(effectiveOldTree) : new Map();
 
     const changedItems = [];
     const changedItemById = new Map();
@@ -4886,11 +5264,11 @@ function buildHistoryDetailSearchDb(options) {
         const url = (cur?.url || old?.url || '').trim();
         const nodeType = url ? 'bookmark' : 'folder';
         const currentIdPath = buildNodeIdPathFromParentIndex(id, currentParentIndex);
-        const oldIdPath = buildNodeIdPathFromParentIndex(id, oldParentIndex);
+        const oldIdPath = isSnapshotArtifact ? [] : buildNodeIdPathFromParentIndex(id, oldParentIndex);
         const idPathCandidates = mergeHistoryDetailIdPathCandidates(currentIdPath, oldIdPath);
 
         const newNamedPath = (change.moved && change.moved.newPath) ? String(change.moved.newPath) : (cur?.namedPath || '');
-        const oldNamedPath = (change.moved && change.moved.oldPath) ? String(change.moved.oldPath) : (old?.namedPath || '');
+        const oldNamedPath = isSnapshotArtifact ? '' : ((change.moved && change.moved.oldPath) ? String(change.moved.oldPath) : (old?.namedPath || ''));
         const newFolderSlash = newNamedPath ? toSearchSlashFolders(newNamedPath) : '';
         const oldFolderSlash = oldNamedPath ? toSearchSlashFolders(oldNamedPath) : '';
         const newPathSlash = newNamedPath ? toSearchSlashFull(newNamedPath) : '';
@@ -4943,9 +5321,9 @@ function buildHistoryDetailSearchDb(options) {
             if (folderId) changedFolderIdSet.add(folderId);
         }
     }
-    const changedContextOldIdSet = oldTree ? collectDescendantIdsUnderFolders(oldTree, changedFolderIdSet) : new Set();
-    const changedContextIdSet = collectDescendantIdsUnderFoldersFromTrees([currentTree, oldTree], changedFolderIdSet);
-    const changedAncestorIdSet = collectAncestorIdsFromParentIndexes(idSet, [currentParentIndex, oldParentIndex]);
+    const changedContextOldIdSet = effectiveOldTree ? collectDescendantIdsUnderFolders(effectiveOldTree, changedFolderIdSet) : new Set();
+    const changedContextIdSet = collectDescendantIdsUnderFoldersFromTrees(isSnapshotArtifact ? [currentTree] : [currentTree, effectiveOldTree], changedFolderIdSet);
+    const changedAncestorIdSet = collectAncestorIdsFromParentIndexes(idSet, isSnapshotArtifact ? [currentParentIndex] : [currentParentIndex, oldParentIndex]);
 
     const { items, itemById } = buildSearchItemsFromTree(currentTree, changeMap, changedItemById, { changedContextIdSet });
 
@@ -4957,7 +5335,7 @@ function buildHistoryDetailSearchDb(options) {
     });
     if (oldOnlyContextIds.length > 0) {
         const oldOnlyIdSet = new Set(oldOnlyContextIds);
-        const oldContextInfo = oldTree ? collectNodeInfoForIds(oldTree, oldOnlyIdSet) : new Map();
+        const oldContextInfo = effectiveOldTree ? collectNodeInfoForIds(effectiveOldTree, oldOnlyIdSet) : new Map();
         const currentContextInfo = collectNodeInfoForIds(currentTree, oldOnlyIdSet);
 
         for (const id of oldOnlyContextIds) {
@@ -5052,6 +5430,10 @@ function buildHistoryDetailSearchDb(options) {
             if (changedItem.__dr && !existing.__dr) existing.__dr = changedItem.__dr;
             existing.__changed = 1;
             existing.__changed_context = 0;
+            continue;
+        }
+
+        if (isSnapshotArtifact) {
             continue;
         }
 
@@ -5216,14 +5598,20 @@ function searchHistoryDetailChanges(query, db, options = {}) {
         return [];
     }
 
-    const allowPathMatch = shouldEnablePathFieldMatch(query);
+    const isSnapshotScope = String(scopedMeta?.mode || '').toLowerCase() === 'snapshot';
+    const allowPathMatch = shouldEnablePathFieldMatch(query) || isSnapshotScope;
     const scored = [];
     for (const item of scopedItems) {
-        const s = scoreCurrentChangesSearchItem(item, tokens, { allowPathMatch, query });
+        const s = scoreCurrentChangesSearchItem(item, tokens, { allowPathMatch, allowUrlMatch: true, query });
         if (s > -Infinity) scored.push({ item, s });
     }
 
-    scored.sort((a, b) => compareScopedSearchMatches(a, b, scopedOrderMap));
+    scored.sort((a, b) => {
+        if (isSnapshotScope) {
+            return compareSnapshotBookmarkSearchMatches(a, b, scopedOrderMap);
+        }
+        return compareScopedSearchMatches(a, b, scopedOrderMap);
+    });
 
     return scored.map(x => x.item);
 }
@@ -5329,6 +5717,198 @@ function hideHistoryDetailSearchPanel(modalContainer) {
     if (panel) panel.classList.remove('visible');
 }
 
+function renderHistoryDetailBookmarkResultIconHtml(item, options = {}) {
+    const isZh = !!options.isZh;
+    const isFolder = item?.nodeType === 'folder' || item?.type === 'folder-group';
+    const iconWrapStyle = String(options.iconWrapStyle || 'display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; flex-shrink:0;');
+
+    if (isFolder) {
+        const iconSize = options.iconSize || '15px';
+        return `<span class="search-result-icon-box-inline" style="${iconWrapStyle}">
+            <i class="fas fa-folder" style="color:#2563eb; font-size:${iconSize};"></i>
+        </span>`;
+    }
+
+    const sourceItem = item?.targetItem || item || {};
+    if (sourceItem.url) {
+        const bookmarkFallbackIcon = `<span class="search-result-icon-box-inline" style="${iconWrapStyle}">
+            <i class="fas fa-bookmark" style="color:#f59e0b; font-size:${options.fallbackIconSize || '15px'};"></i>
+        </span>`;
+        if (typeof getFaviconUrl === 'function' && typeof fallbackIcon !== 'undefined') {
+            const faviconSrc = getFaviconUrl(sourceItem.url);
+            if (faviconSrc && !String(faviconSrc).startsWith('data:image/svg+xml')) {
+                return `<span style="${iconWrapStyle}">
+                    <img class="search-result-favicon" src="${escapeHtml(faviconSrc)}" data-bookmark-url="${escapeHtml(sourceItem.url)}" alt="" style="width:${options.faviconSize || '16px'}; height:${options.faviconSize || '16px'}; object-fit:contain;">
+                </span>`;
+            }
+            return `${bookmarkFallbackIcon}<img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(sourceItem.url)}" alt="" style="display:none; width:${options.faviconSize || '16px'}; height:${options.faviconSize || '16px'}; object-fit:contain;">`;
+        }
+        if (typeof getFaviconUrl === 'function') {
+            const faviconSrc = getFaviconUrl(sourceItem.url);
+            return `<span style="${iconWrapStyle}">
+                <img class="search-result-favicon" src="${escapeHtml(faviconSrc || '')}" data-bookmark-url="${escapeHtml(sourceItem.url)}" alt="" style="width:${options.faviconSize || '16px'}; height:${options.faviconSize || '16px'}; object-fit:contain;">
+            </span>`;
+        }
+    }
+
+    return `<span class="search-result-icon-box-inline" style="${iconWrapStyle}">
+        <i class="fas fa-bookmark" style="color:#f59e0b; font-size:${options.fallbackIconSize || '15px'};"></i>
+    </span>`;
+}
+
+function toggleHistoryDetailSnapshotGroup(modalContainer, groupId, options = {}) {
+    const normalizedGroupId = String(groupId || '').trim();
+    if (!normalizedGroupId) return false;
+
+    if (!(historyDetailSearchState.expandedSnapshotGroups instanceof Set)) {
+        historyDetailSearchState.expandedSnapshotGroups = new Set();
+    }
+
+    if (historyDetailSearchState.expandedSnapshotGroups.has(normalizedGroupId)) {
+        historyDetailSearchState.expandedSnapshotGroups.delete(normalizedGroupId);
+    } else {
+        historyDetailSearchState.expandedSnapshotGroups.add(normalizedGroupId);
+    }
+
+    return rerenderHistoryDetailSearchForQuery(modalContainer, options);
+}
+
+function renderHistoryDetailBookmarkGroupChildRow(item, groupItem, childIndex, options = {}) {
+    if (!item) return '';
+
+    const isZh = !!options.isZh;
+    const query = String(options.query || '');
+    const groupId = String(groupItem?.id || groupItem?.groupKey || '').trim();
+    const childId = String(item.id || '').trim();
+    const titleText = item.title || (isZh ? '（无标题）' : '(Untitled)');
+    const titleHtml = renderSearchHighlightedText(titleText, query);
+    const iconHtml = renderHistoryDetailBookmarkResultIconHtml(item, {
+        iconWrapStyle: 'display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex-shrink:0;',
+        iconSize: '12px',
+        fallbackIconSize: '12px',
+        faviconSize: '16px'
+    });
+    const rootLabel = isZh ? '根目录' : 'Root';
+    const pathList = getSearchItemPathListForDisplay(item);
+    const pathHtml = renderSearchPathHintWithTailPreview(pathList, rootLabel, item.nodeType === 'folder' ? 'is-folder' : 'is-bookmark');
+    const url = String(item?.url || '').trim();
+    const urlHtml = url
+        ? `<div class="search-result-link-row">${renderSearchUrlLink(url, { text: url })}</div>`
+        : '';
+    const rowClasses = [
+        'detail-bookmark-group-child-item',
+        item.nodeType === 'folder' ? 'is-folder' : 'is-bookmark'
+    ].join(' ');
+
+    return `
+        <div class="${rowClasses}" role="button" tabindex="0"
+            data-bookmark-group-id="${escapeHtml(groupId)}"
+            data-bookmark-child-id="${escapeHtml(childId)}"
+            data-bookmark-child-index="${childIndex}">
+            <div class="detail-bookmark-group-child-topline">
+                <span class="detail-bookmark-group-child-index">${childIndex + 1}</span>
+                ${iconHtml}
+                <span class="detail-bookmark-group-child-title">${titleHtml}</span>
+            </div>
+            <div class="detail-bookmark-group-child-meta">
+                ${pathHtml}
+                ${urlHtml}
+            </div>
+        </div>
+    `;
+}
+
+function renderHistoryDetailBookmarkGroupChildren(item, options = {}) {
+    const targetItems = Array.isArray(item?.targetItems) ? item.targetItems : [];
+    if (targetItems.length <= 1) return '';
+
+    const groupId = String(item?.id || item?.groupKey || '').trim();
+    if (!groupId) return '';
+
+    if (!(historyDetailSearchState.expandedSnapshotGroups instanceof Set)) {
+        historyDetailSearchState.expandedSnapshotGroups = new Set();
+    }
+
+    const isExpanded = historyDetailSearchState.expandedSnapshotGroups.has(groupId);
+    const childRowsHtml = isExpanded
+        ? targetItems.map((childItem, childIndex) => renderHistoryDetailBookmarkGroupChildRow(childItem, item, childIndex, options)).join('')
+        : '';
+
+    return `
+        <div class="detail-bookmark-group-children" data-bookmark-group-id="${escapeHtml(groupId)}" ${isExpanded ? '' : 'hidden'}>
+            ${childRowsHtml}
+        </div>
+    `;
+}
+
+function renderHistoryDetailBookmarkResultRow(item, idx, options = {}) {
+    const isZh = !!options.isZh;
+    const query = String(options.query || '');
+    const sourceItem = item?.targetItem || item || {};
+    const nodeId = String(item?.targetId || sourceItem.id || item?.id || '').trim();
+    const isFolder = sourceItem.nodeType === 'folder' || item?.nodeType === 'folder';
+    const isGroup = item?.type === 'bookmark-group' || item?.type === 'folder-group';
+    const titleText = item?.title || sourceItem.title || (isZh ? '（无标题）' : '(Untitled)');
+    const titleHtml = renderSearchHighlightedText(titleText, query);
+    const badgesHtml = buildSearchChangeBadgesHtml(sourceItem, { isZh });
+    const iconHtml = renderHistoryDetailBookmarkResultIconHtml(item, {
+        iconWrapStyle: 'display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; flex-shrink:0;',
+        iconSize: '15px',
+        fallbackIconSize: '15px',
+        faviconSize: '16px'
+    });
+
+    const rootLabel = isZh ? '根目录' : 'Root';
+    const pathList = getSearchItemPathListForDisplay(item);
+    const pathHtml = options.showPathHint === false
+        ? ''
+        : renderSearchPathHintWithTailPreview(pathList, rootLabel, isFolder ? 'is-folder' : 'is-bookmark');
+    const url = String(item?.url || sourceItem.url || '').trim();
+    const urlHtml = url
+        ? `<div class="search-result-link-row">${renderSearchUrlLink(url, { text: url })}</div>`
+        : '';
+    const matchCount = Number(item?.matchesCount || 0);
+    const groupId = String(item?.id || item?.groupKey || '').trim();
+    const isExpanded = isGroup && groupId && historyDetailSearchState.expandedSnapshotGroups instanceof Set
+        ? historyDetailSearchState.expandedSnapshotGroups.has(groupId)
+        : false;
+    const countHtml = isGroup && matchCount > 1
+        ? `<button class="detail-bookmark-match-count detail-bookmark-group-count" type="button" data-bookmark-group-id="${escapeHtml(groupId)}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isZh ? `${matchCount}处` : `${matchCount} locations`}</button>`
+        : '';
+    const toggleHtml = isGroup && matchCount > 1
+        ? `<button class="detail-bookmark-group-toggle" type="button" data-bookmark-group-id="${escapeHtml(groupId)}" aria-label="${escapeHtml(isZh ? '展开或收起候选路径' : 'Expand or collapse candidate paths')}"><i class="fas ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'}"></i></button>`
+        : '';
+    const dataType = isGroup ? 'bookmark-group' : (item?.type || '');
+    const rowClasses = [
+        'search-result-item',
+        'detail-bookmark-result-item',
+        isGroup ? 'detail-bookmark-group-item' : '',
+        isFolder ? 'is-folder' : 'is-bookmark'
+    ].filter(Boolean).join(' ');
+
+    return `
+        <div class="${rowClasses}" role="option" data-index="${idx}" data-type="${escapeHtml(dataType)}" data-node-id="${escapeHtml(nodeId)}" data-bookmark-group-id="${escapeHtml(groupId)}" ${isExpanded ? 'data-expanded="true"' : ''}>
+            <div class="search-result-row">
+                <div class="search-result-main">
+                    <div class="search-result-title detail-bookmark-result-title">
+                        <span class="search-result-index">${idx + 1}</span>
+                        ${badgesHtml}
+                        ${iconHtml}
+                        <span class="search-result-bookmark-title-text">${titleHtml}</span>
+                        ${countHtml}
+                        ${toggleHtml}
+                    </div>
+                    <div class="search-result-match detail-bookmark-result-meta">
+                        ${pathHtml}
+                        ${urlHtml}
+                    </div>
+                </div>
+            </div>
+            ${isGroup ? renderHistoryDetailBookmarkGroupChildren(item, { isZh, query }) : ''}
+        </div>
+    `;
+}
+
 /**
  * 渲染模态框内的搜索结果
  * @param {Array} results - 搜索结果
@@ -5357,6 +5937,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     } catch (_) { }
 
     const sourceResults = Array.isArray(results) ? results : [];
+    const isSnapshotArtifact = String(artifact || historyDetailSearchState.artifact || '').toLowerCase() === 'snapshot';
     const tokens = String(query).toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
     let domainMatchedItems = [];
     try {
@@ -5372,11 +5953,15 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     }
     const { filtered, counts, activeFilter } = filterSearchItemsByType(sourceResults, historyDetailSearchState.typeFilter, {
         domainGrouped: true,
-        domainMatchedItems
+        domainMatchedItems,
+        defaultTypeFilter: isSnapshotArtifact ? 'bookmark' : null
     });
 
     const MAX_RESULTS = Number.isFinite(Number(options.maxResults)) ? Math.max(1, Number(options.maxResults)) : 20;
-    const limitedResults = filtered.slice(0, MAX_RESULTS);
+    const displayResults = isSnapshotArtifact && (activeFilter === 'bookmark' || activeFilter === 'folder')
+        ? buildHistoryDetailBookmarkGroupedResults(filtered)
+        : filtered;
+    const limitedResults = displayResults.slice(0, MAX_RESULTS);
 
     historyDetailSearchState.query = query;
     historyDetailSearchState.results = limitedResults;
@@ -5389,9 +5974,12 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
     if (!(historyDetailSearchState.domainGroupHostFilters instanceof Map)) {
         historyDetailSearchState.domainGroupHostFilters = new Map();
     }
-    if (activeFilter !== 'domain') {
+    if (!isSearchDomainTypeFilter(activeFilter)) {
         historyDetailSearchState.expandedDomainGroups.clear();
         historyDetailSearchState.domainGroupHostFilters.clear();
+    }
+    if (!isSnapshotArtifact && historyDetailSearchState.expandedSnapshotGroups instanceof Set) {
+        historyDetailSearchState.expandedSnapshotGroups.clear();
     }
 
     if (!sourceResults.length && !limitedResults.length) {
@@ -5421,6 +6009,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
             const safeTitle = escapeHtml(item.title || (isZh ? '域名分组' : 'Domain group'));
             const metaText = item.meta ? escapeHtml(item.meta) : '';
             const chevronClass = isExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
+            const domainIconClass = item.domainGroupBy === 'host' ? 'fa-sitemap' : 'fa-globe';
             const selectedHost = historyDetailSearchState.domainGroupHostFilters instanceof Map
                 ? (historyDetailSearchState.domainGroupHostFilters.get(groupIdRaw) || '')
                 : '';
@@ -5435,7 +6024,7 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
                             <div class="search-result-title">
                                 <span class="search-result-index">${idx + 1}</span>
                                 <span class="detail-domain-group-chevron"><i class="fas ${chevronClass}"></i></span>
-                                <i class="fas fa-globe" style="color:#0ea5e9; font-size:12px;"></i>
+                                <i class="fas ${domainIconClass}" style="color:#0ea5e9; font-size:12px;"></i>
                                 <span>${safeTitle}</span>
                             </div>
                             ${metaText ? `<div class="search-result-meta">${metaText}</div>` : ''}
@@ -5444,6 +6033,10 @@ function renderHistoryDetailSearchResults(results, modalContainer, options = {})
                 </div>
                 ${childRowsHtml}
             `;
+        }
+
+        if (isSnapshotArtifact || item?.type === 'bookmark-group') {
+            return renderHistoryDetailBookmarkResultRow(item, idx, { isZh, query });
         }
 
         const safeTitle = escapeHtml(item.title || (isZh ? '（无标题）' : '(Untitled)'));
@@ -5933,20 +6526,23 @@ function closeHistoryDetailSearchBox(modalContainer, options = {}) {
  */
 async function activateHistoryDetailSearchItem(item, modalContainer) {
     if (!item) return;
+    const targetItem = item.targetItem || item;
+    const targetId = String(item.targetId || targetItem.id || item.id || '').trim();
+    if (!targetId) return;
 
     // 选中后关闭搜索弹窗，避免遮挡详情树
     closeHistoryDetailSearchBox(modalContainer, { clearInput: true });
 
     // 定位到目标节点
     const treeContainer = modalContainer?.querySelector('.history-tree-container');
-    const itemHighlightClass = (!item.changeType || !getHighlightClassFromChangeType(item.changeType))
+    const itemHighlightClass = (!targetItem.changeType || !getHighlightClassFromChangeType(targetItem.changeType))
         ? 'highlight-search-neutral'
         : '';
     if (treeContainer) {
-        await locateNodeInHistoryDetailPreview(item.id, treeContainer, {
-            changeType: item.changeType,
-            idPathCandidates: item.idPathCandidates,
-            searchItem: item,
+        await locateNodeInHistoryDetailPreview(targetId, treeContainer, {
+            changeType: targetItem.changeType,
+            idPathCandidates: item.idPathCandidates || targetItem.idPathCandidates,
+            searchItem: targetItem,
             highlightClass: itemHighlightClass || undefined,
             recordTime: historyDetailSearchState.recordTime
         });
@@ -5999,6 +6595,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
     historyDetailSearchState.typeFilter = null;
     historyDetailSearchState.typeCounts = null;
     historyDetailSearchState.expandedDomainGroups = new Set();
+    historyDetailSearchState.expandedSnapshotGroups = new Set();
     historyDetailSearchState.domainGroupHostFilters = new Map();
     historyDetailSearchState.isActive = true;
 
@@ -6053,6 +6650,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
             const previousQuery = String(historyDetailSearchState.query || '').trim().toLowerCase();
             if (normalizedQuery !== previousQuery) {
                 historyDetailSearchState.expandedDomainGroups = new Set();
+                historyDetailSearchState.expandedSnapshotGroups = new Set();
                 historyDetailSearchState.domainGroupHostFilters = new Map();
                 historyDetailSearchState.typeFilter = null;
             }
@@ -6105,9 +6703,37 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
 
     // 点击结果
     const handleResultClick = (e) => {
+        const pathEllipsisToggle = e.target.closest('.search-result-path-ellipsis-toggle');
+        if (pathEllipsisToggle) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+            const hint = pathEllipsisToggle.closest('.search-result-path-hint');
+            if (hint) hint.classList.add('is-expanded');
+            return;
+        }
+
         const urlLink = e.target.closest('a.search-result-url-link[href]');
         if (urlLink) {
             try { e.stopPropagation(); } catch (_) { }
+            return;
+        }
+
+        const snapshotGroupToggle = e.target.closest('.detail-bookmark-group-toggle, .detail-bookmark-group-count');
+        if (snapshotGroupToggle) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+
+            const groupId = String(snapshotGroupToggle.getAttribute('data-bookmark-group-id') || '').trim();
+            const groupRow = snapshotGroupToggle.closest('.detail-bookmark-group-item');
+            const selectedIndex = parseInt(groupRow?.getAttribute('data-index') || '-1', 10);
+            if (!groupId) return;
+            toggleHistoryDetailSnapshotGroup(modalContainer, groupId, {
+                selectedIndex: Number.isNaN(selectedIndex) ? historyDetailSearchState.selectedIndex : selectedIndex
+            });
             return;
         }
 
@@ -6118,18 +6744,44 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
                 e.stopPropagation();
             } catch (_) { }
 
-        const type = String(typeBtn.dataset.type || '').trim().toLowerCase();
-        if (type !== 'bookmark' && type !== 'folder' && type !== 'domain') return;
-        historyDetailSearchState.typeFilter = type;
-        if (type !== 'domain' && historyDetailSearchState.expandedDomainGroups instanceof Set) {
-            historyDetailSearchState.expandedDomainGroups.clear();
+            const type = String(typeBtn.dataset.type || '').trim().toLowerCase();
+            if (type !== 'bookmark' && type !== 'folder' && type !== 'domain' && type !== 'subdomain') return;
+            historyDetailSearchState.typeFilter = type;
+            if (!isSearchDomainTypeFilter(type) && historyDetailSearchState.expandedDomainGroups instanceof Set) {
+                historyDetailSearchState.expandedDomainGroups.clear();
+            }
+            if (!isSearchDomainTypeFilter(type) && historyDetailSearchState.domainGroupHostFilters instanceof Map) {
+                historyDetailSearchState.domainGroupHostFilters.clear();
+            }
+            rerenderHistoryDetailSearchForQuery(modalContainer, { selectedIndex: historyDetailSearchState.selectedIndex });
+            return;
         }
-        if (type !== 'domain' && historyDetailSearchState.domainGroupHostFilters instanceof Map) {
-            historyDetailSearchState.domainGroupHostFilters.clear();
+
+        const snapshotGroupChild = e.target.closest('.detail-bookmark-group-child-item');
+        if (snapshotGroupChild) {
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (_) { }
+
+            const groupId = String(snapshotGroupChild.getAttribute('data-bookmark-group-id') || '').trim();
+            const childId = String(snapshotGroupChild.getAttribute('data-bookmark-child-id') || '').trim();
+            if (!groupId || !childId) return;
+
+            const groupItem = historyDetailSearchState.results.find((result) => result && (result.type === 'bookmark-group' || result.type === 'folder-group') && String(result.id) === groupId);
+            let targetItem = null;
+            if (groupItem && Array.isArray(groupItem.targetItems)) {
+                targetItem = groupItem.targetItems.find((child) => child && String(child.id) === childId) || null;
+            }
+            if (!targetItem) {
+                const searchDb = buildDbIfNeeded();
+                targetItem = searchDb?.itemById?.get(childId) || null;
+            }
+            if (targetItem) {
+                activateHistoryDetailSearchItem(targetItem, modalContainer);
+            }
+            return;
         }
-        rerenderHistoryDetailSearchForQuery(modalContainer, { selectedIndex: historyDetailSearchState.selectedIndex });
-        return;
-    }
 
         const domainSelectorChip = e.target.closest('.detail-domain-selector-chip');
         if (domainSelectorChip) {
@@ -6248,6 +6900,10 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
             delete modalContainer.dataset.searchArtifact;
         } catch (_) { }
         delete modalContainer._historyDetailSearchBuildDb;
+    }
+
+    if (historyDetailSearchState.expandedSnapshotGroups instanceof Set) {
+        historyDetailSearchState.expandedSnapshotGroups.clear();
     }
 
     // 隐藏搜索面板

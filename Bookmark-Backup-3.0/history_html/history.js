@@ -13,8 +13,8 @@ const getManualExportInfoLogFileName = (format = 'md') => {
         ? `备份历史log.${ext}`
         : `backup-history-log.${ext}`;
 };
-const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
-const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
+const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v3';
+const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 
 let currentLang = 'zh_CN';
 // [Init] Restore custom language from storage immediately
@@ -6073,6 +6073,13 @@ function calculateBookmarkFolderDiffs(currentStats, syncHistory, cachedRecord) {
     const currentCounts = extractCountsFromStatsSource(currentStats);
     let previousCounts = findLatestRecordCounts(syncHistory);
     let diffSource = 'history';
+    const explicitBookmarkDiff = currentStats && typeof currentStats.bookmarkDiff === 'number'
+        ? currentStats.bookmarkDiff
+        : null;
+    const explicitFolderDiff = currentStats && typeof currentStats.folderDiff === 'number'
+        ? currentStats.folderDiff
+        : null;
+    const hasExplicitDiff = explicitBookmarkDiff !== null || explicitFolderDiff !== null;
 
     if (!previousCounts && cachedRecord) {
         previousCounts = extractCountsFromHistoryRecord(cachedRecord);
@@ -6086,6 +6093,15 @@ function calculateBookmarkFolderDiffs(currentStats, syncHistory, cachedRecord) {
     if (previousCounts) {
         bookmarkDiff = currentCounts.bookmarks - previousCounts.bookmarks;
         folderDiff = currentCounts.folders - previousCounts.folders;
+        canCalculateDiff = true;
+    }
+
+    // 和主 UI 状态卡保持一致：background 已经按 lastBookmarkData 计算过净变化时，
+    // 以该净变化为准，避免历史记录里折叠后的分组计数覆盖真实总量差。
+    if (hasExplicitDiff) {
+        bookmarkDiff = explicitBookmarkDiff !== null ? explicitBookmarkDiff : bookmarkDiff;
+        folderDiff = explicitFolderDiff !== null ? explicitFolderDiff : folderDiff;
+        diffSource = 'statsExplicit';
         canCalculateDiff = true;
     }
 
@@ -6132,19 +6148,30 @@ function resolveAbsoluteDisplayStats(stats = {}, options = {}) {
     const explicitBookmarkDeleted = normalizeOptionalCount(sourceStats.bookmarkDeleted);
     const explicitFolderAdded = normalizeOptionalCount(sourceStats.folderAdded);
     const explicitFolderDeleted = normalizeOptionalCount(sourceStats.folderDeleted);
+    const preferDiffCounts = options.preferDiffCounts === true && canCalculateDiff;
+    const useBookmarkDiffCounts = preferDiffCounts && bookmarkDiff !== 0;
+    const useFolderDiffCounts = preferDiffCounts && folderDiff !== 0;
 
-    const bookmarkAddedCount = explicitBookmarkAdded !== null
+    const bookmarkAddedCount = useBookmarkDiffCounts
+        ? (bookmarkDiff > 0 ? bookmarkDiff : 0)
+        : (explicitBookmarkAdded !== null
         ? explicitBookmarkAdded
-        : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0);
-    const bookmarkDeletedCount = explicitBookmarkDeleted !== null
+        : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0));
+    const bookmarkDeletedCount = useBookmarkDiffCounts
+        ? (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0)
+        : (explicitBookmarkDeleted !== null
         ? explicitBookmarkDeleted
-        : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
-    const folderAddedCount = explicitFolderAdded !== null
+        : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0));
+    const folderAddedCount = useFolderDiffCounts
+        ? (folderDiff > 0 ? folderDiff : 0)
+        : (explicitFolderAdded !== null
         ? explicitFolderAdded
-        : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0);
-    const folderDeletedCount = explicitFolderDeleted !== null
+        : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0));
+    const folderDeletedCount = useFolderDiffCounts
+        ? (folderDiff < 0 ? Math.abs(folderDiff) : 0)
+        : (explicitFolderDeleted !== null
         ? explicitFolderDeleted
-        : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0);
+        : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0));
 
     const explicitMovedTotal = normalizeOptionalCount(options.movedTotal);
     const explicitModifiedTotal = normalizeOptionalCount(options.modifiedTotal);
@@ -6223,7 +6250,8 @@ function buildChangeSummary(diffMeta, stats, lang) {
     } = resolveAbsoluteDisplayStats(stats, {
         bookmarkDiff,
         folderDiff,
-        canCalculateDiff: hasNumericalChange
+        canCalculateDiff: hasNumericalChange,
+        preferDiffCounts: true
     });
 
     const i18nBookmarksLabel = window.i18nLabels?.bookmarksLabel || (effectiveLang === 'en' ? 'bookmarks' : '个书签');
@@ -6911,7 +6939,8 @@ async function updateCurrentChangesOpsGridInPlace(changeData, context = {}) {
             || diffMeta?.hasNumericalChange === true
             || hasAnyCurrentChangesStatsCounts(effectiveStats),
         movedTotal: effectiveStats.movedCount,
-        modifiedTotal: effectiveStats.modifiedCount
+        modifiedTotal: effectiveStats.modifiedCount,
+        preferDiffCounts: true
     });
     const {
         bookmarkAddedCount,
@@ -7453,6 +7482,20 @@ async function __maybeAutoExpandCurrentChangesPreviewByMode(targetMode = 'compac
     if (!treeEl) return;
 
     const persistedStateKey = `${CHANGES_PREVIEW_EXPANDED_KEY}:${normalizedMode}`;
+    if (normalizedMode === 'detailed') {
+        // 详细模式展示完整树，但默认只打开根目录；后续靠懒加载按需展开。
+        // 这里不自动展开到变化节点路径，避免一次性加载大量文件夹。
+        __resetTreeExpandedState(treeEl);
+        __ensureTreeRootExpanded(treeEl);
+        try {
+            __setChangesPreviewExpandedStateByKey(
+                persistedStateKey,
+                Array.from(__captureTreeExpandedNodeIds(treeEl))
+            );
+        } catch (_) { /* ignore */ }
+        return;
+    }
+
     if (__hasChangesPreviewExpandedStateByKey(persistedStateKey)) {
         return;
     }
@@ -7773,11 +7816,12 @@ async function renderCurrentChangesCollectionPreview(changeData, targetContainer
     const changeMap = renderState?.changeMap instanceof Map ? renderState.changeMap : new Map();
     const treeToRender = Array.isArray(renderState?.treeToRender) ? renderState.treeToRender : [];
     const normalizedStats = renderState?.normalizedStats || normalizeCurrentChangesExportStatsManual(changeData || {});
+    const titleStats = buildCurrentChangesDisplayStatsForTitles(changeData, normalizedStats, renderState);
     const lang = isZh ? 'zh_CN' : 'en';
     const collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
         mode: 'collection',
         lang,
-        stats: normalizedStats
+        stats: titleStats
     });
 
     const collectionHtml = renderCollectionTreeHtmlForRecord(collectionChildren, {
@@ -19346,19 +19390,6 @@ function renderDetailModalContent(record, mode) {
             updateDetailArtifactToggleUI(detailArtifact);
             const treeContainer = body.querySelector('.history-tree-container');
             if (treeContainer) {
-                if (detailArtifact === 'changes' && normalizedMode === 'detailed') {
-                    const manualExpandedIds = getRecordExpandedState(record.time);
-                    const hasManualExpandedState = manualExpandedIds instanceof Set && manualExpandedIds.size > 0;
-                    if (hasManualExpandedState) {
-                        applyRecordExpandedState(record.time, treeContainer);
-                        // 叠加自动展开变化路径，避免旧的手动状态遮蔽真实变化位置。
-                        autoExpandHistoryDetailTreeToChanges(record, treeContainer).catch(() => { });
-                    } else {
-                        // 首次打开（无手动展开记录）时，自动展开到变化路径，便于所见即所得。
-                        autoExpandHistoryDetailTreeToChanges(record, treeContainer).catch(() => { });
-                    }
-                }
-
                 treeContainer.addEventListener('click', (e) => {
                     const loadMoreBtn = e.target && e.target.closest ? e.target.closest('.tree-load-more') : null;
                     if (loadMoreBtn && treeContainer.contains(loadMoreBtn)) {
@@ -20186,7 +20217,11 @@ async function generateTreeBasedChanges(record, mode) {
         `;
         }
 
-        return generateHistoryTreeHtml(cachedDetail.treeToRender, cachedDetail.changeMap, detailMode, record.time);
+        return generateHistoryTreeHtml(cachedDetail.treeToRender, cachedDetail.changeMap, detailMode, {
+            recordTime: record.time,
+            lazyKey: record.time,
+            autoExpandChanges: false
+        });
     }
 
     const prepared = await prepareDataForExport(record);
@@ -20254,7 +20289,11 @@ async function generateTreeBasedChanges(record, mode) {
         `;
     }
 
-    return generateHistoryTreeHtml(treeToRender, changeMap, detailMode, record.time);
+    return generateHistoryTreeHtml(treeToRender, changeMap, detailMode, {
+        recordTime: record.time,
+        lazyKey: record.time,
+        autoExpandChanges: false
+    });
 }
 
 // 计算两个书签树之间的变化
@@ -20670,6 +20709,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
     const hideModeLabel = options.hideModeLabel === true;
     const collectionView = options.collectionView === true;
     const hideSectionTitle = options.hideSectionTitle === true;
+    const autoExpandChanges = options.autoExpandChanges !== false;
     const previewChildBatchSizeRaw = Number.isFinite(Number(options.childBatchSize)) ? Number(options.childBatchSize) : 100;
     const previewChildBatchSize = Math.max(50, Math.min(2000, Math.round(previewChildBatchSizeRaw)));
 
@@ -20811,7 +20851,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
     let allowSimpleAutoExpand = false;
     const simpleExpandSet = new Set();
     try {
-        if (mode !== 'detailed') {
+        if (mode !== 'detailed' && autoExpandChanges) {
             let changedBookmarks = 0;
             let changedFolders = 0;
             changeMap.forEach((_, id) => {
@@ -20908,9 +20948,9 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                     statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><span class="badge-symbol">>></span><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                 }
             }
-            // Detailed mode only: descendant path hint badges.
+            // Descendant path hint badges: simple/detailed both need the breadcrumb marker.
             // Note: descendant mask is independent from the folder's own change type; do not "hide" overlaps.
-            if (!underDeletedAncestor && mode === 'detailed' && hasDescendantChanged) {
+            if (!underDeletedAncestor && hasDescendantChanged) {
                 const mask = ancestorBadgeMask.get(idStr) || 0;
                 let pathBadges = `<span class="path-badges"><span class="path-dot" title="${isZh ? '此文件夹下有变化' : 'Contains changes'}">•</span>`;
                 if (mask & 1) pathBadges += '<span class="path-symbol added" title="+">+</span>';
@@ -20920,7 +20960,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                 pathBadges += '</span>';
                 statusIcon += pathBadges;
             }
-        } else if (!underDeletedAncestor && mode === 'detailed' && hasDescendantChanged && isFolder) {
+        } else if (!underDeletedAncestor && hasDescendantChanged && isFolder) {
             // 文件夹本身无变化，但子节点有变化：显示路径灰点 + 聚合徽标
             let pathBadges = `<span class="path-badges"><span class="path-dot" title="${isZh ? '此文件夹下有变化' : 'Contains changes'}">•</span>`;
 
@@ -25179,6 +25219,63 @@ function hasAnyCounts(counts) {
     return Object.values(counts).some(pair => (pair?.bookmarks || pair?.folders));
 }
 
+function buildCurrentChangesDisplayStatsForTitles(changeData = {}, normalizedStats = {}, renderState = {}) {
+    const sourceStats = normalizedStats && typeof normalizedStats === 'object'
+        ? normalizedStats
+        : normalizeCurrentChangesExportStatsManual(changeData || {});
+    const rawStats = changeData && typeof changeData === 'object' && changeData.stats && typeof changeData.stats === 'object'
+        ? changeData.stats
+        : {};
+    const diffMeta = changeData && typeof changeData === 'object' && changeData.diffMeta && typeof changeData.diffMeta === 'object'
+        ? changeData.diffMeta
+        : {};
+    const toFiniteNumber = (value, fallback = 0) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+    };
+    const bookmarkDiff = toFiniteNumber(diffMeta.bookmarkDiff, toFiniteNumber(rawStats.bookmarkDiff, 0));
+    const folderDiff = toFiniteNumber(diffMeta.folderDiff, toFiniteNumber(rawStats.folderDiff, 0));
+    const canCalculateDiff = diffMeta.hasNumericalChange === true
+        || rawStats.hasNumericalChange === true
+        || bookmarkDiff !== 0
+        || folderDiff !== 0;
+    const displayStats = resolveAbsoluteDisplayStats(sourceStats, {
+        bookmarkDiff,
+        folderDiff,
+        canCalculateDiff,
+        movedTotal: sourceStats.movedCount,
+        modifiedTotal: sourceStats.modifiedCount,
+        preferDiffCounts: true
+    });
+    const merged = {
+        ...sourceStats,
+        bookmarkAdded: displayStats.bookmarkAddedCount,
+        bookmarkDeleted: displayStats.bookmarkDeletedCount,
+        folderAdded: displayStats.folderAddedCount,
+        folderDeleted: displayStats.folderDeletedCount,
+        movedCount: displayStats.movedTotal,
+        modifiedCount: displayStats.modifiedTotal
+    };
+
+    const collapseDirectionalBreakdown = (bucketKey, bookmarkKey, folderKey, totalKey) => {
+        const pair = renderState?.counts?.[bucketKey];
+        const countedTotal = Number(pair?.bookmarks || 0) + Number(pair?.folders || 0);
+        const statBreakdownTotal = Number(merged[bookmarkKey] || 0) + Number(merged[folderKey] || 0);
+        const displayTotal = Number(merged[totalKey] || 0) || countedTotal || statBreakdownTotal;
+
+        if (displayTotal > 0) {
+            merged[bookmarkKey] = 0;
+            merged[folderKey] = 0;
+            merged[totalKey] = displayTotal;
+        }
+    };
+
+    collapseDirectionalBreakdown('moved', 'movedBookmarkCount', 'movedFolderCount', 'movedCount');
+    collapseDirectionalBreakdown('modified', 'modifiedBookmarkCount', 'modifiedFolderCount', 'modifiedCount');
+
+    return merged;
+}
+
 function getCurrentChangesTreeItemChangeTypes(treeItem) {
     const types = [];
     if (!treeItem) return types;
@@ -25883,17 +25980,18 @@ async function buildCurrentChangesExportPayloadManual(changeData, mode) {
         exportCounts,
         changeMap instanceof Map && changeMap.size > 0
     );
+    const titleStats = buildCurrentChangesDisplayStatsForTitles(changeData, normalizedStats, { counts: exportCounts });
 
     const exportChildren = buildCurrentChangesExportTreeManual(treeToExport, changeMap, {
         mode: normalizedMode,
         expandedIds: normalizedMode === 'detailed' ? viewState.expandedIds : expandedIds,
         exactExpandedState: normalizedMode === 'detailed' ? viewState.exactExpandedState : false,
         lang,
-        stats: normalizedStats
+        stats: titleStats
     });
 
     const exportTimeText = new Date().toLocaleString(isZh ? 'zh-CN' : 'en-US');
-    const countsLine = buildCurrentChangesStatsLineManual(normalizedStats, lang);
+    const countsLine = buildCurrentChangesStatsLineManual(titleStats, lang);
     const legendTitle = isZh
         ? `前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动`
         : `Prefix legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved`;

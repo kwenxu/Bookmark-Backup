@@ -2385,8 +2385,8 @@ async function setCanvasMarkerBulkMode(active, options = {}) {
 // “当前变化”持久缓存：增量更新（避免每次小改动全量重算）
 // =============================================================================
 
-const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
-const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v1';
+const CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v3';
+const LEGACY_CURRENT_CHANGES_CACHE_KEY = 'current-changes-cache:v2';
 let pendingChangeCacheDeltas = [];
 let pendingChangeCacheFlushTimer = null;
 
@@ -7565,6 +7565,38 @@ function buildCurrentChangesArtifactLeafName({ naming, mode, format, lang }) {
     return `${prefix}_${modeText}_${naming.timePart}_${naming.fingerprint}.${ext}`;
 }
 
+function buildCurrentChangesDisplayStatsBg(stats = {}) {
+    const source = stats && typeof stats === 'object' ? stats : {};
+    const toNum = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+    const displayStats = { ...source };
+    const bookmarkDiff = toNum(source.bookmarkDiff);
+    const folderDiff = toNum(source.folderDiff);
+
+    if (bookmarkDiff !== 0) {
+        displayStats.bookmarkAdded = bookmarkDiff > 0 ? bookmarkDiff : 0;
+        displayStats.bookmarkDeleted = bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0;
+    }
+    if (folderDiff !== 0) {
+        displayStats.folderAdded = folderDiff > 0 ? folderDiff : 0;
+        displayStats.folderDeleted = folderDiff < 0 ? Math.abs(folderDiff) : 0;
+    }
+
+    const collapseDirectionalBreakdown = (bookmarkKey, folderKey, totalKey) => {
+        const total = toNum(displayStats[totalKey])
+            || toNum(displayStats[bookmarkKey]) + toNum(displayStats[folderKey]);
+        if (total > 0) {
+            displayStats[bookmarkKey] = 0;
+            displayStats[folderKey] = 0;
+            displayStats[totalKey] = total;
+        }
+    };
+
+    collapseDirectionalBreakdown('movedBookmarkCount', 'movedFolderCount', 'movedCount');
+    collapseDirectionalBreakdown('modifiedBookmarkCount', 'modifiedFolderCount', 'modifiedCount');
+
+    return displayStats;
+}
+
 function buildCurrentChangesStatsLine(stats, lang) {
     const isZh = lang === 'zh_CN';
     const labels = isZh
@@ -7572,12 +7604,13 @@ function buildCurrentChangesStatsLine(stats, lang) {
         : { added: 'Added', deleted: 'Deleted', modified: 'Modified', moved: 'Moved', b: 'BKM', f: 'FLD', none: 'No changes' };
 
     const toNum = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-    const bookmarkAdded = toNum(stats?.bookmarkAdded);
-    const bookmarkDeleted = toNum(stats?.bookmarkDeleted);
-    const folderAdded = toNum(stats?.folderAdded);
-    const folderDeleted = toNum(stats?.folderDeleted);
-    const movedCount = toNum(stats?.movedCount);
-    const modifiedCount = toNum(stats?.modifiedCount);
+    const displayStats = buildCurrentChangesDisplayStatsBg(stats);
+    const bookmarkAdded = toNum(displayStats?.bookmarkAdded);
+    const bookmarkDeleted = toNum(displayStats?.bookmarkDeleted);
+    const folderAdded = toNum(displayStats?.folderAdded);
+    const folderDeleted = toNum(displayStats?.folderDeleted);
+    const movedCount = toNum(displayStats?.movedCount);
+    const modifiedCount = toNum(displayStats?.modifiedCount);
 
     const formatPair = (bookmarks, folders) => {
         const parts = [];
@@ -7680,17 +7713,18 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
 
     const buildCollectionTree = () => {
         const safeNumberLocal = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+        const displayStats = buildCurrentChangesDisplayStatsBg(stats);
 
-        const bookmarkAdded = safeNumberLocal(stats?.bookmarkAdded);
-        const folderAdded = safeNumberLocal(stats?.folderAdded);
-        const bookmarkDeleted = safeNumberLocal(stats?.bookmarkDeleted);
-        const folderDeleted = safeNumberLocal(stats?.folderDeleted);
-        const movedCount = safeNumberLocal(stats?.movedCount);
-        const modifiedCount = safeNumberLocal(stats?.modifiedCount);
-        const movedBookmarkCount = safeNumberLocal(stats?.movedBookmarkCount);
-        const movedFolderCount = safeNumberLocal(stats?.movedFolderCount);
-        const modifiedBookmarkCount = safeNumberLocal(stats?.modifiedBookmarkCount);
-        const modifiedFolderCount = safeNumberLocal(stats?.modifiedFolderCount);
+        const bookmarkAdded = safeNumberLocal(displayStats?.bookmarkAdded);
+        const folderAdded = safeNumberLocal(displayStats?.folderAdded);
+        const bookmarkDeleted = safeNumberLocal(displayStats?.bookmarkDeleted);
+        const folderDeleted = safeNumberLocal(displayStats?.folderDeleted);
+        const movedCount = safeNumberLocal(displayStats?.movedCount);
+        const modifiedCount = safeNumberLocal(displayStats?.modifiedCount);
+        const movedBookmarkCount = safeNumberLocal(displayStats?.movedBookmarkCount);
+        const movedFolderCount = safeNumberLocal(displayStats?.movedFolderCount);
+        const modifiedBookmarkCount = safeNumberLocal(displayStats?.modifiedBookmarkCount);
+        const modifiedFolderCount = safeNumberLocal(displayStats?.modifiedFolderCount);
 
         const buckets = {
             added: [],
@@ -9536,7 +9570,12 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
         });
     }
 
-    const normalizedStats = buildRestoreStats(diffSummary);
+    const diffStats = { ...diffSummary };
+    if (hasPreviousTree) {
+        diffStats.bookmarkDiff = countAllBookmarks(currentTree) - countAllBookmarks(previousTree);
+        diffStats.folderDiff = countAllFolders(currentTree) - countAllFolders(previousTree);
+    }
+    const normalizedStats = buildRestoreStats(diffStats);
 
     const settings = await browserAPI.storage.local.get(['currentChangesArchiveFormats', 'currentChangesArchiveModes', 'currentChangesArchiveEnabled']);
     const archiveSettings = normalizeCurrentChangesArchiveSettings(settings);
@@ -21119,8 +21158,14 @@ function buildRestoreStats(bookmarkStats) {
         bookmarkDeleted: safeNumber(stats.bookmarkDeleted),
         folderAdded: safeNumber(stats.folderAdded),
         folderDeleted: safeNumber(stats.folderDeleted),
+        bookmarkDiff: safeNumber(stats.bookmarkDiff),
+        folderDiff: safeNumber(stats.folderDiff),
         movedCount: safeNumber(stats.movedCount),
         modifiedCount: safeNumber(stats.modifiedCount),
+        movedBookmarkCount: safeNumber(stats.movedBookmarkCount),
+        movedFolderCount: safeNumber(stats.movedFolderCount),
+        modifiedBookmarkCount: safeNumber(stats.modifiedBookmarkCount),
+        modifiedFolderCount: safeNumber(stats.modifiedFolderCount),
         bookmarkCount: (typeof stats.bookmarkCount === 'number' ? stats.bookmarkCount : (typeof stats.bookmarks === 'number' ? stats.bookmarks : null)),
         folderCount: (typeof stats.folderCount === 'number' ? stats.folderCount : (typeof stats.folders === 'number' ? stats.folders : null))
     };

@@ -146,7 +146,7 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     if (safetyTooltip) safetyTooltip.textContent = isEn ? 'Temporary Safety Snapshot' : '临时安全快照';
 
     const restoreSafetyTooltip = document.querySelector('#restoreSafetyCheckpointEntryBtn .tooltip');
-    if (restoreSafetyTooltip) restoreSafetyTooltip.textContent = isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照';
+    if (restoreSafetyTooltip) restoreSafetyTooltip.textContent = isEn ? 'Safety Snapshot' : '安全快照';
 }
 
 function normalizeBackupHistorySlimmingSettings(rawSettings) {
@@ -234,14 +234,14 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
     const restoreSafetyText = document.getElementById('restoreSafetyCheckpointEntryText');
     if (restoreSafetyText) {
         restoreSafetyText.textContent = isEn
-            ? 'Before restore, before-operation browser and target-state snapshots are created.'
-            : '恢复前会生成“操作前浏览器快照”和“目标状态快照”。';
+            ? 'Temporary Safety Snapshot'
+            : '临时安全快照';
     }
 
     const restoreSafetyBtn = document.getElementById('restoreSafetyCheckpointEntryBtn');
     if (restoreSafetyBtn) {
-        restoreSafetyBtn.setAttribute('aria-label', isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照');
-        restoreSafetyBtn.setAttribute('title', isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照');
+        restoreSafetyBtn.setAttribute('aria-label', isEn ? 'Safety Snapshot' : '安全快照');
+        restoreSafetyBtn.setAttribute('title', isEn ? 'Safety Snapshot' : '安全快照');
     }
 }
 
@@ -928,12 +928,12 @@ function syncInitRightColumnHeights() {
         return;
     }
 
-    const bookmarkSection = leftPanel.querySelector('.settings-section');
-    const historySection = leftPanel.querySelector('#currentChangesArchiveSection');
-
-    const bookmarkHeight = bookmarkSection ? bookmarkSection.getBoundingClientRect().height : 0;
-    const historyHeight = historySection ? historySection.getBoundingClientRect().height : 0;
-    const sectionsTotalHeight = bookmarkHeight + historyHeight;
+    const sectionElements = Array.from(leftPanel.querySelectorAll(':scope > .settings-section'));
+    const sectionHeights = sectionElements.map((section) => section.getBoundingClientRect().height || 0);
+    const bookmarkHeight = sectionHeights[0] || 0;
+    const historyHeight = sectionHeights[1] || 0;
+    const strategyHeight = sectionHeights[2] || 0;
+    const sectionsTotalHeight = sectionHeights.reduce((sum, height) => sum + height, 0);
     const leftPanelOuterHeight = leftPanel.getBoundingClientRect().height;
     const leftPanelFrameHeight = Math.max(0, leftPanelOuterHeight - sectionsTotalHeight);
     const leftHeight = sectionsTotalHeight > 0
@@ -969,6 +969,7 @@ function syncInitRightColumnHeights() {
 
     restoreColumn.style.setProperty('--bookmark-section-height', `${bookmarkHeight}px`);
     restoreColumn.style.setProperty('--history-section-height', `${historyHeight}px`);
+    restoreColumn.style.setProperty('--strategy-section-height', `${strategyHeight}px`);
     restoreColumn.style.setProperty('--left-panel-frame-height', `${leftPanelFrameHeight}px`);
     restoreColumn.style.setProperty('--left-panel-outer-height', `${leftPanelOuterHeight}px`);
     restoreColumn.style.setProperty('--left-sections-total-height', `${leftHeight}px`);
@@ -7972,8 +7973,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const bookmarkBackupTitleStrings = {
-        'zh_CN': "书签备份",
-        'en': "Bookmark Backup"
+        'zh_CN': "快照备份",
+        'en': "Snapshot Backup"
     };
 
     const bookmarkModeLabelStrings = {
@@ -7987,6 +7988,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const backupTimeLabelStrings = {
         'zh_CN': "时间频率",
         'en': "Time Frequency"
+    };
+
+    const snapshotBackupFormatLabelStrings = {
+        'zh_CN': "格式",
+        'en': "Format"
     };
 
     const bookmarkOverwriteLabelStrings = {
@@ -8055,7 +8061,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeHelpTitleStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
     const backupStrategyHelpAriaStrings = { 'zh_CN': "备份策略说明", 'en': "Backup strategy help" };
     const backupStrategyHelpTitleStrings = { 'zh_CN': "备份策略说明", 'en': "Backup strategy help" };
-    const backupStrategyTitleStrings = { 'zh_CN': "备份策略", 'en': "Backup Strategy" };
+    const backupStrategyTitleStrings = { 'zh_CN': "策略", 'en': "Strategy" };
     // 恢复相关国际化字符串
     const syncRestoreTitleStrings = {
         'zh_CN': "恢复",
@@ -8535,6 +8541,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const backupModeAutoLabelText = backupModeAutoLabelStrings[lang] || backupModeAutoLabelStrings['zh_CN'];
     const backupModeManualLabelText = backupModeManualLabelStrings[lang] || backupModeManualLabelStrings['zh_CN'];
     const backupTimeLabelText = backupTimeLabelStrings[lang] || backupTimeLabelStrings['zh_CN'];
+    const snapshotBackupFormatLabelText = snapshotBackupFormatLabelStrings[lang] || snapshotBackupFormatLabelStrings['zh_CN'];
     const bookmarkOverwriteLabelText = bookmarkOverwriteLabelStrings[lang] || bookmarkOverwriteLabelStrings['zh_CN'];
     const backupModeLabelText = backupModeLabelStrings[lang] || backupModeLabelStrings['zh_CN'];
     const backupModeFullText = backupModeFullStrings[lang] || backupModeFullStrings['zh_CN'];
@@ -8865,6 +8872,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const backupTimeLabelEl = document.getElementById('backupTimeLabel');
     if (backupTimeLabelEl) backupTimeLabelEl.textContent = backupTimeLabelText;
 
+    const snapshotBackupFormatLabelEl = document.getElementById('snapshotBackupFormatLabel');
+    if (snapshotBackupFormatLabelEl) snapshotBackupFormatLabelEl.textContent = snapshotBackupFormatLabelText;
+
     const bookmarkOverwriteLabelEl = document.getElementById('bookmarkOverwriteLabel');
     if (bookmarkOverwriteLabelEl) bookmarkOverwriteLabelEl.textContent = bookmarkOverwriteLabelText;
 
@@ -9166,8 +9176,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const restoreSafetyCheckpointEntryText = document.getElementById('restoreSafetyCheckpointEntryText');
     if (restoreSafetyCheckpointEntryText) {
         restoreSafetyCheckpointEntryText.textContent = lang === 'en'
-            ? 'Before restore, before-operation browser and target-state snapshots are created.'
-            : '恢复前会生成“操作前浏览器快照”和“目标状态快照”。';
+            ? 'Temporary Safety Snapshot'
+            : '临时安全快照';
     }
 
     const historyHeaders = document.querySelectorAll('.history-header .header-item');
@@ -9689,6 +9699,68 @@ function showBackupStrategySavedFeedback() {
     }, 2000);
 }
 
+function showSnapshotBackupEnablePromptModal() {
+    const isEn = document.documentElement.getAttribute('lang') === 'en';
+    const modal = document.getElementById('snapshotBackupEnablePromptModal');
+    const titleEl = document.getElementById('snapshotBackupEnablePromptTitle');
+    const textEl = document.getElementById('snapshotBackupEnablePromptText');
+    const cancelBtn = document.getElementById('snapshotBackupEnablePromptCancelBtn');
+    const confirmBtn = document.getElementById('snapshotBackupEnablePromptConfirmBtn');
+    const closeBtn = document.getElementById('snapshotBackupEnablePromptCloseBtn');
+
+    const fallbackMessage = isEn
+        ? 'Snapshot Backup is off. Enable it for overwrite snapshots?'
+        : '快照备份未开启，是否为覆盖快照开启？';
+
+    if (!modal || !cancelBtn || !confirmBtn || !closeBtn) {
+        return Promise.resolve(window.confirm(fallbackMessage));
+    }
+
+    if (titleEl) titleEl.textContent = isEn ? 'Enable Snapshot Backup?' : '开启快照备份？';
+    if (textEl) {
+        textEl.textContent = isEn
+            ? 'Overwrite mode will not export snapshot files while Snapshot Backup is off.'
+            : '快照备份关闭时，覆盖模式不会导出覆盖快照文件。';
+    }
+    cancelBtn.textContent = isEn ? 'Not Now' : '暂不开启';
+    confirmBtn.textContent = isEn ? 'Enable Snapshot' : '开启快照';
+
+    const resetButton = (button) => {
+        const cloned = button.cloneNode(true);
+        button.parentNode.replaceChild(cloned, button);
+        return cloned;
+    };
+
+    const nextCancelBtn = resetButton(cancelBtn);
+    const nextConfirmBtn = resetButton(confirmBtn);
+    const nextCloseBtn = resetButton(closeBtn);
+
+    modal.style.display = 'flex';
+
+    return new Promise((resolve) => {
+        const finish = (enabled) => {
+            modal.style.display = 'none';
+            modal.removeEventListener('click', onOverlayClick);
+            document.removeEventListener('keydown', onKeyDown);
+            resolve(enabled === true);
+        };
+
+        const onOverlayClick = (event) => {
+            if (event.target === modal) finish(false);
+        };
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') finish(false);
+        };
+
+        nextCancelBtn.addEventListener('click', () => finish(false));
+        nextCloseBtn.addEventListener('click', () => finish(false));
+        nextConfirmBtn.addEventListener('click', () => finish(true));
+        modal.addEventListener('click', onOverlayClick);
+        document.addEventListener('keydown', onKeyDown);
+    });
+}
+
 // =============================================================================
 // 备份设置初始化 (Backup Settings Initialization)
 // =============================================================================
@@ -9702,10 +9774,111 @@ function showBackupStrategySavedFeedback() {
 function initializeBackupSettings() {
     const backupModeAuto = document.getElementById('backupModeAuto');
     const backupModeManual = document.getElementById('backupModeManual');
+    const snapshotBackupEnabled = document.getElementById('snapshotBackupEnabled');
+    const snapshotBackupFormatRow = document.getElementById('snapshotBackupFormatRow');
+    const snapshotBackupFormatHtml = document.getElementById('snapshotBackupFormatHtml');
+    const snapshotBackupFormatJson = document.getElementById('snapshotBackupFormatJson');
+    const snapshotBackupHeader = document.getElementById('snapshotBackupHeader');
+    const snapshotBackupSwitchWrap = snapshotBackupHeader
+        ? snapshotBackupHeader.querySelector('.switch')
+        : null;
     const overwriteVersioned = document.getElementById('overwriteVersioned');
     const overwriteOverwrite = document.getElementById('overwriteOverwrite');
 
     if (!overwriteVersioned || !overwriteOverwrite) return;
+
+    if (snapshotBackupSwitchWrap) {
+        snapshotBackupSwitchWrap.addEventListener('click', function (e) {
+            e.stopPropagation();
+        });
+    }
+    if (snapshotBackupEnabled) {
+        snapshotBackupEnabled.addEventListener('click', function (e) {
+            e.stopPropagation();
+        });
+    }
+
+    function normalizeSnapshotBackupFormatControls() {
+        if (!snapshotBackupFormatHtml || !snapshotBackupFormatJson) return;
+        if (snapshotBackupFormatJson.checked) {
+            snapshotBackupFormatHtml.checked = false;
+        } else {
+            snapshotBackupFormatHtml.checked = true;
+            snapshotBackupFormatJson.checked = false;
+        }
+    }
+
+    function collectSnapshotBackupFormat() {
+        return snapshotBackupFormatJson?.checked ? 'json' : 'html';
+    }
+
+    function updateSnapshotBackupFormatState() {
+        if (!snapshotBackupFormatRow) return;
+        if (snapshotBackupEnabled && snapshotBackupEnabled.checked) {
+            snapshotBackupFormatRow.classList.remove('disabled');
+        } else {
+            snapshotBackupFormatRow.classList.add('disabled');
+        }
+    }
+
+    function saveSnapshotBackupSettings() {
+        normalizeSnapshotBackupFormatControls();
+        const payload = {
+            snapshotBackupEnabled: snapshotBackupEnabled ? snapshotBackupEnabled.checked !== false : true,
+            snapshotBackupFormat: collectSnapshotBackupFormat()
+        };
+        chrome.storage.local.set(payload, function () {
+            if (!chrome.runtime.lastError) {
+                showBookmarkBackupSavedFeedback();
+            }
+        });
+    }
+
+    chrome.storage.local.get(['snapshotBackupEnabled', 'snapshotBackupFormat'], function (result) {
+        const enabled = result.snapshotBackupEnabled !== false;
+        const format = String(result.snapshotBackupFormat || '').trim().toLowerCase() === 'json' ? 'json' : 'html';
+
+        if (snapshotBackupEnabled) snapshotBackupEnabled.checked = enabled;
+        if (snapshotBackupFormatHtml) snapshotBackupFormatHtml.checked = format === 'html';
+        if (snapshotBackupFormatJson) snapshotBackupFormatJson.checked = format === 'json';
+
+        normalizeSnapshotBackupFormatControls();
+        updateSnapshotBackupFormatState();
+
+        chrome.storage.local.set({
+            snapshotBackupEnabled: snapshotBackupEnabled ? snapshotBackupEnabled.checked !== false : true,
+            snapshotBackupFormat: collectSnapshotBackupFormat()
+        }, function () { });
+    });
+
+    if (snapshotBackupEnabled) {
+        snapshotBackupEnabled.addEventListener('change', function () {
+            updateSnapshotBackupFormatState();
+            saveSnapshotBackupSettings();
+        });
+    }
+
+    if (snapshotBackupFormatHtml) {
+        snapshotBackupFormatHtml.addEventListener('change', function () {
+            if (this.checked) {
+                if (snapshotBackupFormatJson) snapshotBackupFormatJson.checked = false;
+            } else if (snapshotBackupFormatJson && !snapshotBackupFormatJson.checked) {
+                this.checked = true;
+            }
+            saveSnapshotBackupSettings();
+        });
+    }
+
+    if (snapshotBackupFormatJson) {
+        snapshotBackupFormatJson.addEventListener('change', function () {
+            if (this.checked) {
+                if (snapshotBackupFormatHtml) snapshotBackupFormatHtml.checked = false;
+            } else if (snapshotBackupFormatHtml && !snapshotBackupFormatHtml.checked) {
+                this.checked = true;
+            }
+            saveSnapshotBackupSettings();
+        });
+    }
 
     chrome.storage.local.get(['overwriteMode'], function (result) {
         const overwriteModeRaw = String(result.overwriteMode || '').trim().toLowerCase();
@@ -9741,25 +9914,39 @@ function initializeBackupSettings() {
         });
     }
 
+    async function promptSnapshotBackupForOverwriteIfNeeded() {
+        if (!overwriteOverwrite?.checked) return;
+        if (!snapshotBackupEnabled || snapshotBackupEnabled.checked) return;
+
+        const shouldEnableSnapshotBackup = await showSnapshotBackupEnablePromptModal();
+        if (!shouldEnableSnapshotBackup) return;
+
+        snapshotBackupEnabled.checked = true;
+        updateSnapshotBackupFormatState();
+        saveSnapshotBackupSettings();
+    }
+
     if (overwriteVersioned) {
-        overwriteVersioned.addEventListener('change', function () {
+        overwriteVersioned.addEventListener('change', async function () {
             if (this.checked) {
                 overwriteOverwrite.checked = false;
             } else {
                 overwriteOverwrite.checked = true;
             }
             saveBackupSettings();
+            await promptSnapshotBackupForOverwriteIfNeeded();
         });
     }
 
     if (overwriteOverwrite) {
-        overwriteOverwrite.addEventListener('change', function () {
+        overwriteOverwrite.addEventListener('change', async function () {
             if (this.checked) {
                 overwriteVersioned.checked = false;
             } else {
                 overwriteVersioned.checked = true;
             }
             saveBackupSettings();
+            await promptSnapshotBackupForOverwriteIfNeeded();
         });
     }
 
@@ -10191,6 +10378,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
     const snapshotFolderNameReg = /^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?$/i;
 
     const isHtmlFileName = (name) => /\.(?:html?|xhtml)$/i.test(String(name || '').trim());
+    const isJsonFileName = (name) => /\.json$/i.test(String(name || '').trim());
     const isZipFileName = (name) => /\.zip$/i.test(String(name || '').trim());
 
     const stripBrowserDuplicateSuffix = (name) => String(name || '').replace(/\s*\(\d+\)(?=\.[^.]+$)/, '').trim();
@@ -10638,6 +10826,35 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         folderPath
                     });
                     continue;
+                }
+            }
+
+            if (!allowStandalone && isJsonFileName(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const snapshotKey = resolveSnapshotKeyForLocalCandidate(pathText, snapshotFolder, name);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const inSnapshotPath = isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
+                const isChangesArtifact = shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder });
+
+                if (!isChangesArtifact && (inSnapshotPath || snapshotKey)) {
+                    const jsonText = typeof file.text === 'function'
+                        ? await file.text()
+                        : '';
+                    if (isStandaloneBookmarkTreeJsonText(jsonText)) {
+                        localCandidates.push({
+                            name,
+                            source: 'local',
+                            type: 'json_backup',
+                            localFileKey,
+                            text: jsonText,
+                            lastModified: file.lastModified,
+                            snapshotFolder,
+                            folderPath
+                        });
+                        continue;
+                    }
                 }
             }
 
@@ -19664,8 +19881,8 @@ document.addEventListener('DOMContentLoaded', function () {
         cancelText: lang === 'en' ? 'Cancel' : '取消',
         saveText: lang === 'en' ? 'Save' : '保存',
         noteText: lang === 'en'
-            ? 'Choose which detail data the extension keeps in its local backup history. Unchecked data is not written to extension storage; only the history record remains.'
-            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。'
+            ? 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
+            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。'
     });
 
     const openBackupHistorySlimmingSettingsDialog = async () => {
@@ -20578,8 +20795,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (realtimeBackupDesc2) {
                 realtimeBackupDesc2.innerHTML = isEN
-                    ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. A snapshot backup on/off switch may be provided in a later version.'
-                    : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；后续版本可能提供“快照备份开关（开启/关闭）”。';
+                    ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. You can disable snapshot backup output in Snapshot Backup settings.'
+                    : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；可在“快照备份”设置中关闭快照文件输出。';
             }
             if (realtimeBackupDesc3) {
                 realtimeBackupDesc3.innerHTML = isEN

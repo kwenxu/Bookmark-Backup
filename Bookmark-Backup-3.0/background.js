@@ -243,6 +243,108 @@ function buildSnapshotNamingContext(options = {}) {
     };
 }
 
+function normalizeSnapshotBackupFormat(value) {
+    return String(value || '').trim().toLowerCase() === 'json' ? 'json' : 'html';
+}
+
+function normalizeSnapshotBackupSettings(rawSettings = {}) {
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    return {
+        enabled: source.snapshotBackupEnabled !== false,
+        format: normalizeSnapshotBackupFormat(source.snapshotBackupFormat)
+    };
+}
+
+async function getSnapshotBackupSettings() {
+    const store = await browserAPI.storage.local.get(['snapshotBackupEnabled', 'snapshotBackupFormat']);
+    return normalizeSnapshotBackupSettings(store || {});
+}
+
+function buildSnapshotFileNameFromKey(snapshotKey, format = 'html') {
+    const key = String(snapshotKey || '').trim().toLowerCase();
+    if (!key || key === '__overwrite__') return '';
+    return `${key}.${normalizeSnapshotBackupFormat(format)}`;
+}
+
+function buildSnapshotFileNameFromNaming(naming, format = 'html') {
+    const normalizedFormat = normalizeSnapshotBackupFormat(format);
+    if (normalizedFormat === 'html') {
+        return String(naming?.snapshotName || '').trim()
+            || buildSnapshotFileNameFromKey(`${naming?.timePart || ''}_${naming?.fingerprint || ''}`, 'html');
+    }
+    const snapshotKey = `${String(naming?.timePart || '').trim()}_${String(naming?.fingerprint || '').trim()}`.toLowerCase();
+    return buildSnapshotFileNameFromKey(snapshotKey, 'json');
+}
+
+function buildSnapshotBackupJsonPayload(bookmarks, options = {}) {
+    const format = normalizeSnapshotBackupFormat(options.format);
+    const overwriteMode = normalizeOverwriteMode(options.overwriteMode);
+    const syncTime = String(options.syncTime || new Date().toISOString());
+    const fingerprint = normalizeSyncFingerprint(options.fingerprint) || computeSyncFingerprintByTime(syncTime);
+    const snapshotKey = overwriteMode === 'overwrite'
+        ? '__overwrite__'
+        : buildSnapshotKeyByTimeAndFingerprint(syncTime, fingerprint);
+
+    return {
+        _exportInfo: {
+            schemaVersion: 1,
+            source: 'bookmark-backup-snapshot',
+            snapshotKind: 'full_json',
+            format,
+            backupTime: syncTime,
+            exportDate: new Date().toISOString(),
+            fingerprint,
+            snapshotKey,
+            snapshotName: String(options.snapshotName || '').trim(),
+            snapshotFolderName: String(options.snapshotFolderName || '').trim(),
+            overwriteMode
+        },
+        bookmarkTree: Array.isArray(bookmarks) ? bookmarks : []
+    };
+}
+
+function buildSnapshotBackupOutput(bookmarks, options = {}, overwriteMode = 'versioned') {
+    const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
+    const format = normalizeSnapshotBackupFormat(options.snapshotFormat || options.format);
+    const naming = buildSnapshotNamingContext(options);
+    const requestedSnapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
+    const snapshotFolderName = normalizedOverwriteMode === 'overwrite'
+        ? '__overwrite__'
+        : requestedSnapshotFolderName;
+    const fileName = normalizedOverwriteMode === 'overwrite'
+        ? getOverwriteSnapshotFileName(format)
+        : (String(options.snapshotFileName || buildSnapshotFileNameFromNaming(naming, format)).trim()
+            || buildSnapshotFileNameFromNaming(naming, format));
+
+    if (format === 'json') {
+        const payload = buildSnapshotBackupJsonPayload(bookmarks, {
+            format,
+            syncTime: naming.syncTime,
+            fingerprint: naming.fingerprint,
+            snapshotName: fileName,
+            snapshotFolderName,
+            overwriteMode: normalizedOverwriteMode
+        });
+        return {
+            naming,
+            format,
+            fileName,
+            snapshotFolderName,
+            content: JSON.stringify(payload, null, 2),
+            contentType: 'application/json;charset=utf-8'
+        };
+    }
+
+    return {
+        naming,
+        format,
+        fileName,
+        snapshotFolderName,
+        content: typeof options.htmlContent === 'string' ? options.htmlContent : convertToEdgeHTML(bookmarks),
+        contentType: 'text/html;charset=utf-8'
+    };
+}
+
 function normalizeBackupHistorySlimmingSettings(rawSettings = null) {
     const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
     return {
@@ -546,8 +648,10 @@ function buildFullSnapshotHtmlMeta(bookmarks) {
     };
 }
 
-function getOverwriteSnapshotFileName() {
-    return 'bookmark_backup.html';
+function getOverwriteSnapshotFileName(format = 'html') {
+    return normalizeSnapshotBackupFormat(format) === 'json'
+        ? 'bookmark_backup.json'
+        : 'bookmark_backup.html';
 }
 
 function getOverwriteInfoLogFileNameCandidates() {
@@ -3300,7 +3404,12 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 comparisonGeneration: activeComparisonGeneration
             });
         } catch (_) { }
-        const sharedSnapshotHtml = convertToEdgeHTML(bookmarks);
+        const snapshotBackupSettings = await getSnapshotBackupSettings();
+        const snapshotBackupEnabled = snapshotBackupSettings.enabled !== false;
+        const snapshotBackupFormat = normalizeSnapshotBackupFormat(snapshotBackupSettings.format);
+        const sharedSnapshotHtml = snapshotBackupEnabled && snapshotBackupFormat === 'html'
+            ? convertToEdgeHTML(bookmarks)
+            : '';
 
         const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
@@ -3333,7 +3442,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 const uploadResult = await uploadBookmarks(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
-                    htmlContent: sharedSnapshotHtml
+                    snapshotSettings: snapshotBackupSettings,
+                    snapshotFormat: snapshotBackupFormat,
+                    ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                 });
                 if (uploadResult?.success) {
                     webDAVSuccess = true;
@@ -3350,7 +3461,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
-                    htmlContent: sharedSnapshotHtml
+                    snapshotSettings: snapshotBackupSettings,
+                    snapshotFormat: snapshotBackupFormat,
+                    ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                 });
                 if (uploadResult?.success) {
                     githubRepoSuccess = true;
@@ -3368,7 +3481,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
                     forceEnable,
-                    htmlContent: sharedSnapshotHtml
+                    snapshotSettings: snapshotBackupSettings,
+                    snapshotFormat: snapshotBackupFormat,
+                    ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                 });
                 return localResult?.success !== false;
             } catch (uploadError) {
@@ -3431,6 +3546,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 skipAutoArtifacts: true,
                 localBookmarks: bookmarks,
                 successfulBackupTargets,
+                snapshotBackupEnabled,
+                snapshotFormat: snapshotBackupFormat,
                 comparisonGeneration: activeComparisonGeneration
             }
         );
@@ -3524,7 +3641,21 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                         }
                     }
 
-                    if (finalBookmarkStats && finalCurrentTree && normalizedStrategy !== 'overwrite') {
+                    const restoreSlimmingSettings = await getBackupHistorySlimmingSettings();
+                    const shouldRetainRestoreChangeData = shouldRetainBackupHistoryChangeData(restoreSlimmingSettings);
+
+                    if (normalizedStrategy === 'overwrite' || !shouldRetainRestoreChangeData) {
+                        // 覆盖恢复视为“基线重建事件”；同时恢复记录也遵循备份历史精简策略。
+                        const staleChangeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
+                        targetRecord.hasChangeData = false;
+                        targetRecord.changeDataKey = '';
+                        targetRecord.changeDataSchemaVersion = 0;
+                        if (staleChangeDataKey) {
+                            try {
+                                await browserAPI.storage.local.remove([staleChangeDataKey]);
+                            } catch (_) { }
+                        }
+                    } else if (finalBookmarkStats && finalCurrentTree) {
                         const changeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
                         let changePayload = null;
 
@@ -3561,18 +3692,17 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                             targetRecord.changeDataKey = changeDataKey;
                             targetRecord.changeDataSchemaVersion = Number(changePayload?.schemaVersion || 1);
                         }
-                    } else if (normalizedStrategy === 'overwrite') {
-                        // 覆盖恢复视为“基线重建事件”：保留快照与统计，不保留变化载荷。
-                        const staleChangeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
-                        targetRecord.hasChangeData = false;
-                        targetRecord.changeDataKey = '';
-                        targetRecord.changeDataSchemaVersion = 0;
-                        if (staleChangeDataKey) {
-                            try {
-                                await browserAPI.storage.local.remove([staleChangeDataKey]);
-                            } catch (_) { }
-                        }
                     }
+
+                    const previousRetention = targetRecord?.dataRetention && typeof targetRecord.dataRetention === 'object'
+                        ? targetRecord.dataRetention
+                        : {};
+                    targetRecord.dataRetention = {
+                        ...previousRetention,
+                        saveSnapshotData: targetRecord.hasData === true,
+                        saveChangeData: targetRecord.hasChangeData === true
+                    };
+                    targetRecord.capabilities = buildHistoryRecordCapabilities(targetRecord);
                 } catch (diffError) {
                     
                 }
@@ -5692,9 +5822,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if (localBackupConfigured) backupTargetKeys.push('local');
                             if (githubRepoConfigured && githubRepoEnabled) backupTargetKeys.push('github_repo');
                             if (webDAVConfigured && webDAVEnabled) backupTargetKeys.push('webdav');
+                            const snapshotBackupSettings = await getSnapshotBackupSettings();
+                            const snapshotBackupEnabled = snapshotBackupSettings.enabled !== false;
+                            const snapshotBackupFormat = normalizeSnapshotBackupFormat(snapshotBackupSettings.format);
                             await progressTracker.setTargets(backupTargetKeys);
                             await progressTracker.markTargetsRunning(backupTargetKeys);
-                            const sharedSnapshotHtml = convertToEdgeHTML(bookmarks);
+                            const sharedSnapshotHtml = snapshotBackupEnabled && snapshotBackupFormat === 'html'
+                                ? convertToEdgeHTML(bookmarks)
+                                : '';
 
                             const targetTasks = [];
 
@@ -5703,11 +5838,23 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     const startedAt = Date.now();
                                     try {
                                         await progressTracker.markTarget('local', 'running');
+                                        if (!snapshotBackupEnabled) {
+                                            localSuccess = true;
+                                            await progressTracker.markTarget('local', 'success');
+                                            return {
+                                                target: 'local',
+                                                success: true,
+                                                skipped: true,
+                                                durationMs: Date.now() - startedAt,
+                                                reason: 'snapshot-backup-disabled'
+                                            };
+                                        }
                                         const localResult = await uploadBookmarksToLocal(bookmarks, {
                                             ...snapshotNaming,
+                                            snapshotFormat: snapshotBackupFormat,
                                             forceShowDownloadNotification: true,
                                             waitForDownloadCompletion: false,
-                                            htmlContent: sharedSnapshotHtml
+                                            ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                                         });
                                         localSuccess = true;
                                         result.localFileName = localResult.fileName;
@@ -5738,9 +5885,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     const startedAt = Date.now();
                                     try {
                                         await progressTracker.markTarget('github_repo', 'running');
+                                        if (!snapshotBackupEnabled) {
+                                            githubRepoSuccess = true;
+                                            await progressTracker.markTarget('github_repo', 'success');
+                                            return {
+                                                target: 'github_repo',
+                                                success: true,
+                                                skipped: true,
+                                                durationMs: Date.now() - startedAt,
+                                                reason: 'snapshot-backup-disabled'
+                                            };
+                                        }
                                         const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
                                             ...snapshotNaming,
-                                            htmlContent: sharedSnapshotHtml
+                                            snapshotFormat: snapshotBackupFormat,
+                                            ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                                         });
                                         if (uploadResult?.success) {
                                             githubRepoSuccess = true;
@@ -5790,9 +5949,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     const startedAt = Date.now();
                                     try {
                                         await progressTracker.markTarget('webdav', 'running');
+                                        if (!snapshotBackupEnabled) {
+                                            webDAVSuccess = true;
+                                            await progressTracker.markTarget('webdav', 'success');
+                                            return {
+                                                target: 'webdav',
+                                                success: true,
+                                                skipped: true,
+                                                durationMs: Date.now() - startedAt,
+                                                reason: 'snapshot-backup-disabled'
+                                            };
+                                        }
                                         const uploadResult = await uploadBookmarks(bookmarks, {
                                             ...snapshotNaming,
-                                            htmlContent: sharedSnapshotHtml
+                                            snapshotFormat: snapshotBackupFormat,
+                                            ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                                         });
                                         if (uploadResult?.success) {
                                             webDAVSuccess = true;
@@ -5911,7 +6082,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                             const updateSyncResult = await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, 'auto', null, snapshotNaming.fingerprint, {
                                 localBookmarks: bookmarks,
-                                successfulBackupTargets
+                                successfulBackupTargets,
+                                snapshotBackupEnabled,
+                                snapshotFormat: snapshotBackupFormat
                             });
                             const postSyncWarnings = Array.isArray(updateSyncResult?.postSyncWarnings)
                                 ? updateSyncResult.postSyncWarnings.filter(Boolean)
@@ -7333,13 +7506,21 @@ async function uploadBookmarks(bookmarks, options = {}) {
     // 获取覆盖策略设置
     const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
     const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
+    const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
+    if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
+        return { success: true, skipped: true, snapshotBackupDisabled: true };
+    }
+    const outputOptions = {
+        ...options,
+        snapshotFormat: options.snapshotFormat || snapshotSettings.format
+    };
 
     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
     const exportRootFolder = await getExportRootFolder();
 
-    const naming = buildSnapshotNamingContext(options);
-    const snapshotFileName = String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName;
-    const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
+    const snapshotOutput = buildSnapshotBackupOutput(bookmarks, outputOptions, effectiveOverwriteMode);
+    const snapshotFileName = snapshotOutput.fileName;
+    const snapshotFolderName = snapshotOutput.snapshotFolderName;
     const currentLang = await getCurrentLang();
     const overwriteSubFolder = getOverwriteFolderByLang(currentLang);
     const versionedSubFolder = getVersionedFolderByLang(currentLang);
@@ -7348,7 +7529,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
     let fileName = snapshotFileName;
     let folderPath = `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}`;
     if (effectiveOverwriteMode === 'overwrite') {
-        fileName = getOverwriteSnapshotFileName();
+        fileName = getOverwriteSnapshotFileName(snapshotOutput.format);
         folderPath = `${exportRootFolder}/${overwriteSubFolder}`;
     }
     const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
@@ -7358,20 +7539,15 @@ async function uploadBookmarks(bookmarks, options = {}) {
     try {
         await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建文件夹失败');
 
-        // 将书签数据转换为Edge格式的HTML
-        const htmlContent = typeof options.htmlContent === 'string'
-            ? options.htmlContent
-            : convertToEdgeHTML(bookmarks);
-
         // 上传新文件
         const response = await putWebDAVWithRetry(fullUrl, {
             method: 'PUT',
             headers: {
                 'Authorization': authHeader,
-                'Content-Type': 'text/html',
+                'Content-Type': snapshotOutput.contentType,
                 'Overwrite': 'T'
             },
-            body: htmlContent
+            body: snapshotOutput.content
         });
 
         if (!response.ok) {
@@ -7409,20 +7585,21 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
         return { success: false, error: "GitHub 仓库已禁用", repoDisabled: true };
     }
 
-    // 将书签数据转换为Edge格式的HTML
-    const htmlContent = typeof options.htmlContent === 'string'
-        ? options.htmlContent
-        : convertToEdgeHTML(bookmarks);
-
     // 获取覆盖策略设置
     const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
     const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
+    const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
+    if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
+        return { success: true, skipped: true, snapshotBackupDisabled: true };
+    }
+    const outputOptions = {
+        ...options,
+        snapshotFormat: options.snapshotFormat || snapshotSettings.format
+    };
 
-    const naming = buildSnapshotNamingContext(options);
-    const baseFileName = effectiveOverwriteMode === 'overwrite'
-        ? getOverwriteSnapshotFileName()
-        : (String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName);
-    const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
+    const snapshotOutput = buildSnapshotBackupOutput(bookmarks, outputOptions, effectiveOverwriteMode);
+    const baseFileName = snapshotOutput.fileName;
+    const snapshotFolderName = snapshotOutput.snapshotFolderName;
     const lang = await getCurrentLang();
 
     const versionedSubFolder = getVersionedFolderByLang(lang);
@@ -7444,7 +7621,7 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
         branch: config.githubRepoBranch,
         path: filePath,
         message: `Bookmark Backup: add backup ${baseFileName}`,
-        contentBase64: textToBase64(htmlContent)
+        contentBase64: textToBase64(snapshotOutput.content)
     });
 
     if (result && result.success === true) {
@@ -8081,6 +8258,43 @@ function formatVersionedInfoLogStrategy(record, lang = 'zh_CN') {
     return lang === 'zh_CN' ? '多版本' : 'Versioned';
 }
 
+function formatVersionedInfoLogStoredData(record, lang = 'zh_CN') {
+    const capabilities = buildHistoryRecordCapabilities(record || {});
+    const hasSnapshotData = capabilities.hasSnapshotData === true;
+    const hasChangeData = capabilities.hasChangeData === true;
+
+    if (hasSnapshotData && hasChangeData) {
+        return lang === 'zh_CN' ? '快照+变化' : 'Snapshot+Changes';
+    }
+    if (hasSnapshotData) {
+        return lang === 'zh_CN' ? '快照' : 'Snapshot';
+    }
+    if (hasChangeData) {
+        return lang === 'zh_CN' ? '变化' : 'Changes';
+    }
+    return '-';
+}
+
+function parseVersionedInfoLogStoredDataCell(value) {
+    const raw = String(value || '').trim();
+    if (!raw) {
+        return { hasSnapshotData: false, hasChangeData: false, explicit: false };
+    }
+    if (raw === '-') {
+        return { hasSnapshotData: false, hasChangeData: false, explicit: true };
+    }
+
+    const lower = raw.toLowerCase().replace(/\s+/g, '');
+    if (raw.includes('仅记录') || lower.includes('recordonly') || lower.includes('record-only')) {
+        return { hasSnapshotData: false, hasChangeData: false, explicit: true };
+    }
+
+    const hasSnapshotData = raw.includes('快照') || lower.includes('snapshot');
+    const hasChangeData = raw.includes('变化') || lower.includes('changes') || lower.includes('change');
+    const explicit = hasSnapshotData || hasChangeData;
+    return { hasSnapshotData, hasChangeData, explicit };
+}
+
 function formatVersionedInfoLogChanges(record, lang = 'zh_CN') {
     const stats = record?.bookmarkStats || {};
     const toNum = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -8373,8 +8587,19 @@ function buildVersionedInfoLogRecordFromEntry(entry) {
     const seqNum = Number.parseInt(String(entry?.seq || '').replace(/^#/, '').trim(), 10);
     const status = normalizeSyncStatusFromVersionedInfoLogEntry(entry);
     const directionKey = normalizeDirectionKeyFromVersionedInfoLogEntry(entry) || 'upload';
+    const storedDataHint = parseVersionedInfoLogStoredDataCell(
+        entry?.storedData || entry?.stored || entry?.stored_data || ''
+    );
+    const explicitHasSnapshot = typeof entry?.hasData === 'boolean' ? entry.hasData : null;
+    const explicitHasChanges = typeof entry?.hasChangeData === 'boolean' ? entry.hasChangeData : null;
+    const hasData = storedDataHint.explicit
+        ? storedDataHint.hasSnapshotData
+        : (typeof explicitHasSnapshot === 'boolean' ? explicitHasSnapshot : true);
+    const hasChangeData = storedDataHint.explicit
+        ? storedDataHint.hasChangeData
+        : (typeof explicitHasChanges === 'boolean' ? explicitHasChanges : null);
 
-    return {
+    const normalizedRecord = {
         time: Number.isFinite(timeMs) ? new Date(timeMs).toISOString() : timeRaw,
         seqNumber: Number.isFinite(seqNum) ? seqNum : null,
         direction: directionKey,
@@ -8389,6 +8614,18 @@ function buildVersionedInfoLogRecordFromEntry(entry) {
         snapshotName: overwriteMode === 'overwrite' ? getOverwriteSnapshotFileName() : `${snapshotKey}.html`,
         snapshotFolderName: overwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey
     };
+
+    if (typeof hasData === 'boolean') {
+        normalizedRecord.hasData = hasData;
+    }
+    if (typeof hasChangeData === 'boolean') {
+        normalizedRecord.hasChangeData = hasChangeData;
+    }
+    if (typeof hasData === 'boolean' || typeof hasChangeData === 'boolean') {
+        normalizedRecord.capabilities = buildHistoryRecordCapabilities(normalizedRecord);
+    }
+
+    return normalizedRecord;
 }
 
 function buildVersionedInfoLogRecordMergeKey(record) {
@@ -8426,16 +8663,20 @@ function normalizeInfoLogRecordsByMode(value, targetMode = 'versioned') {
         if (normalizeOverwriteMode(item?.overwriteMode) !== normalizedTargetMode) continue;
 
         const resolvedSnapshotKey = resolveSnapshotKeyForRecord(item);
+        const itemSnapshotFormat = normalizeSnapshotBackupFormat(
+            item?.snapshotFormat || getManualExportPathFormat(item?.snapshotName || '')
+        );
         const normalized = {
             ...item,
             overwriteMode: normalizedTargetMode,
             snapshotKey: resolvedSnapshotKey,
             snapshotName: normalizedTargetMode === 'overwrite'
-                ? getOverwriteSnapshotFileName()
-                : (resolvedSnapshotKey ? `${resolvedSnapshotKey}.html` : (item?.snapshotName || '')),
+                ? getOverwriteSnapshotFileName(itemSnapshotFormat)
+                : (resolvedSnapshotKey ? buildSnapshotFileNameFromKey(resolvedSnapshotKey, itemSnapshotFormat) : (item?.snapshotName || '')),
             snapshotFolderName: normalizedTargetMode === 'overwrite'
                 ? '__overwrite__'
                 : (resolvedSnapshotKey || item?.snapshotFolderName || ''),
+            snapshotFormat: itemSnapshotFormat,
             fingerprint: normalizeSyncFingerprint(String(item?.fingerprint || '').replace(/^#/, '').trim())
         };
 
@@ -8529,9 +8770,9 @@ function buildVersionedInfoLogTableLines(records, lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
     const lines = [];
     lines.push(isZh
-        ? '| 序号 | 快照键 | 变化 | 时间 | 备注 | 哈希 | 状态 | 方向 | 方向键 | 类型 | 策略 |'
-        : '| Seq | SnapshotKey | Changes | Time | Note | Hash | Status | Direction | DirectionKey | Type | Strategy |');
-    lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
+        ? '| 序号 | 快照键 | 变化 | 时间 | 备注 | 哈希 | 状态 | 条目内容 | 方向 | 方向键 | 类型 | 策略 |'
+        : '| Seq | SnapshotKey | Changes | Time | Note | Hash | Status | StoredData | Direction | DirectionKey | Type | Strategy |');
+    lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
 
     for (const record of records) {
         const seq = record?.seqNumber != null ? String(record.seqNumber) : '-';
@@ -8539,13 +8780,14 @@ function buildVersionedInfoLogTableLines(records, lang = 'zh_CN') {
         const time = escapeVersionedInfoLogCell(formatVersionedInfoLogTime(record?.time));
         const hash = escapeVersionedInfoLogCell(record?.fingerprint ? String(record.fingerprint) : '-');
         const status = escapeVersionedInfoLogCell(record?.status || '-');
+        const storedData = escapeVersionedInfoLogCell(formatVersionedInfoLogStoredData(record, lang));
         const direction = escapeVersionedInfoLogCell(formatVersionedInfoLogDirection(record?.direction, lang));
         const directionKey = escapeVersionedInfoLogCell(String(record?.direction || '').trim() || '-');
         const type = escapeVersionedInfoLogCell(formatVersionedInfoLogType(record?.type, lang));
         const strategy = escapeVersionedInfoLogCell(formatVersionedInfoLogStrategy(record, lang));
         const snapshotKey = escapeVersionedInfoLogCell(resolveSnapshotKeyForRecord(record) || '-');
         const changes = escapeVersionedInfoLogCell(formatVersionedInfoLogChanges(record, lang));
-        lines.push(`| ${seq} | ${snapshotKey} | ${changes} | ${time} | ${note} | ${hash} | ${status} | ${direction} | ${directionKey} | ${type} | ${strategy} |`);
+        lines.push(`| ${seq} | ${snapshotKey} | ${changes} | ${time} | ${note} | ${hash} | ${status} | ${storedData} | ${direction} | ${directionKey} | ${type} | ${strategy} |`);
     }
 
     return lines;
@@ -8843,8 +9085,11 @@ function parseVersionedInfoLogRowTimeMs(rowLine) {
 function parseVersionedInfoLogRowFields(rowLine) {
     const cells = splitVersionedInfoLogRowCells(rowLine);
     const valueAt = (index) => String(cells[index] || '').trim();
+    const hasStoredDataColumn = cells.length >= 12;
 
-    // Fixed layout:
+    // Fixed layout (new):
+    // seq | snapshotKey | changes | time | note | hash | status | storedData | direction | directionKey | type | strategy
+    // Legacy layout:
     // seq | snapshotKey | changes | time | note | hash | status | direction | directionKey | type | strategy
     return {
         seq: valueAt(0),
@@ -8854,10 +9099,11 @@ function parseVersionedInfoLogRowFields(rowLine) {
         note: valueAt(4),
         hash: valueAt(5),
         status: valueAt(6),
-        direction: valueAt(7),
-        directionKey: valueAt(8),
-        type: valueAt(9),
-        strategy: valueAt(10)
+        storedData: hasStoredDataColumn ? valueAt(7) : '',
+        direction: valueAt(hasStoredDataColumn ? 8 : 7),
+        directionKey: valueAt(hasStoredDataColumn ? 9 : 8),
+        type: valueAt(hasStoredDataColumn ? 10 : 9),
+        strategy: valueAt(hasStoredDataColumn ? 11 : 10)
     };
 }
 
@@ -10457,19 +10703,21 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
     }
 
     try {
-        const htmlContent = typeof options.htmlContent === 'string'
-            ? options.htmlContent
-            : convertToEdgeHTML(bookmarks);
-
         // 获取覆盖策略设置
         const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
         const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
+        const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
+        if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
+            return { success: true, skipped: true, snapshotBackupDisabled: true };
+        }
+        const outputOptions = {
+            ...options,
+            snapshotFormat: options.snapshotFormat || snapshotSettings.format
+        };
 
-        const naming = buildSnapshotNamingContext(options);
-        const fileName = effectiveOverwriteMode === 'overwrite'
-            ? getOverwriteSnapshotFileName()
-            : (String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName);
-        const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
+        const snapshotOutput = buildSnapshotBackupOutput(bookmarks, outputOptions, effectiveOverwriteMode);
+        const fileName = snapshotOutput.fileName;
+        const snapshotFolderName = snapshotOutput.snapshotFolderName;
 
         // 记录结果，包含文件名信息
         const result = {
@@ -10526,7 +10774,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
         try {
             // 使用downloads API直接保存到默认下载位置（根据语言动态选择文件夹名）
-            const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+            const dataUrl = `data:${snapshotOutput.contentType},` + encodeURIComponent(snapshotOutput.content);
             const downloadId = await new Promise((resolve, reject) => {
                 browserAPI.downloads.download({
                     url: dataUrl,
@@ -11557,11 +11805,14 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
             ...(record || {}),
             overwriteMode: normalizedOverwriteMode
         });
+        const snapshotFormat = normalizeSnapshotBackupFormat(
+            record?.snapshotFormat || getManualExportPathFormat(record?.snapshotName || '')
+        );
         const snapshotName = String(
             record?.snapshotName
             || (normalizedOverwriteMode === 'overwrite'
-                ? getOverwriteSnapshotFileName()
-                : (snapshotKey ? `${snapshotKey}.html` : ''))
+                ? getOverwriteSnapshotFileName(snapshotFormat)
+                : (snapshotKey ? buildSnapshotFileNameFromKey(snapshotKey, snapshotFormat) : ''))
         ).trim() || null;
         const snapshotFolderName = String(
             record?.snapshotFolderName
@@ -11581,6 +11832,7 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
                 snapshotKey: snapshotKey || null,
                 snapshotName,
                 snapshotFolderName,
+                snapshotFormat,
                 // 恢复支持：保存展开状态
                 expandedIds: expandedIds,
                 viewMode: hasExpandedState ? 'detailed' : 'auto'
@@ -12267,6 +12519,10 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         if (githubRepoConfigured && githubRepoEnabled) backupTargetKeys.push('github_repo');
         if (webDAVConfigured && webDAVEnabled) backupTargetKeys.push('webdav');
 
+        const snapshotBackupSettings = await getSnapshotBackupSettings();
+        const snapshotBackupEnabled = snapshotBackupSettings.enabled !== false;
+        const snapshotBackupFormat = normalizeSnapshotBackupFormat(snapshotBackupSettings.format);
+
         if (progressTracker.enabled) {
             await progressTracker.start();
         }
@@ -12283,7 +12539,9 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
 
         const syncTime = new Date().toISOString();
         const snapshotNaming = buildSnapshotNamingContext({ syncTime });
-        const sharedSnapshotHtml = convertToEdgeHTML(localBookmarks);
+        const sharedSnapshotHtml = snapshotBackupEnabled && snapshotBackupFormat === 'html'
+            ? convertToEdgeHTML(localBookmarks)
+            : '';
 
         // 执行备份操作 - 修改为并行执行
         let webDAVSuccess = false;
@@ -12299,11 +12557,17 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             const localTask = (async () => {
                 try {
                     await progressTracker.markTarget('local', 'running');
+                    if (!snapshotBackupEnabled) {
+                        localSuccess = true;
+                        await progressTracker.markTarget('local', 'success');
+                        return { success: true, skipped: true, reason: 'snapshot-backup-disabled' };
+                    }
                     const localResult = await uploadBookmarksToLocal(localBookmarks, {
                         ...snapshotNaming,
+                        snapshotFormat: snapshotBackupFormat,
                         forceShowDownloadNotification: isManual === true,
                         waitForDownloadCompletion: isManual === true ? false : true,
-                        htmlContent: sharedSnapshotHtml
+                        ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                     });
                     localSuccess = true;
                     // 记录文件名信息
@@ -12327,9 +12591,15 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                     await progressTracker.markTarget('github_repo', 'running');
                     // 只处理上传
                     if (direction === 'upload' || !direction) {
+                        if (!snapshotBackupEnabled) {
+                            githubRepoSuccess = true;
+                            await progressTracker.markTarget('github_repo', 'success');
+                            return { success: true, skipped: true, reason: 'snapshot-backup-disabled' };
+                        }
                         const uploadResult = await uploadBookmarksToGitHubRepo(localBookmarks, {
                             ...snapshotNaming,
-                            htmlContent: sharedSnapshotHtml
+                            snapshotFormat: snapshotBackupFormat,
+                            ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                         });
                         if (uploadResult && uploadResult.success) {
                             githubRepoSuccess = true;
@@ -12371,9 +12641,15 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                     await progressTracker.markTarget('webdav', 'running');
                     // 只处理上传
                     if (direction === 'upload' || !direction) {
+                        if (!snapshotBackupEnabled) {
+                            webDAVSuccess = true;
+                            await progressTracker.markTarget('webdav', 'success');
+                            return { success: true, skipped: true, reason: 'snapshot-backup-disabled' };
+                        }
                         const uploadResult = await uploadBookmarks(localBookmarks, {
                             ...snapshotNaming,
-                            htmlContent: sharedSnapshotHtml
+                            snapshotFormat: snapshotBackupFormat,
+                            ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                         });
                         if (uploadResult.success) {
                             webDAVSuccess = true;
@@ -12483,7 +12759,9 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             {
                 localBookmarks,
                 deferAutoArtifacts: shouldDeferAutoArtifacts,
-                successfulBackupTargets
+                successfulBackupTargets,
+                snapshotBackupEnabled,
+                snapshotFormat: snapshotBackupFormat
             }
         );
         const postSyncWarnings = Array.isArray(updateSyncResult?.postSyncWarnings)
@@ -17707,6 +17985,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         const normalizedSnapshotFingerprint = normalizeSyncFingerprint(snapshotFingerprint);
         const fingerprint = normalizedSnapshotFingerprint || computeSyncFingerprintByTime(time);
         const effectiveOverwriteMode = normalizeOverwriteMode(options?.overwriteMode || overwriteMode);
+        const snapshotBackupEnabled = options?.snapshotBackupEnabled !== false;
+        const snapshotFormat = normalizeSnapshotBackupFormat(options?.snapshotFormat || 'html');
         const snapshotKey = buildSnapshotKeyByTimeAndFingerprint(time, fingerprint);
 
         // 生成默认备注（区分中英文）
@@ -17736,8 +18016,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         }
 
         const snapshotName = effectiveOverwriteMode === 'overwrite'
-            ? getOverwriteSnapshotFileName()
-            : `${snapshotKey}.html`;
+            ? getOverwriteSnapshotFileName(snapshotFormat)
+            : buildSnapshotFileNameFromKey(snapshotKey, snapshotFormat);
         const snapshotFolderName = effectiveOverwriteMode === 'overwrite'
             ? '__overwrite__'
             : snapshotKey;
@@ -17777,7 +18057,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             fingerprint: fingerprint,
             snapshotKey: effectiveOverwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
             snapshotName,
-            snapshotFolderName
+            snapshotFolderName,
+            snapshotBackupEnabled,
+            snapshotFormat
         };
 
         // 独立保存书签树和对应变化数据
@@ -19447,7 +19729,7 @@ async function listRemoteFiles(source, options = {}) {
                 const serverAddress = String(settings.serverAddress || '').trim();
                 const username = String(settings.username || '').trim();
                 if (!serverAddress || !username) return '';
-                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v1`;
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v2`;
                 return `webdav|${serverAddress}|${username}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
@@ -19458,7 +19740,7 @@ async function listRemoteFiles(source, options = {}) {
                 const basePath = String(settings.githubRepoBasePath || '').trim();
                 const tokenPreview = String(settings.githubRepoToken || '').slice(0, 8);
                 if (!owner || !repo || !branch) return '';
-                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v1`;
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v2`;
                 return `github|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
@@ -19510,12 +19792,12 @@ async function listRemoteFiles(source, options = {}) {
             const n = String(name || '');
             const nLower = n.toLowerCase();
 
-            if (/^\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12}\.(?:html?|xhtml)$/i.test(nLower)) return true;
-            if (/^(?:backup_)?\d{8}_\d{4}(?:\d{2})?\.(?:html?|xhtml)$/i.test(nLower)) return true;
-            if (nLower === 'bookmark_backup.html' || nLower === 'bookmark_backup.htm' || nLower === 'bookmark_backup.xhtml') return true;
+            if (/^\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12}\.(?:html?|xhtml|json)$/i.test(nLower)) return true;
+            if (/^(?:backup_)?\d{8}_\d{4}(?:\d{2})?\.(?:html?|xhtml|json)$/i.test(nLower)) return true;
+            if (nLower === 'bookmark_backup.html' || nLower === 'bookmark_backup.htm' || nLower === 'bookmark_backup.xhtml' || nLower === 'bookmark_backup.json') return true;
 
             // Compatibility: user-renamed but still clearly bookmark backup HTML
-            if (/\.(?:html?|xhtml)$/i.test(nLower) && (nLower.includes('bookmark_backup') || nLower.includes('bookmark backup'))) {
+            if (/\.(?:html?|xhtml|json)$/i.test(nLower) && (nLower.includes('bookmark_backup') || nLower.includes('bookmark backup'))) {
                 return true;
             }
 
@@ -19732,7 +20014,7 @@ async function listRemoteFiles(source, options = {}) {
             const name = String(fileName || '').trim();
             if (!name) return false;
             if (isInManualExportFolderPath(folderPath)) return false;
-            if (!/\.(html?|xhtml)$/i.test(name)) return false;
+            if (!/\.(html?|xhtml|json)$/i.test(name)) return false;
 
             if (shouldTreatAsCurrentChangesArtifact({
                 fileName: name,
@@ -20363,15 +20645,20 @@ async function listRemoteFiles(source, options = {}) {
                         if (!snapshotFolderNameReg.test(folderName || '')) continue;
 
                         const folderPath = `${normalizedParent}/${folderName}`;
-                        const inferredHtmlName = `${folderName}.html`;
-                        files.push({
-                            name: inferredHtmlName,
-                            url: `${serverAddress}${folderPath}/${inferredHtmlName}`,
-                            source: 'webdav',
-                            type: 'html_backup',
-                            snapshotFolder: folderName,
-                            folderPath
-                        });
+                        const inferredSnapshotLeafNames = [
+                            buildSnapshotFileNameFromKey(folderName, 'html'),
+                            buildSnapshotFileNameFromKey(folderName, 'json')
+                        ].filter(Boolean);
+                        for (const inferredName of inferredSnapshotLeafNames) {
+                            files.push({
+                                name: inferredName,
+                                url: `${serverAddress}${folderPath}/${inferredName}`,
+                                source: 'webdav',
+                                type: 'html_backup',
+                                snapshotFolder: folderName,
+                                folderPath
+                            });
+                        }
                     }
                 };
 
@@ -20897,16 +21184,21 @@ async function listRemoteFiles(source, options = {}) {
                         if (!snapshotFolderNameReg.test(snapshotKey)) continue;
 
                         const folderPath = String(item.path || `${normalizedParent}/${snapshotKey}`).replace(/^\/+/, '').replace(/\/+$/, '');
-                        const inferredHtmlName = `${snapshotKey}.html`;
-                        const inferredFilePath = `${folderPath}/${inferredHtmlName}`;
-                        files.push({
-                            name: inferredHtmlName,
-                            url: buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: inferredFilePath }),
-                            source: 'github',
-                            type: 'html_backup',
-                            snapshotFolder: snapshotKey,
-                            folderPath
-                        });
+                        const inferredSnapshotLeafNames = [
+                            buildSnapshotFileNameFromKey(snapshotKey, 'html'),
+                            buildSnapshotFileNameFromKey(snapshotKey, 'json')
+                        ].filter(Boolean);
+                        for (const inferredName of inferredSnapshotLeafNames) {
+                            const inferredFilePath = `${folderPath}/${inferredName}`;
+                            files.push({
+                                name: inferredName,
+                                url: buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: inferredFilePath }),
+                                source: 'github',
+                                type: 'html_backup',
+                                snapshotFolder: snapshotKey,
+                                folderPath
+                            });
+                        }
                     }
                 };
 
@@ -21509,6 +21801,12 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
     const explicitSnapshotKey = rawSnapshotKey === '__overwrite__'
         ? '__overwrite__'
         : parseSnapshotKeyFromText(rawSnapshotKey);
+    const snapshotFormat = normalizeSnapshotBackupFormat(
+        exportInfo.snapshotFormat
+        || exportInfo.format
+        || exportData?.snapshotFormat
+        || getManualExportPathFormat(explicitSnapshotName)
+    );
     const overwriteMode = normalizeOverwriteMode(
         exportInfo.overwriteMode
         || exportData?.overwriteMode
@@ -21519,8 +21817,8 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
         : (explicitSnapshotKey || buildSnapshotKeyByTimeAndFingerprint(timeStr || timeMs || '', fingerprint));
     const snapshotName = explicitSnapshotName
         || (overwriteMode === 'overwrite'
-            ? getOverwriteSnapshotFileName()
-            : (derivedSnapshotKey ? `${derivedSnapshotKey}.html` : ''));
+            ? getOverwriteSnapshotFileName(snapshotFormat)
+            : (derivedSnapshotKey ? buildSnapshotFileNameFromKey(derivedSnapshotKey, snapshotFormat) : ''));
     const snapshotFolderName = explicitSnapshotFolderName
         || (overwriteMode === 'overwrite' ? '__overwrite__' : (derivedSnapshotKey || ''));
     const displayOriginalFile = String(snapshotName || originalFile || '').trim() || originalFile;
@@ -21542,6 +21840,7 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
         snapshotName: snapshotName || null,
         snapshotFolder: snapshotFolderName || null,
         snapshotFolderName: snapshotFolderName || null,
+        snapshotFormat,
         overwriteMode
     };
 
@@ -21563,6 +21862,7 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
 
 function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '' }) {
     const name = fileName || originalFile;
+    const normalizedFileUrl = String(fileUrl || '').trim();
 
     const inOverwriteFolder = isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath);
     const snapshotKeyFromName = parseSnapshotKeyFromText(name);
@@ -21595,7 +21895,8 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         source,
         sourceType: 'html',
         originalFile,
-        fileUrl: fileUrl || null,
+        fileUrl: normalizedFileUrl || null,
+        fileCandidates: normalizedFileUrl ? [normalizedFileUrl] : [],
         localFileKey: localFileKey || null,
         lastModifiedMs: typeof lastModifiedMs === 'number' ? lastModifiedMs : null,
         recordIndex: null,
@@ -21855,6 +22156,12 @@ function normalizeManualExportInfoLogRecord(record, index = 0) {
     );
     const changesPathsByMode = normalizeManualExportChangesPathsByMode(record);
     const changesModes = Object.keys(changesPathsByMode);
+    const storedCapabilitiesRaw = record?.storedCapabilities && typeof record.storedCapabilities === 'object'
+        ? record.storedCapabilities
+        : {};
+    const exportedArtifactsRaw = record?.exportedArtifacts && typeof record.exportedArtifacts === 'object'
+        ? record.exportedArtifacts
+        : {};
 
     let snapshotKey = parseSnapshotKeyFromText(
         record.snapshotKey
@@ -21876,8 +22183,19 @@ function normalizeManualExportInfoLogRecord(record, index = 0) {
 
     const changesViewMode = resolveManualExportModeFromPath('', record.changesViewMode || record.viewMode || changesModes[0] || '');
     const stats = buildRestoreStats(record.stats || record.bookmarkStats || null);
-    const hasSnapshot = !!String(snapshotFormats?.html || '').trim();
-    const hasChanges = record.hasChanges === true || changesModes.length > 0;
+    const hasSnapshotFromPath = !!(
+        String(snapshotFormats?.html || '').trim()
+        || String(snapshotFormats?.json || '').trim()
+    );
+    const hasChangesFromPath = changesModes.length > 0;
+    const hasSnapshot = record.hasSnapshot === true
+        || record.exportedSnapshot === true
+        || exportedArtifactsRaw.snapshot === true
+        || hasSnapshotFromPath;
+    const hasChanges = record.hasChanges === true
+        || record.exportedChanges === true
+        || exportedArtifactsRaw.changes === true
+        || hasChangesFromPath;
 
     return {
         index,
@@ -21892,6 +22210,14 @@ function normalizeManualExportInfoLogRecord(record, index = 0) {
         stats,
         hasSnapshot,
         hasChanges,
+        storedCapabilities: {
+            snapshot: storedCapabilitiesRaw.snapshot === true,
+            changes: storedCapabilitiesRaw.changes === true
+        },
+        exportedArtifacts: {
+            snapshot: hasSnapshot,
+            changes: hasChanges
+        },
         snapshotFormats,
         changesPathsByMode
     };
@@ -21916,10 +22242,15 @@ function parseManualExportInfoLogJson(text) {
 
 function parseManualExportInfoLogStatusCell(value) {
     const raw = String(value || '').trim();
+    if (!raw || raw === '-') {
+        return { hasSnapshot: false, hasChanges: false, explicit: true };
+    }
+
     const lower = raw.toLowerCase().replace(/\s+/g, '');
     const hasSnapshot = raw.includes('快照') || lower.includes('snapshot');
     const hasChanges = raw.includes('变化') || lower.includes('changes') || lower.includes('change');
-    return { hasSnapshot, hasChanges };
+    const explicit = hasSnapshot || hasChanges;
+    return { hasSnapshot, hasChanges, explicit };
 }
 
 function isManualExportInfoLogStrategyText(value) {
@@ -21957,7 +22288,8 @@ function buildManualExportDeterministicSnapshotPaths(snapshotKey, hasSnapshot) {
     const key = String(snapshotKey || '').trim();
     if (!key || hasSnapshot !== true) return {};
     return {
-        html: `${key}/${key}.html`
+        html: `${key}/${key}.html`,
+        json: `${key}/${key}.json`
     };
 }
 
@@ -22070,7 +22402,8 @@ function parseManualExportInfoLogMarkdown(text) {
         const hasChangesHint = status.hasChanges || (changesCellRaw.length > 0 && changesCellRaw !== '-');
         const parsedChanges = parseManualExportInfoLogChangesCell(row.changes || '', snapshotKey, hasChangesHint, rowLang);
         const hasChanges = hasChangesHint || Object.keys(parsedChanges.changesPathsByMode || {}).length > 0;
-        const hasSnapshot = status.hasSnapshot || sourceKind === 'history_record';
+        const statusHasExplicitCapability = status.explicit === true;
+        const hasSnapshot = status.hasSnapshot || (!statusHasExplicitCapability && sourceKind === 'history_record');
 
         parsedRecords.push({
             seqNumber: row.seq,
@@ -22081,6 +22414,14 @@ function parseManualExportInfoLogMarkdown(text) {
             snapshotKey,
             hasSnapshot,
             hasChanges,
+            storedCapabilities: {
+                snapshot: hasSnapshot,
+                changes: hasChanges
+            },
+            exportedArtifacts: {
+                snapshot: hasSnapshot,
+                changes: hasChanges
+            },
             changesViewMode: parsedChanges.changesViewMode,
             snapshotPaths: buildManualExportDeterministicSnapshotPaths(snapshotKey, hasSnapshot),
             changesPathsByMode: parsedChanges.changesPathsByMode,
@@ -22255,11 +22596,37 @@ function buildManualExportRestoreVersionFromIndexRecord({
     containerFileUrl = null,
     containerLocalFileKey = null
 }) {
-    const snapshotPath = String(normalizedRecord?.snapshotFormats?.html || '').trim();
-    const snapshotResolved = snapshotPath && typeof pathResolver === 'function'
-        ? pathResolver(snapshotPath)
-        : null;
-    const snapshotFormat = getManualExportPathFormat(snapshotPath);
+    let snapshotPath = '';
+    let snapshotResolved = null;
+    let snapshotFormat = '';
+    const snapshotPathCandidates = [
+        ['html', String(normalizedRecord?.snapshotFormats?.html || '').trim()],
+        ['json', String(normalizedRecord?.snapshotFormats?.json || '').trim()]
+    ].filter(([, value]) => !!value);
+
+    for (const [format, candidatePath] of snapshotPathCandidates) {
+        const resolved = candidatePath && typeof pathResolver === 'function'
+            ? pathResolver(candidatePath, {
+                format,
+                snapshotKey: normalizedRecord?.snapshotKey || ''
+            })
+            : null;
+        const resolvedExists = !!(resolved?.candidate || resolved?.localFileKey || resolved?.fileUrl);
+        if (!snapshotPath) {
+            snapshotPath = candidatePath;
+            snapshotResolved = resolved;
+            snapshotFormat = format;
+        }
+        if (resolvedExists) {
+            snapshotPath = candidatePath;
+            snapshotResolved = resolved;
+            snapshotFormat = format;
+            break;
+        }
+    }
+    if (!snapshotFormat && snapshotPath) {
+        snapshotFormat = getManualExportPathFormat(snapshotPath);
+    }
     const changesArtifact = buildManualExportChangesArtifactMeta({ source, normalizedRecord, pathResolver });
     const stats = buildRestoreStats(normalizedRecord?.stats || null);
     const displayTime = Number.isFinite(Number(normalizedRecord?.timeMs))
@@ -22276,7 +22643,7 @@ function buildManualExportRestoreVersionFromIndexRecord({
         const folderPath = snapshotResolved?.folderPath
             || normalizeManualExportIndexPath(snapshotPath).split('/').slice(0, -1).join('/');
         const isZipContainer = normalizedContainerSourceType === 'zip' && !!snapshotResolved?.zipEntryName;
-        const effectiveSourceType = isZipContainer ? 'zip' : 'html';
+        const effectiveSourceType = isZipContainer ? 'zip' : (snapshotFormat === 'json' ? 'json' : 'html');
         const effectiveLocalFileKey = isZipContainer
             ? (containerLocalFileKey || null)
             : (snapshotResolved?.localFileKey || null);
@@ -22315,6 +22682,8 @@ function buildManualExportRestoreVersionFromIndexRecord({
                 snapshotName: originalFile,
                 snapshotFolder: normalizedRecord?.snapshotKey || null,
                 snapshotFolderName: normalizedRecord?.snapshotKey || null,
+                snapshotFormat: snapshotFormat || null,
+                ...(snapshotFormat === 'json' ? { jsonKind: 'tree' } : {}),
                 folderPath: folderPath || null,
                 folderType: 'manual_export',
                 overwriteMode: 'versioned',
@@ -22778,6 +23147,7 @@ function normalizeVersionedInfoLogHeaderKey(value) {
     if (raw.includes('类型') || lower === 'type') return 'type';
     if (raw.includes('策略') || lower === 'strategy' || lower === 'overwritemode') return 'strategy';
     if (raw.includes('快照键') || lower === 'snapshotkey' || lower === 'snapshot') return 'snapshotKey';
+    if (raw.includes('条目内容') || lower === 'storeddata' || lower === 'stored' || lower === 'payload' || lower === 'capability' || lower === 'capabilities') return 'storedData';
     if (raw.includes('变化') || lower === 'changes' || lower === 'change' || lower === 'delta' || lower === 'deltas') return 'changes';
 
     return lower || raw;
@@ -23124,14 +23494,16 @@ function buildRemoteSnapshotPathCandidatesFromIndexEntry({ overwriteMode, snapsh
     };
 
     if (normalizedOverwriteMode === 'overwrite') {
-        const fileName = getOverwriteSnapshotFileName();
+        const fileNameCandidates = [getOverwriteSnapshotFileName('html'), getOverwriteSnapshotFileName('json')];
         for (const root of exportRoots) {
-            for (const overwriteFolder of overwriteFolders) {
-                pushPath(`${root}/${overwriteFolder}/${fileName}`);
-            }
-            for (const backupFolder of backupFolders) {
+            for (const fileName of fileNameCandidates) {
                 for (const overwriteFolder of overwriteFolders) {
-                    pushPath(`${root}/${backupFolder}/${overwriteFolder}/${fileName}`);
+                    pushPath(`${root}/${overwriteFolder}/${fileName}`);
+                }
+                for (const backupFolder of backupFolders) {
+                    for (const overwriteFolder of overwriteFolders) {
+                        pushPath(`${root}/${backupFolder}/${overwriteFolder}/${fileName}`);
+                    }
                 }
             }
         }
@@ -23143,7 +23515,7 @@ function buildRemoteSnapshotPathCandidatesFromIndexEntry({ overwriteMode, snapsh
         const folderNameCandidates = Array.from(new Set([key, legacyStamp].filter(Boolean)));
         if (!folderNameCandidates.length) return [];
         const fileNameCandidates = Array.from(new Set(
-            ['html', 'htm', 'xhtml'].flatMap((ext) => ([
+            ['html', 'htm', 'xhtml', 'json'].flatMap((ext) => ([
                 key ? `${key}.${ext}` : '',
                 legacyStamp ? `${legacyStamp}.${ext}` : '',
                 legacyStamp ? `backup_${legacyStamp}.${ext}` : ''
@@ -24385,6 +24757,49 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         if (manualExportIndexVersions.length > 0) {
             allVersions.push(...manualExportIndexVersions.map((item) => normalizeRestoreVersionMeta(item)));
         }
+        const normalizeRestoreCandidateUrl = (value) => String(value || '').trim();
+        const getRestoreCandidateUrlRank = (value) => {
+            const normalized = normalizeRestoreCandidateUrl(value);
+            if (!normalized) return 99;
+            const pure = normalized.split('?')[0].split('#')[0].toLowerCase();
+            if (pure.endsWith('.html') || pure.endsWith('.htm') || pure.endsWith('.xhtml')) return 0;
+            if (pure.endsWith('.json')) return 1;
+            return 2;
+        };
+        const sortRestoreCandidateUrlsByPreference = (values = []) => {
+            const deduped = Array.from(new Set(
+                (Array.isArray(values) ? values : [])
+                    .map((item) => normalizeRestoreCandidateUrl(item))
+                    .filter(Boolean)
+            ));
+            deduped.sort((a, b) => {
+                const rankDiff = getRestoreCandidateUrlRank(a) - getRestoreCandidateUrlRank(b);
+                if (rankDiff !== 0) return rankDiff;
+                return a.localeCompare(b);
+            });
+            return deduped;
+        };
+        const mergeRestoreRefFileCandidatesForVersion = (targetVersion, incomingVersion = null) => {
+            if (!targetVersion || typeof targetVersion !== 'object') return;
+            const targetRef = targetVersion.restoreRef && typeof targetVersion.restoreRef === 'object'
+                ? targetVersion.restoreRef
+                : {};
+            const incomingRef = incomingVersion?.restoreRef && typeof incomingVersion.restoreRef === 'object'
+                ? incomingVersion.restoreRef
+                : {};
+            const mergedCandidates = sortRestoreCandidateUrlsByPreference([
+                targetRef.fileUrl,
+                ...(Array.isArray(targetRef.fileCandidates) ? targetRef.fileCandidates : []),
+                incomingRef.fileUrl,
+                ...(Array.isArray(incomingRef.fileCandidates) ? incomingRef.fileCandidates : [])
+            ]);
+            const preferredUrl = mergedCandidates[0] || null;
+            targetVersion.restoreRef = {
+                ...targetRef,
+                fileUrl: preferredUrl,
+                fileCandidates: mergedCandidates
+            };
+        };
         const htmlVersionBySnapshotKey = new Map();
         const scannedHtmlVersions = [];
 
@@ -24411,6 +24826,22 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     || ''
                 ).trim().toLowerCase();
                 applyLocalIndexMetadataToVersion(version, snapshotKey);
+                mergeRestoreRefFileCandidatesForVersion(version);
+
+                if (source !== 'local' && snapshotKey) {
+                    const existingBySnapshotKey = htmlVersionBySnapshotKey.get(snapshotKey);
+                    if (existingBySnapshotKey) {
+                        mergeRestoreRefFileCandidatesForVersion(existingBySnapshotKey, version);
+                        const existingTime = Number(existingBySnapshotKey?.time);
+                        const nextTime = Number(version?.time);
+                        if (!Number.isFinite(existingTime) && Number.isFinite(nextTime)) {
+                            existingBySnapshotKey.time = nextTime;
+                            existingBySnapshotKey.displayTime = version?.displayTime || existingBySnapshotKey.displayTime;
+                        }
+                        continue;
+                    }
+                }
+
                 allVersions.push(version);
                 scannedHtmlVersions.push(version);
 
@@ -24457,6 +24888,16 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 ).trim().toLowerCase();
                 applyLocalIndexMetadataToVersion(version, snapshotKey);
                 allVersions.push(version);
+
+                if (snapshotKey) {
+                    const existing = htmlVersionBySnapshotKey.get(snapshotKey);
+                    const existingTime = typeof existing?.time === 'number' ? existing.time : -1;
+                    const nextTime = typeof version?.time === 'number' ? version.time : -1;
+                    if (!existing || nextTime >= existingTime) {
+                        htmlVersionBySnapshotKey.set(snapshotKey, version);
+                    }
+                    scannedHtmlVersions.push(version);
+                }
             } catch (e) {
                 
             }
@@ -24810,6 +25251,13 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     ? new Date(Number(indexVersion.time)).toISOString()
                     : null;
                 const indexGroupMeta = indexVersion?.groupMeta || indexVersion?.restoreRef?.groupMeta || null;
+                const mergedFileCandidates = sortRestoreCandidateUrlsByPreference([
+                    scannedVersion?.restoreRef?.fileUrl,
+                    ...(Array.isArray(scannedVersion?.restoreRef?.fileCandidates) ? scannedVersion.restoreRef.fileCandidates : []),
+                    indexVersion?.restoreRef?.fileUrl,
+                    ...(Array.isArray(indexVersion?.restoreRef?.fileCandidates) ? indexVersion.restoreRef.fileCandidates : [])
+                ]);
+                const preferredFileUrl = mergedFileCandidates[0] || null;
 
                 if (indexGroupMeta) {
                     scannedVersion.groupMeta = indexGroupMeta;
@@ -24817,6 +25265,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
                 scannedVersion.restoreRef = {
                     ...(scannedVersion.restoreRef || {}),
+                    fileUrl: preferredFileUrl,
+                    fileCandidates: mergedFileCandidates,
                     snapshotKey: scannedVersion?.restoreRef?.snapshotKey || indexVersion?.restoreRef?.snapshotKey || null,
                     snapshotFolder: scannedVersion?.restoreRef?.snapshotFolder
                         || indexVersion?.restoreRef?.snapshotFolder
@@ -26991,6 +27441,10 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
         if (!text) throw new Error('Empty HTML content');
         const tree = parseNetscapeBookmarkHtmlToTree(text);
         if (!tree || !Array.isArray(tree.children) || tree.children.length === 0) {
+            const jsonTree = parseBookmarkTreeFromJsonTextForRestore(text);
+            if (isBookmarkTreeShapeValid(jsonTree)) {
+                return jsonTree;
+            }
             throw new Error('Failed to parse HTML bookmark file');
         }
         return tree;

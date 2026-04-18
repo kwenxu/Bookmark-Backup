@@ -457,7 +457,7 @@
             </div>
             <div class="modal-body history-slimming-modal-body backup-history-secondary-stack">
                 <div id="historySlimmingSettingsDesc" class="backup-history-secondary-note">
-                    选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。
+                    选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。
                 </div>
                 <div class="backup-history-choice-grid">
                     <label class="backup-history-choice-card">
@@ -1276,7 +1276,7 @@
                             <h4
                                 style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
                                 <i class="fas fa-file-alt" style="margin-right: 6px;"></i><span
-                                    id="globalExportFormatTitle">变化记录格式</span>
+                                    id="globalExportFormatTitle">导出格式</span>
                             </h4>
                             <div style="display: flex; gap: 16px;">
                                 <label id="globalExportFormatHtmlLabelWrap"
@@ -1292,7 +1292,7 @@
                             </div>
                             <div id="globalExportFormatHint"
                                 style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
-                                HTML / JSON 二选一，仅作用于变化记录；快照固定导出为 HTML；导出结果统一为 ZIP 归档
+                                HTML / JSON 二选一，同时作用于快照和变化记录；导出结果统一为 ZIP 归档
                             </div>
                         </div>
 
@@ -1411,6 +1411,7 @@
                                     <th style="text-align: left; width: 204px; padding-right: 6px;"><span id="globalExportThNote">备注</span></th>
                                     <th style="text-align: left; width: 92px; padding-left: 4px;"><span id="globalExportThHash">哈希值</span>
                                     </th>
+                                    <th style="text-align: left; width: 136px;"><span id="globalExportThStored">条目内容</span></th>
                                     <th style="text-align: left; width: 170px;"><span
                                             id="globalExportThViewMode">变化记录视图</span></th>
                                     <th style="text-align: left; width: 160px;"><span id="globalExportThTime">时间</span>

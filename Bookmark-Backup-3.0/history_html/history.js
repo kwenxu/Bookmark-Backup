@@ -2590,8 +2590,8 @@ const i18n = {
         'en': 'Compaction Settings'
     },
     historySlimmingSettingsDescription: {
-        'zh_CN': '选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。',
-        'en': 'Choose which detail data the extension keeps in its local backup history. Unchecked data is not written to extension storage; only the history record remains.'
+        'zh_CN': '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
+        'en': 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
     },
     historySlimmingSaveSnapshotData: {
         'zh_CN': '保存快照数据',
@@ -2794,12 +2794,12 @@ const i18n = {
         'en': 'Global Backup Export'
     },
     globalExportFormatTitle: {
-        'zh_CN': '变化记录格式',
-        'en': 'Change Records Format'
+        'zh_CN': '导出格式',
+        'en': 'Export Format'
     },
     globalExportFormatHint: {
-        'zh_CN': 'HTML / JSON 二选一，仅作用于变化记录；快照固定导出为 HTML；导出结果统一为 ZIP 归档',
-        'en': 'Choose either HTML or JSON for change records; snapshots are always exported as HTML; export always generates a ZIP archive'
+        'zh_CN': 'HTML / JSON 二选一，同时作用于快照和变化记录；导出结果统一为 ZIP 归档',
+        'en': 'Choose either HTML or JSON for snapshots and change records; export always generates a ZIP archive'
     },
     globalExportContentTitle: {
         'zh_CN': '导出内容',
@@ -2840,6 +2840,10 @@ const i18n = {
     globalExportThHash: {
         'zh_CN': '哈希值',
         'en': 'Hash'
+    },
+    globalExportThStored: {
+        'zh_CN': '条目内容',
+        'en': 'Stored Data'
     },
     globalExportThViewMode: {
         'zh_CN': '变化记录视图',
@@ -3822,6 +3826,8 @@ function applyLanguage() {
     if (globalExportThNote) globalExportThNote.textContent = i18n.globalExportThNote[currentLang];
     const globalExportThHash = document.getElementById('globalExportThHash');
     if (globalExportThHash) globalExportThHash.textContent = i18n.globalExportThHash[currentLang];
+    const globalExportThStored = document.getElementById('globalExportThStored');
+    if (globalExportThStored) globalExportThStored.textContent = i18n.globalExportThStored[currentLang];
     const globalExportThViewMode = document.getElementById('globalExportThViewMode');
     if (globalExportThViewMode) globalExportThViewMode.textContent = i18n.globalExportThViewMode[currentLang];
     const globalExportThTime = document.getElementById('globalExportThTime');
@@ -4627,7 +4633,7 @@ function showGlobalExportModalWithPreselection(preselectCount = 0) {
     globalExportSelectedState = {};
 
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
@@ -4668,7 +4674,7 @@ function showGlobalExportModalWithPreselectionBySeqRange(minSeq, maxSeq) {
     globalExportSelectedState = {};
 
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
@@ -10896,6 +10902,9 @@ function updateRestoreMergeViewModeUi(strategy = getSelectedRestoreStrategy()) {
     const simpleRadio = document.getElementById('restoreMergeViewModeSimple');
     const detailedRadio = document.getElementById('restoreMergeViewModeDetailed');
     const collectionRadio = document.getElementById('restoreMergeViewModeCollection');
+    const simpleWrap = document.getElementById('restoreMergeViewModeSimpleWrap');
+    const detailedWrap = document.getElementById('restoreMergeViewModeDetailedWrap');
+    const collectionWrap = document.getElementById('restoreMergeViewModeCollectionWrap');
 
     const availability = getRestoreMergeViewModeAvailability(currentRestoreRecord);
     const shouldShow = strategy === 'merge' && availability.supported;
@@ -24591,18 +24600,15 @@ function updateExportChangesModalContextUi(modal = document.getElementById('expo
         modeHelpIcon.style.display = isSnapshotExport ? 'none' : '';
     }
 
-    if (formatJsonInput) {
-        formatJsonInput.disabled = isSnapshotExport;
-        if (isSnapshotExport) formatJsonInput.checked = false;
-    }
-    if (formatJsonLabel) {
-        formatJsonLabel.style.display = isSnapshotExport ? 'none' : '';
-        formatJsonLabel.style.opacity = '';
-        formatJsonLabel.style.pointerEvents = '';
-    }
-    if (formatHtmlInput && isSnapshotExport) {
-        formatHtmlInput.checked = true;
-    }
+    if (formatHtmlInput) formatHtmlInput.disabled = false;
+    if (formatJsonInput) formatJsonInput.disabled = false;
+    [formatJsonLabel, formatHtmlInput ? formatHtmlInput.closest('label') : null]
+        .filter(Boolean)
+        .forEach(label => {
+            label.style.display = '';
+            label.style.opacity = '';
+            label.style.pointerEvents = '';
+        });
 
     updateExportChangesActionOptionsByMode(modal);
 }
@@ -24653,8 +24659,15 @@ function showExportChangesModal(changeData) {
         // 重置为默认值
         const formatJson = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
         const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
-        if (formatJson) formatJson.checked = true;
-        else if (formatHtml) formatHtml.checked = true;
+        if (currentExportHistoryArtifactType === 'snapshot') {
+            if (formatHtml) formatHtml.checked = true;
+            if (formatJson) formatJson.checked = false;
+        } else if (formatJson) {
+            formatJson.checked = true;
+            if (formatHtml) formatHtml.checked = false;
+        } else if (formatHtml) {
+            formatHtml.checked = true;
+        }
 
         let modeValue = 'simple';
         try {
@@ -24739,8 +24752,15 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         // 重置为默认值
         const formatJson = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
         const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
-        if (formatJson) formatJson.checked = true;
-        else if (formatHtml) formatHtml.checked = true;
+        if (currentExportHistoryArtifactType === 'snapshot') {
+            if (formatHtml) formatHtml.checked = true;
+            if (formatJson) formatJson.checked = false;
+        } else if (formatJson) {
+            formatJson.checked = true;
+            if (formatHtml) formatHtml.checked = false;
+        } else if (formatHtml) {
+            formatHtml.checked = true;
+        }
 
         // 使用当前备份历史的详略模式
         let modeValue = normalizeExportChangesModalMode(
@@ -24956,8 +24976,15 @@ async function executeExportChanges() {
                 seqMap,
                 seqWidth
             );
-            content = await generateExportSnapshotHtmlContentForGlobal(currentExportHistoryRecord);
-            filename = naming.snapshotLeafName;
+            const snapshotFormat = normalizeGlobalExportFileFormat(format, 'html');
+            if (snapshotFormat === 'json') {
+                const jsonContentObj = await generateExportSnapshotJsonContentForGlobal(currentExportHistoryRecord, naming);
+                content = JSON.stringify(jsonContentObj, null, 2);
+                filename = naming.snapshotLeafNames.json;
+            } else {
+                content = await generateExportSnapshotHtmlContentForGlobal(currentExportHistoryRecord);
+                filename = naming.snapshotLeafNames.html;
+            }
         } else if (format === 'html') {
             if (isHistoryExport) {
                 // 备份历史导出：
@@ -25054,7 +25081,7 @@ async function executeExportChanges() {
 
         if (action === 'download') {
             // 下载文件 - 使用统一的导出文件夹结构
-            const blob = new Blob([content], { type: (isHistorySnapshotExport || format === 'html') ? 'text/html' : 'application/json' });
+            const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
             const url = URL.createObjectURL(blob);
 
             // 根据导出类型选择不同的子文件夹（根据语言动态选择）
@@ -27100,7 +27127,7 @@ function initGlobalExport() {
 
     initGlobalExportRangeUI();
 
-    // 变化记录格式：HTML / JSON 互斥二选一；快照固定导出为 HTML；索引可单独导出
+    // 导出格式：HTML / JSON 互斥二选一；快照和变化记录共用该格式；索引可单独导出
     const formatHtmlCbox = document.getElementById('globalExportFormatHtml');
     const formatJsonCbox = document.getElementById('globalExportFormatJson');
     const formatHtmlLabelWrap = document.getElementById('globalExportFormatHtmlLabelWrap');
@@ -27114,7 +27141,7 @@ function initGlobalExport() {
     const formatCboxes = [formatHtmlCbox, formatJsonCbox].filter(Boolean);
 
     const syncGlobalExportFormatUi = () => {
-        const shouldLockFormats = !contentChangesCbox?.checked;
+        const shouldLockFormats = !(contentSnapshotCbox?.checked || contentChangesCbox?.checked);
 
         formatCboxes.forEach((cbox) => {
             cbox.disabled = shouldLockFormats;
@@ -27152,7 +27179,7 @@ function initGlobalExport() {
     };
 
     const ensureChangesFormatSelection = (preferred = 'html') => {
-        if (!contentChangesCbox?.checked) return;
+        if (!(contentChangesCbox?.checked || contentSnapshotCbox?.checked)) return;
         const htmlChecked = !!formatHtmlCbox?.checked;
         const jsonChecked = !!formatJsonCbox?.checked;
         if ((htmlChecked && !jsonChecked) || (!htmlChecked && jsonChecked)) {
@@ -27174,7 +27201,8 @@ function initGlobalExport() {
 
     [contentSnapshotCbox, contentChangesCbox].filter(Boolean).forEach((cbox) => {
         cbox.addEventListener('change', (e) => {
-            if (e.target === contentChangesCbox && contentChangesCbox.checked) {
+            if ((e.target === contentChangesCbox || e.target === contentSnapshotCbox)
+                && (contentChangesCbox?.checked || contentSnapshotCbox?.checked)) {
                 ensureChangesFormatSelection('html');
             }
             syncGlobalExportFormatUi();
@@ -27650,7 +27678,7 @@ function showGlobalExportModal() {
     globalExportSelectedState = {};
 
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
@@ -27760,7 +27788,7 @@ function renderGlobalExportPage() {
     }
 
     if (visibleHistory.length === 0) {
-        const colspan = 6;
+        const colspan = 7;
         tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding: 20px; text-align: center; color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '该范围内暂无记录' : 'No records in this range'}</td></tr>`;
         if (pagination) pagination.style.display = 'none';
         return;
@@ -27791,10 +27819,20 @@ function renderGlobalExportPage() {
         const noteDisplay = note ? escapeHtml(note) : `<span style="color:var(--text-tertiary); font-style: italic;">${currentLang === 'zh_CN' ? '无备注' : 'No Note'}</span>`;
         const fingerprint = record.fingerprint || '-';
         const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || '';
+        const recordCapabilities = getHistoryRecordCapabilities(record);
+        const storedDataBadge = buildHistoryDataCapabilityBadge(recordCapabilities, currentLang);
 
         const savedMode = getRecordDetailMode(record.time);
         const defaultMode = historyDetailMode || 'collection';
         const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
+        const canSwitchViewMode = recordCapabilities.hasChangeData === true;
+        const viewModeCellHtml = canSwitchViewMode
+            ? `<div class="global-export-toggle-group" data-time="${record.time}">
+                <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>
+                <button class="global-export-toggle-btn ${mode === 'detailed' ? 'active' : ''}" data-value="detailed">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</button>
+                <button class="global-export-toggle-btn ${mode === 'collection' ? 'active' : ''}" data-value="collection">${currentLang === 'zh_CN' ? '集合' : 'Collection'}</button>
+            </div>`
+            : `<span style="color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '无变化数据' : 'No change data'}</span>`;
 
         const isChecked = globalExportSelectedState[record.time] !== false;
 
@@ -27808,11 +27846,10 @@ function renderGlobalExportPage() {
             </td>
             <td style="width: 92px; padding-left: 4px; font-family: var(--font-mono, monospace); color: var(--text-secondary);">${fingerprint}</td>
             <td>
-            <div class="global-export-toggle-group" data-time="${record.time}">
-                <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>
-                <button class="global-export-toggle-btn ${mode === 'detailed' ? 'active' : ''}" data-value="detailed">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</button>
-                <button class="global-export-toggle-btn ${mode === 'collection' ? 'active' : ''}" data-value="collection">${currentLang === 'zh_CN' ? '集合' : 'Collection'}</button>
-            </div>
+                ${storedDataBadge}
+            </td>
+            <td>
+                ${viewModeCellHtml}
             </td>
             <td>
                 <div style="font-weight: 500; white-space: nowrap;">${timeStr}</div>
@@ -28063,6 +28100,12 @@ function buildManualExportLogPayload(records) {
         const changesPathsByMode = (item.changesPathsByMode && typeof item.changesPathsByMode === 'object')
             ? cloneSerializableData(item.changesPathsByMode)
             : {};
+        const storedCapabilities = item.storedCapabilities && typeof item.storedCapabilities === 'object'
+            ? item.storedCapabilities
+            : {};
+        const exportedArtifacts = item.exportedArtifacts && typeof item.exportedArtifacts === 'object'
+            ? item.exportedArtifacts
+            : {};
         return {
             seqNumber: Number.isFinite(Number(item.seqNumber)) ? Number(item.seqNumber) : null,
             note: String(item.note || ''),
@@ -28075,6 +28118,14 @@ function buildManualExportLogPayload(records) {
             snapshotKey: String(item.snapshotKey || ''),
             hasSnapshot: item.hasSnapshot === true,
             hasChanges: item.hasChanges === true,
+            storedCapabilities: {
+                snapshot: storedCapabilities.snapshot === true,
+                changes: storedCapabilities.changes === true
+            },
+            exportedArtifacts: {
+                snapshot: exportedArtifacts.snapshot === true || item.hasSnapshot === true,
+                changes: exportedArtifacts.changes === true || item.hasChanges === true
+            },
             changesViewMode: normalizeHistoryDetailMode(item.changesViewMode || 'simple'),
             snapshotPaths,
             changesPathsByMode,
@@ -28083,15 +28134,16 @@ function buildManualExportLogPayload(records) {
     });
 
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         updatedAt: new Date().toISOString(),
         records: normalizedRecords
     };
 }
 
-function buildHistoryManualExportInfoLogFileName(records, fallbackTime = new Date().toISOString()) {
+function buildHistoryManualExportInfoLogFileName(records, fallbackTime = new Date().toISOString(), format = 'md') {
     const isZh = currentLang === 'zh_CN';
-    const baseName = getManualExportInfoLogFileName('md').replace(/\.md$/i, '');
+    const ext = String(format || '').trim().toLowerCase() === 'json' ? 'json' : 'md';
+    const baseName = getManualExportInfoLogFileName(ext).replace(/\.(md|json)$/i, '');
     const sorted = getSortedManualExportLogRecords(records)
         .slice()
         .sort((a, b) => new Date(a?.time || 0).getTime() - new Date(b?.time || 0).getTime());
@@ -28102,12 +28154,21 @@ function buildHistoryManualExportInfoLogFileName(records, fallbackTime = new Dat
     const rangeText = isZh
         ? `_${startToken}开始_${endToken}截止`
         : `_from_${startToken}_to_${endToken}`;
-    return `${baseName}${rangeText}.md`;
+    return `${baseName}${rangeText}.${ext}`;
 }
 
 function buildManualExportLogStatus(record, isZh = currentLang === 'zh_CN') {
-    const hasPayload = record?.hasSnapshot === true || record?.hasChanges === true;
-    if (hasPayload) return 'success';
+    const hasSnapshot = record?.hasSnapshot === true;
+    const hasChanges = record?.hasChanges === true;
+    if (hasSnapshot && hasChanges) {
+        return isZh ? '快照+变化' : 'Snapshot+Changes';
+    }
+    if (hasSnapshot) {
+        return isZh ? '快照' : 'Snapshot';
+    }
+    if (hasChanges) {
+        return isZh ? '变化' : 'Changes';
+    }
     return '-';
 }
 
@@ -28411,10 +28472,53 @@ function buildGlobalExportRecordNamingInfo(record, mode, seqMap, seqWidth) {
         seqStr,
         snapshotKey,
         snapshotLeafName: `${snapshotKey}.html`,
+        snapshotLeafNames: {
+            html: `${snapshotKey}.html`,
+            json: `${snapshotKey}.json`
+        },
         changesLeafNames: {
             html: buildGlobalExportChangesLeafName(snapshotKey, mode, 'html'),
             json: buildGlobalExportChangesLeafName(snapshotKey, mode, 'json')
         }
+    };
+}
+
+function normalizeGlobalExportFileFormat(format, fallback = 'html') {
+    const normalized = String(format || '').trim().toLowerCase();
+    if (normalized === 'json') return 'json';
+    if (normalized === 'html') return 'html';
+    return fallback === 'json' ? 'json' : 'html';
+}
+
+async function generateExportSnapshotJsonContentForGlobal(record, naming = null) {
+    await ensureRecordBookmarkTree(record);
+    if (!record.bookmarkTree) {
+        throw new Error('Missing bookmarkTree for snapshot export');
+    }
+
+    const fallbackSeed = `${record?.time || ''}|${record?.note || ''}`;
+    const fingerprint = normalizeManualExportFingerprint(record?.fingerprint || '', fallbackSeed);
+    const snapshotKey = String(naming?.snapshotKey || buildManualExportSnapshotKey(record?.time, fingerprint, fallbackSeed)).trim().toLowerCase();
+    const snapshotName = String(naming?.snapshotLeafNames?.json || `${snapshotKey || 'snapshot'}.json`).trim();
+    const overwriteMode = String(record?.overwriteMode || '').trim().toLowerCase() === 'overwrite'
+        ? 'overwrite'
+        : 'versioned';
+
+    return {
+        _exportInfo: {
+            schemaVersion: 1,
+            source: 'bookmark-backup-snapshot',
+            snapshotKind: 'full_json',
+            format: 'json',
+            backupTime: record?.time || null,
+            exportDate: new Date().toISOString(),
+            fingerprint,
+            snapshotKey: snapshotKey || null,
+            snapshotName,
+            snapshotFolderName: snapshotKey || null,
+            overwriteMode
+        },
+        bookmarkTree: cloneSerializableData(Array.isArray(record.bookmarkTree) ? record.bookmarkTree : [])
     };
 }
 
@@ -28509,10 +28613,10 @@ async function startGlobalExport() {
             showToast(isZh ? '导出配置无效' : 'Invalid export setup', 'error', 2200);
             return;
         }
-        if (exportChanges && !formatHtml && !formatJson) {
+        if ((exportSnapshot || exportChanges) && !formatHtml && !formatJson) {
             const msg = isZh
-                ? '变化记录需要选择一种导出格式'
-                : 'Select one change records format';
+                ? '快照或变化记录需要选择一种导出格式'
+                : 'Select one export format for snapshots or change records';
             setGlobalExportStatusCard(msg, 'error');
             showToast(isZh ? '导出配置无效' : 'Invalid export setup', 'error', 2200);
             return;
@@ -28529,6 +28633,8 @@ async function startGlobalExport() {
         let recordFailureCount = 0;
         let artifactFailureCount = 0;
         let missingRecordCount = 0;
+        let unavailableSnapshotCount = 0;
+        let unavailableChangesCount = 0;
 
         for (const recordTime of selectedTimesSorted) {
             // 更新进度
@@ -28543,6 +28649,7 @@ async function startGlobalExport() {
                 recordFailureCount++;
                 continue;
             }
+            const recordCapabilities = getHistoryRecordCapabilities(record);
 
             const savedMode = getRecordDetailMode(record.time);
             const defaultMode = historyDetailMode || 'collection';
@@ -28566,6 +28673,14 @@ async function startGlobalExport() {
                 snapshotKey: naming.snapshotKey,
                 hasSnapshot: false,
                 hasChanges: false,
+                storedCapabilities: {
+                    snapshot: recordCapabilities.hasSnapshotData === true,
+                    changes: recordCapabilities.hasChangeData === true
+                },
+                exportedArtifacts: {
+                    snapshot: false,
+                    changes: false
+                },
                 changesViewMode: mode,
                 snapshotPaths: {},
                 changesPathsByMode: {},
@@ -28573,79 +28688,93 @@ async function startGlobalExport() {
             };
 
             if (exportSnapshot) {
-                try {
-                    const htmlContent = await generateExportSnapshotHtmlContentForGlobal(record);
-                    const snapshotLeafName = naming.snapshotLeafName;
-                    files.push({
-                        name: `${recordFolderPath}/${snapshotLeafName}`,
-                        data: new TextEncoder().encode(htmlContent)
-                    });
-                    manualExportRecord.snapshotPaths.html = `${recordFolderRelativePath}/${snapshotLeafName}`;
-                    manualExportRecord.hasSnapshot = true;
-                    recordProducedAny = true;
-                } catch (err) {
-                    artifactFailureCount++;
-                    console.error('Snapshot HTML Gen Error', err);
-                }
-            }
-
-            if (exportChanges && formatHtml) {
-                try {
-                    const htmlContent = await generateExportHtmlContentForGlobal(record, mode);
-                    const changesLeafName = naming.changesLeafNames.html;
-                    files.push({
-                        name: `${recordFolderPath}/${changesLeafName}`,
-                        data: new TextEncoder().encode(htmlContent)
-                    });
-                    if (!manualExportRecord.changesPathsByMode[mode]) {
-                        manualExportRecord.changesPathsByMode[mode] = {};
+                if (!recordCapabilities.hasSnapshotData) {
+                    unavailableSnapshotCount++;
+                } else {
+                    const snapshotFormat = formatJson ? 'json' : 'html';
+                    try {
+                        const snapshotLeafName = naming.snapshotLeafNames[snapshotFormat] || naming.snapshotLeafName;
+                        const snapshotContent = snapshotFormat === 'json'
+                            ? JSON.stringify(await generateExportSnapshotJsonContentForGlobal(record, naming), null, 2)
+                            : await generateExportSnapshotHtmlContentForGlobal(record);
+                        files.push({
+                            name: `${recordFolderPath}/${snapshotLeafName}`,
+                            data: new TextEncoder().encode(snapshotContent)
+                        });
+                        manualExportRecord.snapshotPaths[snapshotFormat] = `${recordFolderRelativePath}/${snapshotLeafName}`;
+                        manualExportRecord.hasSnapshot = true;
+                        manualExportRecord.exportedArtifacts.snapshot = true;
+                        recordProducedAny = true;
+                    } catch (err) {
+                        artifactFailureCount++;
+                        console.error('Snapshot Gen Error', err);
                     }
-                    manualExportRecord.changesPathsByMode[mode].html = `${recordFolderRelativePath}/${changesLeafName}`;
-                    manualExportRecord.hasChanges = true;
-                    recordProducedAny = true;
-                } catch (err) {
-                    artifactFailureCount++;
-                    console.error('Changes HTML Gen Error', err);
                 }
             }
 
-            if (exportChanges && formatJson) {
-                try {
-                    const jsonContentObj = await generateExportJsonContentForGlobal(record, mode);
-                    const enrichedChangesJson = cloneSerializableData(jsonContentObj) || {};
-                    enrichedChangesJson._exportInfo = {
-                        ...(enrichedChangesJson._exportInfo || {}),
-                        exportDate: new Date().toISOString(),
-                        exportMode: mode,
-                        source: 'bookmark-backup-history-manual-export-changes',
-                        backupTime: record.time || null,
-                        note: record.note || '',
-                        seqNumber: naming.seqNumber,
-                        fingerprint: record.fingerprint || '',
-                        snapshotKey: naming.snapshotKey
-                    };
-                    const changesLeafName = naming.changesLeafNames.json;
-                    files.push({
-                        name: `${recordFolderPath}/${changesLeafName}`,
-                        data: new TextEncoder().encode(JSON.stringify(enrichedChangesJson, null, 2))
-                    });
-                    if (!manualExportRecord.changesPathsByMode[mode]) {
-                        manualExportRecord.changesPathsByMode[mode] = {};
+            if (exportChanges) {
+                if (!recordCapabilities.hasChangeData) {
+                    unavailableChangesCount++;
+                } else {
+                    if (formatHtml) {
+                        try {
+                            const htmlContent = await generateExportHtmlContentForGlobal(record, mode);
+                            const changesLeafName = naming.changesLeafNames.html;
+                            files.push({
+                                name: `${recordFolderPath}/${changesLeafName}`,
+                                data: new TextEncoder().encode(htmlContent)
+                            });
+                            if (!manualExportRecord.changesPathsByMode[mode]) {
+                                manualExportRecord.changesPathsByMode[mode] = {};
+                            }
+                            manualExportRecord.changesPathsByMode[mode].html = `${recordFolderRelativePath}/${changesLeafName}`;
+                            manualExportRecord.hasChanges = true;
+                            manualExportRecord.exportedArtifacts.changes = true;
+                            recordProducedAny = true;
+                        } catch (err) {
+                            artifactFailureCount++;
+                            console.error('Changes HTML Gen Error', err);
+                        }
                     }
-                    manualExportRecord.changesPathsByMode[mode].json = `${recordFolderRelativePath}/${changesLeafName}`;
-                    manualExportRecord.hasChanges = true;
-                    recordProducedAny = true;
-                } catch (err) {
-                    artifactFailureCount++;
-                    console.error('Changes JSON Gen Error', err);
+
+                    if (formatJson) {
+                        try {
+                            const jsonContentObj = await generateExportJsonContentForGlobal(record, mode);
+                            const enrichedChangesJson = cloneSerializableData(jsonContentObj) || {};
+                            enrichedChangesJson._exportInfo = {
+                                ...(enrichedChangesJson._exportInfo || {}),
+                                exportDate: new Date().toISOString(),
+                                exportMode: mode,
+                                source: 'bookmark-backup-history-manual-export-changes',
+                                backupTime: record.time || null,
+                                note: record.note || '',
+                                seqNumber: naming.seqNumber,
+                                fingerprint: record.fingerprint || '',
+                                snapshotKey: naming.snapshotKey
+                            };
+                            const changesLeafName = naming.changesLeafNames.json;
+                            files.push({
+                                name: `${recordFolderPath}/${changesLeafName}`,
+                                data: new TextEncoder().encode(JSON.stringify(enrichedChangesJson, null, 2))
+                            });
+                            if (!manualExportRecord.changesPathsByMode[mode]) {
+                                manualExportRecord.changesPathsByMode[mode] = {};
+                            }
+                            manualExportRecord.changesPathsByMode[mode].json = `${recordFolderRelativePath}/${changesLeafName}`;
+                            manualExportRecord.hasChanges = true;
+                            manualExportRecord.exportedArtifacts.changes = true;
+                            recordProducedAny = true;
+                        } catch (err) {
+                            artifactFailureCount++;
+                            console.error('Changes JSON Gen Error', err);
+                        }
+                    }
                 }
             }
 
-            if (exportIndex && (manualExportRecord.hasSnapshot || manualExportRecord.hasChanges || (!exportSnapshot && !exportChanges))) {
+            if (exportIndex) {
                 manualExportRecords.push(manualExportRecord);
-                if (!exportSnapshot && !exportChanges) {
-                    recordProducedAny = true;
-                }
+                recordProducedAny = true;
             }
 
             if (recordProducedAny) {
@@ -28677,38 +28806,13 @@ async function startGlobalExport() {
 
         downloadBlob(zipUrl, zipName);
 
-        const isPartial = recordFailureCount > 0 || artifactFailureCount > 0 || missingRecordCount > 0;
-        const partialItems = [];
-        if (recordFailureCount > 0) {
-            partialItems.push(isZh ? `记录失败 ${recordFailureCount} 条` : `${recordFailureCount} failed records`);
-        }
-        if (artifactFailureCount > 0) {
-            partialItems.push(isZh ? `文件失败 ${artifactFailureCount} 项` : `${artifactFailureCount} failed file items`);
-        }
-        if (missingRecordCount > 0) {
-            partialItems.push(isZh ? `缺失记录 ${missingRecordCount} 条` : `${missingRecordCount} missing records`);
-        }
+        const resultMessage = isZh
+            ? `导出成功，生成 ${files.length} 个文件`
+            : `Export completed, ${files.length} files generated`;
 
-        const resultMessage = isPartial
-            ? (isZh
-                ? `导出部分成功：${recordSuccessCount}/${totalCount} 条记录完成${partialItems.length ? `（${partialItems.join('，')}）` : ''}`
-                : `Export partially completed: ${recordSuccessCount}/${totalCount} records succeeded${partialItems.length ? ` (${partialItems.join(', ')})` : ''}`)
-            : (isZh
-                ? `导出成功：${recordSuccessCount}/${totalCount} 条记录，生成 ${files.length} 个文件`
-                : `Export completed: ${recordSuccessCount}/${totalCount} records, ${files.length} files generated`);
-
-        setGlobalExportStatusCard(resultMessage, isPartial ? 'warning' : 'success');
-        showToast(
-            isPartial
-                ? (isZh ? '导出部分成功' : 'Export partially completed')
-                : (isZh ? '导出成功' : 'Export completed'),
-            isPartial ? 'warning' : 'success',
-            isPartial ? 3000 : 2200
-        );
-
-        if (!isPartial) {
-            closeGlobalExportModal();
-        }
+        setGlobalExportStatusCard(resultMessage, 'success');
+        showToast(isZh ? '导出成功' : 'Export completed', 'success', 2200);
+        closeGlobalExportModal();
 
     } catch (e) {
         console.error('Global Export Failed', e);

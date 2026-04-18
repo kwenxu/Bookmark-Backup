@@ -874,29 +874,52 @@
 
         .restore-safety-entry {
             margin-top: 8px;
-            padding: 8px 10px;
+            padding: 6px 8px;
             border: 1px solid var(--theme-border-primary);
             border-radius: 6px;
             background: var(--theme-bg-secondary);
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .restore-safety-entry-text {
             font-size: 11px;
-            line-height: 1.5;
+            line-height: 1.2;
             color: var(--theme-text-secondary);
             min-width: 0;
             flex: 1 1 auto;
+            white-space: nowrap;
         }
 
         .restore-safety-entry-btn {
             width: 22px;
             height: 22px;
             flex: 0 0 22px;
-            border-radius: 5px;
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            color: var(--theme-text-secondary);
+        }
+
+        .restore-safety-entry-btn:hover {
+            background: transparent !important;
+            border-color: transparent !important;
+            color: var(--theme-text-primary);
+            transform: none !important;
+        }
+
+        .restore-safety-entry-btn i {
+            font-size: 15px !important;
+        }
+
+        .restore-safety-entry-btn .tooltip {
+            top: -24px !important;
+            left: auto !important;
+            right: 0 !important;
+            transform: none !important;
         }
 
         .backup-history-dialog-stack {
@@ -5770,6 +5793,11 @@
             pointer-events: none;
         }
 
+        .setting-row.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
         .setting-row {
             display: flex;
             align-items: center;
@@ -5839,10 +5867,39 @@
             opacity: 0;
         }
 
-        #backupStrategySection.compact .section-content {
-            padding-top: 4px;
-            padding-bottom: 4px;
-            gap: 0;
+        .compact-backup-settings .section-header {
+            padding: 6px 12px;
+            min-height: 30px;
+        }
+
+        .compact-backup-settings .section-content {
+            padding: 7px 12px;
+            gap: 7px;
+        }
+
+        .compact-backup-settings .setting-row {
+            min-height: 32px;
+        }
+
+        .compact-backup-settings #snapshotBackupSection .section-content {
+            padding-top: 7px;
+            padding-bottom: 7px;
+        }
+
+        .compact-backup-settings #backupStrategyContent {
+            padding-top: 5px;
+            padding-bottom: 6px;
+            gap: 4px;
+        }
+
+        .compact-backup-settings #backupStrategyContent .setting-row {
+            min-height: 29px;
+        }
+
+        .compact-backup-settings #backupStrategyContent .settings-button-small {
+            width: 30px !important;
+            height: 30px !important;
+            padding: 5px !important;
         }
 
     </style>
@@ -6116,11 +6173,11 @@
                 <div class="settings-split-container">
 
                     <!-- Left Panel: Backup Settings (Stacked Design) -->
-                    <div class="glass-panel stacked-settings">
-                        <div class="settings-section">
-                            <div class="section-header">
+                    <div class="glass-panel stacked-settings compact-backup-settings">
+                        <div class="settings-section" id="snapshotBackupSection">
+                            <div class="section-header" id="snapshotBackupHeader">
                                 <div class="header-left">
-                                    <span class="section-title" id="bookmarkBackupTitle">Bookmark Backup</span>
+                                    <span class="section-title" id="bookmarkBackupTitle">Snapshot Backup</span>
                                     <span id="backupSettingsSavedIndicator" style="
                                     font-size: 11px;
                                     color: #4CAF50;
@@ -6131,38 +6188,29 @@
                                     align-items: center;
                                     gap: 4px;
                                 ">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span id="backupSettingsSavedText">已保存</span>
+                                        <i class="fas fa-check-circle"></i>
+                                        <span id="backupSettingsSavedText">已保存</span>
                                     </span>
+                                </div>
+                                <div class="header-right" style="display: flex; align-items: center; justify-content: flex-end; margin-left: auto;">
+                                    <label class="switch" style="margin: 0;">
+                                        <input type="checkbox" id="snapshotBackupEnabled" checked>
+                                        <span class="slider"></span>
+                                    </label>
                                 </div>
                             </div>
                             <div class="section-content">
-                                <div class="setting-row">
-                                    <span class="setting-label" id="bookmarkModeLabel">Mode</span>
+                                <div class="setting-row" id="snapshotBackupFormatRow">
+                                    <span class="setting-label" id="snapshotBackupFormatLabel">Format</span>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="backupModeAuto" checked>
-                                            <div class="clean-segment-item" id="backupModeAutoLabel">Auto</div>
+                                            <input type="checkbox" id="snapshotBackupFormatHtml" checked>
+                                            <div class="clean-segment-item" id="snapshotBackupFormatHtmlLabel">HTML</div>
                                         </label>
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="backupModeManual">
-                                            <div class="clean-segment-item" id="backupModeManualLabel">Manual</div>
+                                            <input type="checkbox" id="snapshotBackupFormatJson">
+                                            <div class="clean-segment-item" id="snapshotBackupFormatJsonLabel">JSON</div>
                                         </label>
-                                    </div>
-                                </div>
-                                <div class="setting-row" id="backupSettingsRow">
-                                    <span class="setting-label" id="backupTimeLabel">Time Frequency</span>
-                                    <div style="margin-left: auto;">
-                                        <button id="autoBackupSettingsBtnNew" class="settings-button-small"
-                                            style="padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center;"
-                                            title="Auto Backup Settings">
-                                            <i class="fas fa-cog"></i>
-                                        </button>
-                                        <button id="reminderSettingsBtnNew" class="settings-button-small"
-                                            style="display:none; padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; align-items: center; justify-content: center;"
-                                            title="Reminder Settings">
-                                            <i class="fas fa-cog"></i>
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -6239,10 +6287,11 @@
                             </div>
                         </div>
 
+                        <!-- Section 3: 策略设置 -->
                         <div class="settings-section" id="backupStrategySection">
-                            <div class="section-header">
+                            <div class="section-header" id="backupStrategyHeader">
                                 <div class="header-left">
-                                    <span class="section-title" id="backupStrategyTitle">Backup Strategy</span>
+                                    <span class="section-title" id="backupStrategyTitle">Strategy</span>
                                     <span id="backupStrategySavedIndicator" style="
                                         font-size: 11px;
                                         color: #4CAF50;
@@ -6259,6 +6308,34 @@
                                 </div>
                             </div>
                             <div class="section-content" id="backupStrategyContent">
+                                <div class="setting-row">
+                                    <span class="setting-label" id="bookmarkModeLabel">Mode</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="backupModeAuto" checked>
+                                            <div class="clean-segment-item" id="backupModeAutoLabel">Auto</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="backupModeManual">
+                                            <div class="clean-segment-item" id="backupModeManualLabel">Manual</div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="setting-row" id="backupSettingsRow">
+                                    <span class="setting-label" id="backupTimeLabel">Time Frequency</span>
+                                    <div style="margin-left: auto;">
+                                        <button id="autoBackupSettingsBtnNew" class="settings-button-small"
+                                            style="padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center;"
+                                            title="Auto Backup Settings">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button id="reminderSettingsBtnNew" class="settings-button-small"
+                                            style="display:none; padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; align-items: center; justify-content: center;"
+                                            title="Reminder Settings">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                    </div>
+                                </div>
                                 <div class="setting-row">
                                     <div class="setting-label-with-help">
                                         <span class="setting-label" id="bookmarkOverwriteLabel">Strategy</span>
@@ -6281,9 +6358,9 @@
                                         </label>
                                     </div>
                                 </div>
-
                             </div>
                         </div>
+
                     </div>
 
                     <!-- Right Column: Restore Panel + Init Actions -->
@@ -6337,11 +6414,11 @@
                                 </div>
 
                                 <div class="restore-safety-entry">
-                                    <div id="restoreSafetyCheckpointEntryText" class="restore-safety-entry-text">恢复前会生成“操作前浏览器快照”和“目标状态快照”。</div>
+                                    <div id="restoreSafetyCheckpointEntryText" class="restore-safety-entry-text">临时安全快照</div>
                                     <button id="restoreSafetyCheckpointEntryBtn" class="action-button history-nav-btn restore-safety-entry-btn" type="button">
                                         <i class="fas fa-shield-alt"></i>
                                         <span class="tooltip"
-                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">查看临时安全快照</span>
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; right: 0;">安全快照</span>
                                     </button>
                                 </div>
 
@@ -6572,6 +6649,27 @@
                     style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认</button>
                 <button id="cancelReset" class="normal-button"
                     style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="snapshotBackupEnablePromptModal" class="modal">
+        <div class="modal-content"
+            style="max-width: 360px; padding: 18px; border-radius: 10px; background-color: var(--theme-bg-primary); color: var(--theme-text-primary);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+                <h3 id="snapshotBackupEnablePromptTitle" style="margin:0; font-size:16px;">开启快照备份？</h3>
+                <button id="snapshotBackupEnablePromptCloseBtn" type="button"
+                    style="width:28px; height:28px; border:none; border-radius:50%; background:var(--theme-bg-secondary); color:var(--theme-text-primary); cursor:pointer; display:flex; align-items:center; justify-content:center;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="snapshotBackupEnablePromptText"
+                style="font-size:13px; line-height:1.55; color:var(--theme-text-secondary); margin-bottom:14px;">
+                覆盖模式下关闭快照备份，将不会导出覆盖快照文件。
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button id="snapshotBackupEnablePromptCancelBtn" type="button" class="restore-modal-action-btn secondary">暂不开启</button>
+                <button id="snapshotBackupEnablePromptConfirmBtn" type="button" class="restore-modal-action-btn primary">开启快照</button>
             </div>
         </div>
     </div>

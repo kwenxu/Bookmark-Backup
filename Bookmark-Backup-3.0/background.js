@@ -14278,6 +14278,7 @@ function decorateRestoreRecoveryTransactionStatus(transaction = null, capabiliti
         canContinue: capabilities.canContinue !== false,
         canRollback: capabilities.canRollback !== false,
         canExportBackupPackage: capabilities.canExportBackupPackage === true,
+        hasSafetyCheckpoint: capabilities.hasSafetyCheckpoint === true,
         promptCount: promptProgress.promptCount,
         promptThreshold: promptProgress.promptThreshold,
         canDismissPanel: promptProgress.canDismissPanel,
@@ -14303,6 +14304,7 @@ function decorateRestoreRecoveryIntentStatus(intent = null) {
         canContinue: false,
         canRollback: false,
         canExportBackupPackage: false,
+        hasSafetyCheckpoint: false,
         promptCount: 0,
         promptThreshold,
         canDismissPanel: true,
@@ -14652,11 +14654,11 @@ async function getRestoreRecoveryTransactionCapabilities(transaction = null) {
     const lockedIncident = isRestoreRecoveryLockedIncident(activeTransaction)
     const canContinue = !!targetSnapshot && !lockedIncident
     const canRollback = !!startSnapshot && !lockedIncident
-    let canExportBackupPackage = !!startSnapshot && !!targetSnapshot
-    if (!canExportBackupPackage && activeTransaction?.sessionId) {
+    let hasSafetyCheckpoint = false
+    if (activeTransaction?.sessionId) {
         try {
             const checkpoint = await loadLatestSafetyCheckpoint()
-            canExportBackupPackage = !!(
+            hasSafetyCheckpoint = !!(
                 checkpoint
                 && String(checkpoint.sessionId || '').trim() === String(activeTransaction.sessionId || '').trim()
                 && checkpoint.beforeSnapshotKey
@@ -14664,12 +14666,14 @@ async function getRestoreRecoveryTransactionCapabilities(transaction = null) {
             )
         } catch (_) { }
     }
+    const canExportBackupPackage = (!!startSnapshot && !!targetSnapshot) || hasSafetyCheckpoint
 
     return {
         transaction: activeTransaction,
         canContinue,
         canRollback,
-        canExportBackupPackage
+        canExportBackupPackage,
+        hasSafetyCheckpoint
     }
 }
 
@@ -14703,6 +14707,7 @@ function buildRestoreRecoveryWriteLockedResponse(preferredLang = 'zh_CN', transa
             canContinue: capabilities?.canContinue !== false,
             canRollback: capabilities?.canRollback !== false,
             canExportBackupPackage: capabilities?.canExportBackupPackage === true,
+            hasSafetyCheckpoint: capabilities?.hasSafetyCheckpoint === true,
             promptCount: promptProgress.promptCount,
             promptThreshold: promptProgress.promptThreshold,
             canDismissPanel: promptProgress.canDismissPanel,
@@ -17660,9 +17665,12 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         }
 
         // 普通备份历史按瘦身策略保存；高危操作安全快照走独立 checkpoint，不受这里影响。
-        const shouldSaveTree = status === 'success' && shouldRetainBackupHistorySnapshotData(backupHistorySlimming);
+        // 例外：若变化载荷构建失败且策略关闭了快照保留，会临时保留一次快照，避免该条记录失去恢复能力。
+        const shouldRetainSnapshotDataByPolicy = status === 'success' && shouldRetainBackupHistorySnapshotData(backupHistorySlimming);
         const shouldSaveChangeData = status === 'success' && shouldRetainBackupHistoryChangeData(backupHistorySlimming);
+        let shouldSaveTree = shouldRetainSnapshotDataByPolicy;
         let recordChangeDataPayload = null;
+        let snapshotFallbackApplied = false;
         const changeDataKey = `changes_data_${time}`;
 
         if (shouldSaveChangeData && Array.isArray(localBookmarks) && localBookmarks.length) {
@@ -17678,8 +17686,19 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     currentGeneration: activeComparisonGeneration
                 });
             } catch (changePayloadError) {
-                
                 recordChangeDataPayload = null;
+                const canFallbackToSnapshot = !shouldSaveTree && Array.isArray(localBookmarks) && localBookmarks.length > 0;
+                if (canFallbackToSnapshot) {
+                    shouldSaveTree = true;
+                    snapshotFallbackApplied = true;
+                }
+                appendUniqueWarning(postSyncWarnings, activeLang === 'en'
+                    ? (canFallbackToSnapshot
+                        ? 'Failed to build change details. This record automatically retained snapshot data, so you can still restore it from Backup History.'
+                        : 'Failed to build change details for this backup. Please retry and keep snapshot data or change data enabled in Backup History settings.')
+                    : (canFallbackToSnapshot
+                        ? '变化详情构建失败。该记录已自动保留快照数据，你仍可在“备份历史”中恢复。'
+                        : '本次备份的变化详情构建失败。请重试，并在“备份历史”设置中保持启用快照数据或变化数据。'));
             }
         }
 
@@ -17751,7 +17770,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             }),
             dataRetention: {
                 saveSnapshotData: shouldSaveTree,
-                saveChangeData: !!recordChangeDataPayload
+                saveChangeData: !!recordChangeDataPayload,
+                snapshotFallbackApplied: snapshotFallbackApplied
             },
             comparisonGeneration: activeComparisonGeneration,
             fingerprint: fingerprint,

@@ -7483,6 +7483,10 @@ async function __maybeAutoExpandCurrentChangesPreviewByMode(targetMode = 'compac
 
     const persistedStateKey = `${CHANGES_PREVIEW_EXPANDED_KEY}:${normalizedMode}`;
     if (normalizedMode === 'detailed') {
+        if (__hasChangesPreviewExpandedStateByKey(persistedStateKey)) {
+            // 详细模式已有用户保存状态时，保持原样，不覆盖会话记忆。
+            return;
+        }
         // 详细模式展示完整树，但默认只打开根目录；后续靠懒加载按需展开。
         // 这里不自动展开到变化节点路径，避免一次性加载大量文件夹。
         __resetTreeExpandedState(treeEl);
@@ -22633,22 +22637,24 @@ function buildHistorySafetyCheckpointHelpHtml() {
         return `
             <div class="backup-history-safety-help-title">What Temporary Safety Snapshot Is</div>
             <ul class="backup-history-safety-help-list">
-                <li>It is a fallback snapshot created before high-risk write operations, focused on data-first recovery.</li>
+                <li>It is a temporary safety snapshot created before high-risk write operations, focused on data-first recovery.</li>
                 <li>It is triggered by restore/revert flows that enter the recovery transaction layer, mainly <span class="backup-history-safety-help-highlight">overwrite restore, patch restore, overwrite revert, and patch revert</span> from the main UI or history page.</li>
                 <li>Import merge is additive and keeps existing bookmarks. It may use internal transaction data for interruption cleanup, but it does not replace the displayed latest temporary safety snapshot.</li>
                 <li>It keeps only the latest operation's before-operation browser snapshot and target-state snapshot; the current browser snapshot is generated only when you export it.</li>
-                <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is only a last-resort fallback.</li>
+                <li>You can open it from the right side of the <span class="backup-history-safety-help-highlight">Backup History</span> title.</li>
+                <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is mainly for short-term incident recovery.</li>
             </ul>
         `;
     }
     return `
         <div class="backup-history-safety-help-title">临时安全快照是什么</div>
         <ul class="backup-history-safety-help-list">
-            <li>它是高风险写入操作前自动生成的兜底快照，核心目标是数据优先，避免用户丢数据。</li>
+            <li>它是高风险写入操作前自动生成的临时安全快照，核心目标是数据优先，避免用户丢数据。</li>
             <li>触发范围是进入恢复事务层的恢复/撤销流程，主要包括主 UI 或历史页面里的 <span class="backup-history-safety-help-highlight">覆盖恢复、补丁恢复、覆盖撤销、补丁撤销</span>。</li>
             <li>导入合并是添加型操作，会保留现有书签；它只保留中断清理所需的内部事务数据，不会覆盖这里展示的最近一次临时安全快照。</li>
             <li>这里只保留最近一次操作的“操作前浏览器快照”和“目标状态快照”；“当前浏览器快照”是在导出时即时读取的。</li>
-            <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照只是兜底。</li>
+            <li>入口位置在<span class="backup-history-safety-help-highlight">“备份历史”标题右侧</span>。</li>
+            <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照主要用于短期应急恢复。</li>
         </ul>
     `;
 }
@@ -23066,7 +23072,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
                 <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
                     <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${isEn ? 'Resolve Unfinished Restore/Revert' : '处理未完成的恢复/撤销事务'}</div>
-                    <div style="font-size:13px;line-height:1.7;color:var(--text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it here now, or dismiss the reminder after repeated prompts.' : '检测到一次未完成的恢复/撤销事务。你可以现在在这里处理，或在多次提醒后关闭本提醒。'}</div>
+                    <div style="font-size:13px;line-height:1.7;color:var(--text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it now, or close and unlock it.' : '检测到一次未完成的恢复/撤销事务。你可以现在处理，或直接关闭并解锁。'}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
                     <button id="restoreRecoveryQuickExportBtn" style="min-width:128px;padding:6px 10px;border:1px solid var(--border-color);border-radius:999px;background:transparent;color:var(--text-primary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Export 2-HTML' : '导出2个HTML'}</button>
@@ -23077,7 +23083,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             <div id="restoreRecoveryBlockingSummary" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;padding:14px;border-radius:12px;background:var(--bg-secondary);border:1px solid var(--border-color);font-size:13px;"></div>
             <div id="restoreRecoveryBlockingMessage" style="padding:12px 14px;border-radius:12px;background:var(--accent-light);color:var(--accent-primary);border:1px solid var(--border-color);font-size:13px;line-height:1.7;"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
-                <button id="restoreRecoveryDismissBtn" style="display:none;min-width:168px;padding:10px 16px;border:1px dashed var(--border-color);border-radius:10px;background:transparent;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close Panel Only' : '仅关闭当前面板'}</button>
+                <button id="restoreRecoveryDismissBtn" style="display:none;min-width:168px;padding:10px 16px;border:1px dashed var(--border-color);border-radius:10px;background:transparent;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close & Unlock' : '关闭并解锁'}</button>
                 <button id="restoreRecoveryExportBackupBtn" style="min-width:168px;padding:10px 16px;border:1px solid var(--border-color);border-radius:10px;background:transparent;color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Export Backup Package' : '导出备份包（2个HTML）'}</button>
                 <button id="restoreRecoveryRollbackBtn" style="min-width:168px;padding:10px 16px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
                 <button id="restoreRecoveryContinueBtn" style="min-width:168px;padding:10px 16px;border:none;border-radius:10px;background:var(--accent-primary);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
@@ -23130,6 +23136,17 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
     const exportIdleText = isEn ? 'Export Backup Package' : '导出备份包（2个HTML）';
     const quickExportIdleText = isEn ? 'Export 2-HTML' : '导出2个HTML';
     const unlockIdleText = isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁';
+    const buildPostUnlockFollowupHint = (transaction = null) => {
+        const hasSafetyCheckpoint = transaction && transaction.hasSafetyCheckpoint === true;
+        if (hasSafetyCheckpoint) {
+            return isEn
+                ? 'If rollback is needed later, open "Temporary Safety Snapshot" on the right side of the "Backup History" title.'
+                : '若后续需要回滚，请到“备份历史”标题右侧的「临时安全快照」。';
+        }
+        return isEn
+            ? 'If rollback is needed later, export the 2-HTML backup package before unlocking, or re-run restore/revert from the original entry.'
+            : '若后续需要回滚，请在解锁前先导出2个HTML备份包，或从原入口重新执行恢复/撤销。';
+    };
 
     const applyActionButtonLabels = (actionType = '') => {
         if (actionType === 'continue') {
@@ -23375,7 +23392,7 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
         const canDismissPanel = transaction.canDismissPanel === true;
         const canExportBackupPackage = transaction.canExportBackupPackage === true;
         const canUnlockNow = true;
-        const allowDismiss = canDismissPanel || isIntentOnly;
+        const allowDismiss = true;
         const sessionId = String(transaction.sessionId || '').trim();
         const failureReason = formatFailureReason(transaction);
         if (state.thresholdUnlockPromptedSessionId !== sessionId) {
@@ -23389,6 +23406,9 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             && !state.unlockConfirmOpen
             && promptCount === promptThreshold
             && state.thresholdUnlockPromptedAtCount !== promptCount;
+        dismissBtn.textContent = isIntentOnly
+            ? (isEn ? 'Close Reminder' : '关闭提醒')
+            : (isEn ? 'Close & Unlock' : '关闭并解锁');
         renderSummary(status);
 
         if (promptCount > 0) {
@@ -23513,7 +23533,9 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             }
             return;
         }
-        setMessage(isEn ? 'Choose one action to resolve this unfinished transaction. The dialog cannot be dismissed.' : '请选择“继续”或“回滚”来处理这次未完成事务；该面板不能关闭。', 'info');
+        setMessage(isEn
+            ? 'Choose continue/rollback, or close and unlock this unfinished transaction now.'
+            : '你可以继续/回滚，也可以现在关闭并解锁这次未完成事务。', 'info');
     };
 
     const refreshStatus = async () => {
@@ -23653,11 +23675,14 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                 return true;
             }
             if (actionType === 'unlock') {
+                const unlockFollowupHint = buildPostUnlockFollowupHint(state.lastStatus?.transaction);
                 closeRestoreRecoveryBlockingOverlayInHistory();
                 showToast(
-                    isEn ? 'Prompts disabled and lock cleared.' : '已停止弹出并解除写锁。',
+                    isEn
+                        ? `Prompts disabled and lock cleared. ${unlockFollowupHint}`
+                        : `已停止弹出并解除写锁。${unlockFollowupHint}`,
                     'info',
-                    2600
+                    3600
                 );
                 setTimeout(() => window.location.reload(), 120);
                 return true;
@@ -23745,26 +23770,54 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
             handleUnlockDecision(decision, 'manual');
         });
     }
-    dismissBtn.addEventListener('click', () => {
+    dismissBtn.addEventListener('click', async () => {
         if (dismissBtn.disabled) return;
         const isIntentOnly = state.lastStatus?.transaction?.intentOnly === true;
+        const activeSessionId = state.lastStatus?.transaction?.sessionId || '';
+        const unlockFollowupHint = buildPostUnlockFollowupHint(state.lastStatus?.transaction);
         const confirmed = window.confirm(
             isIntentOnly
                 ? (isEn
                     ? 'This closes the current interruption reminder. Continue/Rollback is unavailable for this record and you should re-run restore/revert from the original entry. Close now?'
                     : '这会关闭当前中断提醒。该记录无法继续/回滚，你需要从原入口重新执行恢复/撤销。确定现在关闭吗？')
                 : (isEn
-                    ? 'This only closes the current panel. The unfinished transaction record remains, but regular actions are no longer blocked after repeated prompts. If you start a new restore/revert, it will replace this unfinished transaction. Close this panel now?'
-                    : '这只会关闭当前面板。未完成事务记录仍会保留，但在多次提醒后常规操作已不再被阻止；如果你发起新的恢复/撤销，它会替换这次未完成事务。确定现在关闭这个面板吗？')
+                    ? `This will close the panel and unlock by discarding the unfinished transaction. ${unlockFollowupHint} Continue?`
+                    : `这会关闭面板并解锁，同时丢弃当前未完成事务。${unlockFollowupHint}确认继续吗？`)
         );
         if (!confirmed) return;
-        const dismissTask = isIntentOnly
-            ? browserAPI.runtime.sendMessage({
-                action: 'dismissRestoreRecoveryIntent',
-                sessionId: state.lastStatus?.transaction?.sessionId || ''
-            }).catch(() => null)
-            : Promise.resolve(null);
-        Promise.resolve(dismissTask).finally(() => {
+        try {
+            const dismissResult = isIntentOnly
+                ? await browserAPI.runtime.sendMessage({
+                    action: 'dismissRestoreRecoveryIntent',
+                    sessionId: activeSessionId
+                })
+                : await browserAPI.runtime.sendMessage({
+                    action: 'unlockRestoreRecoveryWriteLock',
+                    sessionId: activeSessionId
+                });
+            if (isIntentOnly) {
+                const dismissed = dismissResult && dismissResult.success === true && dismissResult.dismissed === true;
+                if (!dismissed) {
+                    showToast(
+                        isEn
+                            ? `Unable to close reminder: ${dismissResult?.error || 'Session changed or reminder already cleared. Please refresh and retry.'}`
+                            : `关闭提醒失败：${dismissResult?.error || '会话已变化或提醒已被清理，请刷新后重试。'}`,
+                        'error'
+                    );
+                    return;
+                }
+            } else {
+                const unlocked = dismissResult && dismissResult.success === true && dismissResult.unlocked === true;
+                if (!unlocked) {
+                    showToast(
+                        isEn
+                            ? `Unable to unlock: ${dismissResult?.error || 'Unknown error'}`
+                            : `解锁失败：${dismissResult?.error || '未知错误'}`,
+                        'error'
+                    );
+                    return;
+                }
+            }
             closeRestoreRecoveryBlockingOverlayInHistory();
             showToast(
                 isIntentOnly
@@ -23772,10 +23825,17 @@ async function showRestoreRecoveryBlockingOverlayInHistory(initialStatus = null)
                         ? 'Reminder closed. Please re-run restore/revert from the original entry if needed.'
                         : '已关闭提醒。如需处理，请从原入口重新执行恢复/撤销。')
                     : (isEn
-                        ? 'Panel closed. Regular actions are available again; a new restore/revert can replace this unfinished transaction.'
-                        : '已关闭面板。常规操作已恢复可用；新的恢复/撤销可以替换这次未完成事务。')
+                        ? `Transaction unlocked and panel closed. ${unlockFollowupHint}`
+                        : `已解锁并关闭面板。${unlockFollowupHint}`)
             );
-        });
+        } catch (error) {
+            showToast(
+                isEn
+                    ? `Close/unlock failed: ${error?.message || error}`
+                    : `关闭/解锁失败：${error?.message || error}`,
+                'error'
+            );
+        }
     });
 
     state.keydownHandler = (event) => {

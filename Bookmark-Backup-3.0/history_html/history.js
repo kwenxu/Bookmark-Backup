@@ -50,10 +50,102 @@ let currentTheme = 'light';
 let historyDetailMode = 'collection'; // 默认值，将在初始化时从 chrome.storage.local 加载
 let historyViewSettings = null;   // 缓存视图设置对象
 let historyViewSettingsSaveTimeout = null; // 防抖保存定时器
+let historyBackupHistorySlimmingSettings = {
+    saveSnapshotData: true,
+    saveChangeData: true
+};
+let historyLatestSafetyCheckpoint = null;
+let historyBackupHistorySlimmingSettingsLoaded = false;
 
 // 旧的 localStorage 键前缀（用于迁移）
 const HISTORY_DETAIL_MODE_PREFIX = 'historyDetailMode:';
 const HISTORY_DETAIL_EXPANDED_PREFIX = 'historyDetailExpanded:';
+
+function normalizeHistoryBackupHistorySlimmingSettings(rawSettings = {}) {
+    const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    return {
+        saveSnapshotData: settings.saveSnapshotData !== false,
+        saveChangeData: settings.saveChangeData !== false
+    };
+}
+
+function getHistorySlimmingButtonState(settings = historyBackupHistorySlimmingSettings) {
+    const normalized = normalizeHistoryBackupHistorySlimmingSettings(settings);
+    const selectedCount = [normalized.saveSnapshotData, normalized.saveChangeData].filter(Boolean).length;
+    if (selectedCount === 2) return 'all';
+    if (selectedCount === 1) return 'partial';
+    return 'none';
+}
+
+function syncHistorySlimmingSettingsButtonState(settings = historyBackupHistorySlimmingSettings) {
+    const settingsBtn = document.getElementById('historySlimmingSettingsBtn');
+    if (!settingsBtn) return;
+    const state = getHistorySlimmingButtonState(settings);
+    settingsBtn.dataset.slimmingState = state;
+}
+
+function getHistoryRecordCapabilities(record = {}) {
+    const explicit = record?.capabilities && typeof record.capabilities === 'object'
+        ? record.capabilities
+        : {};
+    const hasSnapshotData = explicit.hasSnapshotData === true || !!(record?.bookmarkTree || record?.hasData === true);
+    const hasChangeData = explicit.hasChangeData === true || !!(record?.hasChangeData === true || String(record?.changeDataKey || '').trim() || record?.__persistedChangeData);
+    return {
+        hasSnapshotData,
+        hasChangeData,
+        recordOnly: !hasSnapshotData && !hasChangeData,
+        canExpand: hasSnapshotData || hasChangeData,
+        canSearch: hasSnapshotData || hasChangeData,
+        canExportSnapshot: hasSnapshotData,
+        canExportChanges: hasChangeData,
+        canRestore: hasSnapshotData || hasChangeData,
+        canMergeRestore: hasChangeData,
+        canPatchRestore: hasSnapshotData,
+        canViewChanges: hasChangeData,
+        canViewSnapshot: hasSnapshotData
+    };
+}
+
+function getHistoryDataCapabilityBadgeMeta(capabilities = {}, lang = currentLang) {
+    const isZh = lang === 'zh_CN';
+    const hasSnapshot = capabilities.hasSnapshotData === true;
+    const hasChanges = capabilities.hasChangeData === true;
+    if (hasSnapshot && hasChanges) {
+        return {
+            state: 'full',
+            icon: 'fa-layer-group',
+            label: isZh ? '快照+变化' : 'Snapshot + Changes',
+            title: isZh ? '此记录同时保留快照数据和变化数据' : 'Snapshot and change data are both available'
+        };
+    }
+    if (hasSnapshot) {
+        return {
+            state: 'snapshot',
+            icon: 'fa-bookmark',
+            label: isZh ? '仅快照' : 'Snapshot only',
+            title: isZh ? '此记录保留快照数据，未保留变化数据' : 'Snapshot data is available; change data was not retained'
+        };
+    }
+    if (hasChanges) {
+        return {
+            state: 'changes',
+            icon: 'fa-code-branch',
+            label: isZh ? '仅变化' : 'Changes only',
+            title: isZh ? '此记录保留变化数据，完整快照恢复不可用' : 'Change data is available; full snapshot restore is unavailable'
+        };
+    }
+    return {
+        state: 'record-only',
+        icon: 'fa-info-circle',
+        label: isZh ? '仅记录' : 'Record only',
+        title: isZh ? '此记录没有快照数据和变化数据，仅保留记录信息' : 'This record has no snapshot or change payload'
+    };
+}
+
+function buildHistoryDataCapabilityBadge(capabilities = {}, lang = currentLang) {
+    const meta = getHistoryDataCapabilityBadgeMeta(capabilities, lang);
+    return `<span class="commit-badge history-data-capability-badge ${escapeHtml(meta.state)}" title="${escapeHtml(meta.title)}"><i class="fas ${meta.icon}"></i> ${escapeHtml(meta.label)}</span>`;
+}
 
 function normalizeHistoryDetailMode(mode, fallback = 'simple') {
     const value = String(mode || '').toLowerCase();
@@ -309,7 +401,10 @@ function applyHistoryDeleteButtonWarningState(recordCount = historyDeleteWarnRec
 
     const baseTitle = (i18n && i18n.clearBackupHistoryTooltip && i18n.clearBackupHistoryTooltip[currentLang])
         || (currentLang === 'en' ? 'Clear history' : '清除记录');
-    btn.setAttribute('data-title', `${baseTitle} (${historyDeleteWarnRecordCount})`);
+    const tooltipText = `${baseTitle} (${historyDeleteWarnRecordCount})`;
+    btn.setAttribute('data-title', tooltipText);
+    const tooltip = btn.querySelector('.btn-tooltip');
+    if (tooltip) tooltip.textContent = tooltipText;
 }
 
 // 实时更新状态控制
@@ -1790,6 +1885,22 @@ const FaviconCache = {
 // 浏览器 API 兼容性
 const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
 
+function sendHistoryRuntimeMessage(payload) {
+    return new Promise((resolve) => {
+        try {
+            browserAPI.runtime.sendMessage(payload, (response) => {
+                if (browserAPI.runtime.lastError) {
+                    resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                    return;
+                }
+                resolve(response || { success: false, error: 'no response' });
+            });
+        } catch (error) {
+            resolve({ success: false, error: error?.message || String(error) });
+        }
+    });
+}
+
 
 // =============================================================================
 // =============================================================================
@@ -2474,6 +2585,114 @@ const i18n = {
         'zh_CN': '返回修改',
         'en': 'Go back'
     },
+    historySlimmingSettingsTitle: {
+        'zh_CN': '精简设置',
+        'en': 'Compaction Settings'
+    },
+    historySlimmingSettingsDescription: {
+        'zh_CN': '选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。',
+        'en': 'Choose which detail data the extension keeps in its local backup history. Unchecked data is not written to extension storage; only the history record remains.'
+    },
+    historySlimmingSaveSnapshotData: {
+        'zh_CN': '保存快照数据',
+        'en': 'Save snapshot data'
+    },
+    historySlimmingSaveChangeData: {
+        'zh_CN': '保存变化数据',
+        'en': 'Save change data'
+    },
+    historySlimmingSettingsSaved: {
+        'zh_CN': '精简设置已保存',
+        'en': 'Compaction settings saved'
+    },
+    historySlimmingSettingsSaveFailed: {
+        'zh_CN': '保存精简设置失败',
+        'en': 'Failed to save compaction settings'
+    },
+    historySafetyCheckpointTitle: {
+        'zh_CN': '临时安全快照',
+        'en': 'Temporary Safety Snapshot'
+    },
+    historySafetyCheckpointSectionTitle: {
+        'zh_CN': '最近一次高危操作快照',
+        'en': 'Latest High-Risk Operation Checkpoint'
+    },
+    historySafetyCheckpointEmpty: {
+        'zh_CN': '暂无临时安全快照',
+        'en': 'No temporary safety snapshot available'
+    },
+    historySafetyCheckpointLoading: {
+        'zh_CN': '正在加载临时安全快照状态...',
+        'en': 'Loading temporary safety snapshot status...'
+    },
+    historySafetyCheckpointExportBtn: {
+        'zh_CN': '导出所选快照',
+        'en': 'Export Selected Snapshots'
+    },
+    historySafetyCheckpointExporting: {
+        'zh_CN': '正在导出所选快照...',
+        'en': 'Exporting selected snapshots...'
+    },
+    historySafetyCheckpointExportSuccess: {
+        'zh_CN': (count) => `已导出所选快照，共 ${count} 个文件`,
+        'en': (count) => `Selected safety snapshot(s) exported: ${count} file(s)`
+    },
+    historySafetyCheckpointExportFailed: {
+        'zh_CN': '导出所选快照失败',
+        'en': 'Failed to export selected snapshots'
+    },
+    historySafetyCheckpointExportOptionsTitle: {
+        'zh_CN': '选择导出内容',
+        'en': 'Select Export Content'
+    },
+    historySafetyCheckpointExportAll: {
+        'zh_CN': '全部',
+        'en': 'All'
+    },
+    historySafetyCheckpointExportBefore: {
+        'zh_CN': '操作前浏览器快照',
+        'en': 'Before Operation Browser Snapshot'
+    },
+    historySafetyCheckpointExportTarget: {
+        'zh_CN': '目标状态快照',
+        'en': 'Target State Snapshot'
+    },
+    historySafetyCheckpointExportCurrent: {
+        'zh_CN': '当前浏览器快照',
+        'en': 'Current Browser Snapshot'
+    },
+    historySafetyCheckpointSelectOne: {
+        'zh_CN': '请至少选择一个要导出的快照',
+        'en': 'Select at least one snapshot to export'
+    },
+    historySafetyCheckpointOperationKind: {
+        'zh_CN': '操作类型',
+        'en': 'Operation'
+    },
+    historySafetyCheckpointSource: {
+        'zh_CN': '来源',
+        'en': 'Source'
+    },
+    historySafetyCheckpointDisplayTitle: {
+        'zh_CN': '标题',
+        'en': 'Title'
+    },
+    historySafetyCheckpointCreatedAt: {
+        'zh_CN': '创建时间',
+        'en': 'Created'
+    },
+    historySafetyCheckpointBeforeNodeCount: {
+        'zh_CN': '变更前节点数',
+        'en': 'Before nodes'
+    },
+    historySafetyCheckpointTargetNodeCount: {
+        'zh_CN': '目标节点数',
+        'en': 'Target nodes'
+    },
+    historySafetyCheckpointSessionId: {
+        'zh_CN': '会话 ID',
+        'en': 'Session ID'
+    },
     modalTitle: {
         'zh_CN': '变化详情',
         'en': 'Change Details'
@@ -3087,6 +3306,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 初始化导出变化模态框
     initExportChangesModal();
+    refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
+    refreshLatestSafetyCheckpointStatus({ silent: true }).catch(() => { });
     // 初始化全局导出功能
     initGlobalExport();
 
@@ -3156,8 +3377,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
 
                 if (recordAction === 'export') {
+                    const capabilities = getHistoryRecordCapabilities(record);
                     showHistoryExportChangesModal(record.time, {
                         preferredMode: getRecordDetailMode(record.time),
+                        preferredArtifact: capabilities.hasChangeData ? 'changes' : 'snapshot',
                         useDomTreeContainer: false,
                         treeContainer: null
                     });
@@ -3453,6 +3676,66 @@ function applyLanguage() {
     if (clearBackupHistoryCancelBtn) clearBackupHistoryCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
     const clearBackupHistoryConfirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
     if (clearBackupHistoryConfirmBtn) clearBackupHistoryConfirmBtn.textContent = i18n.clearBackupHistoryConfirmBtn[currentLang];
+    const historySlimmingSettingsBtn = document.getElementById('historySlimmingSettingsBtn');
+    if (historySlimmingSettingsBtn) {
+        historySlimmingSettingsBtn.removeAttribute('title');
+        historySlimmingSettingsBtn.setAttribute('data-title', i18n.historySlimmingSettingsTitle[currentLang]);
+        historySlimmingSettingsBtn.setAttribute('aria-label', i18n.historySlimmingSettingsTitle[currentLang]);
+        const tooltip = historySlimmingSettingsBtn.querySelector('.btn-tooltip');
+        if (tooltip) tooltip.textContent = i18n.historySlimmingSettingsTitle[currentLang];
+        syncHistorySlimmingSettingsButtonState();
+    }
+    const historySafetyCheckpointBtn = document.getElementById('historySafetyCheckpointBtn');
+    if (historySafetyCheckpointBtn) {
+        historySafetyCheckpointBtn.removeAttribute('title');
+        historySafetyCheckpointBtn.setAttribute('data-title', i18n.historySafetyCheckpointTitle[currentLang]);
+        historySafetyCheckpointBtn.setAttribute('aria-label', i18n.historySafetyCheckpointTitle[currentLang]);
+        const tooltip = historySafetyCheckpointBtn.querySelector('.btn-tooltip');
+        if (tooltip) tooltip.textContent = i18n.historySafetyCheckpointTitle[currentLang];
+    }
+
+    const historySlimmingSettingsModalTitle = document.getElementById('historySlimmingSettingsModalTitle');
+    if (historySlimmingSettingsModalTitle) historySlimmingSettingsModalTitle.textContent = i18n.historySlimmingSettingsTitle[currentLang];
+    const historySlimmingSettingsDesc = document.getElementById('historySlimmingSettingsDesc');
+    if (historySlimmingSettingsDesc) historySlimmingSettingsDesc.textContent = i18n.historySlimmingSettingsDescription[currentLang];
+    const historySlimmingSaveSnapshotDataText = document.getElementById('historySlimmingSaveSnapshotDataText');
+    if (historySlimmingSaveSnapshotDataText) historySlimmingSaveSnapshotDataText.textContent = i18n.historySlimmingSaveSnapshotData[currentLang];
+    const historySlimmingSaveChangeDataText = document.getElementById('historySlimmingSaveChangeDataText');
+    if (historySlimmingSaveChangeDataText) historySlimmingSaveChangeDataText.textContent = i18n.historySlimmingSaveChangeData[currentLang];
+    const historySlimmingSettingsCancelBtn = document.getElementById('historySlimmingSettingsCancelBtn');
+    if (historySlimmingSettingsCancelBtn) historySlimmingSettingsCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
+    const historySlimmingSettingsSaveBtn = document.getElementById('historySlimmingSettingsSaveBtn');
+    if (historySlimmingSettingsSaveBtn) historySlimmingSettingsSaveBtn.textContent = currentLang === 'zh_CN' ? '保存' : 'Save';
+    syncHistorySlimmingSettingsModalUi();
+
+    const historySafetyCheckpointModalTitle = document.getElementById('historySafetyCheckpointModalTitle');
+    if (historySafetyCheckpointModalTitle) historySafetyCheckpointModalTitle.textContent = i18n.historySafetyCheckpointTitle[currentLang];
+    const historySafetyCheckpointSectionTitle = document.getElementById('historySafetyCheckpointSectionTitle');
+    if (historySafetyCheckpointSectionTitle) historySafetyCheckpointSectionTitle.textContent = i18n.historySafetyCheckpointSectionTitle[currentLang];
+    const historySafetyCheckpointCloseBtn = document.getElementById('historySafetyCheckpointCloseBtn');
+    if (historySafetyCheckpointCloseBtn) historySafetyCheckpointCloseBtn.textContent = currentLang === 'zh_CN' ? '关闭' : 'Close';
+    const historySafetyCheckpointExportBtn = document.getElementById('historySafetyCheckpointExportBtn');
+    if (historySafetyCheckpointExportBtn) historySafetyCheckpointExportBtn.textContent = i18n.historySafetyCheckpointExportBtn[currentLang];
+    const historySafetyCheckpointHelpBtn = document.getElementById('historySafetyCheckpointHelpBtn');
+    if (historySafetyCheckpointHelpBtn) {
+        historySafetyCheckpointHelpBtn.setAttribute('aria-label', currentLang === 'zh_CN' ? '安全快照说明' : 'Safety snapshot help');
+        historySafetyCheckpointHelpBtn.setAttribute('title', currentLang === 'zh_CN' ? '安全快照说明' : 'Safety snapshot help');
+    }
+    const historySafetyCheckpointHelpPanel = document.getElementById('historySafetyCheckpointHelpPanel');
+    if (historySafetyCheckpointHelpPanel) historySafetyCheckpointHelpPanel.innerHTML = buildHistorySafetyCheckpointHelpHtml();
+    const historySafetyCheckpointExportOptionsTitle = document.getElementById('historySafetyCheckpointExportOptionsTitle');
+    if (historySafetyCheckpointExportOptionsTitle) historySafetyCheckpointExportOptionsTitle.textContent = i18n.historySafetyCheckpointExportOptionsTitle[currentLang];
+    const historySafetyCheckpointSummaryTitle = document.getElementById('historySafetyCheckpointSummaryTitle');
+    if (historySafetyCheckpointSummaryTitle) historySafetyCheckpointSummaryTitle.textContent = currentLang === 'zh_CN' ? '安全快照说明' : 'Safety Snapshot Details';
+    const historySafetyExportAllText = document.getElementById('historySafetyExportAllText');
+    if (historySafetyExportAllText) historySafetyExportAllText.textContent = i18n.historySafetyCheckpointExportAll[currentLang];
+    const historySafetyExportBeforeText = document.getElementById('historySafetyExportBeforeText');
+    if (historySafetyExportBeforeText) historySafetyExportBeforeText.textContent = i18n.historySafetyCheckpointExportBefore[currentLang];
+    const historySafetyExportTargetText = document.getElementById('historySafetyExportTargetText');
+    if (historySafetyExportTargetText) historySafetyExportTargetText.textContent = i18n.historySafetyCheckpointExportTarget[currentLang];
+    const historySafetyExportCurrentText = document.getElementById('historySafetyExportCurrentText');
+    if (historySafetyExportCurrentText) historySafetyExportCurrentText.textContent = i18n.historySafetyCheckpointExportCurrent[currentLang];
+    renderHistorySafetyCheckpointModal();
 
     // 二次确认弹窗
     const clearHistorySecondConfirmTitle = document.getElementById('clearHistorySecondConfirmTitle');
@@ -3510,6 +3793,8 @@ function applyLanguage() {
     if (globalExportBtn) {
         globalExportBtn.setAttribute('data-title', i18n.globalExport[currentLang]);
         globalExportBtn.removeAttribute('title');
+        const tooltip = globalExportBtn.querySelector('.btn-tooltip');
+        if (tooltip) tooltip.textContent = i18n.globalExport[currentLang];
     }
     const globalExportModalTitle = document.getElementById('globalExportModalTitle');
     if (globalExportModalTitle) globalExportModalTitle.textContent = i18n.globalExportModalTitle[currentLang];
@@ -3681,6 +3966,7 @@ function initializeUI() {
 
     // 初始化备份历史详情模式切换按钮
     initHistoryDetailModeToggle();
+    initBackupHistorySlimmingAndSafetyControls();
     initDetailArtifactToggle();
     initDetailModalActions();
 
@@ -10107,9 +10393,45 @@ function renderHistoryView() {
 
         const titleClass = (isRestore || isRevert) ? 'commit-title restore-title' : 'commit-title';
         const seqClass = (isRestore || isRevert) ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
+        const recordCapabilities = getHistoryRecordCapabilities(record);
 
         const exportAriaLabel = currentLang === 'zh_CN' ? '导出' : 'Export';
+        const preferredDetailArtifact = recordCapabilities.hasChangeData ? 'changes' : 'snapshot';
+        const detailActionLabel = preferredDetailArtifact === 'snapshot'
+            ? getHistoryDetailArtifactLabel('snapshot')
+            : modeText;
         const detailSearchAriaLabel = currentLang === 'zh_CN' ? '搜索' : 'Search';
+        const restoreAriaLabel = !recordCapabilities.hasSnapshotData && recordCapabilities.hasChangeData
+            ? (currentLang === 'zh_CN' ? '导入合并' : 'Import Merge')
+            : (currentLang === 'zh_CN' ? '恢复到此版本' : 'Restore to this version');
+        const restoreTooltipLabel = !recordCapabilities.hasSnapshotData && recordCapabilities.hasChangeData
+            ? (currentLang === 'zh_CN' ? '导入合并' : 'Import Merge')
+            : (currentLang === 'zh_CN' ? '恢复' : 'Restore');
+        const exportActionHtml = (recordCapabilities.canExportSnapshot || recordCapabilities.canExportChanges)
+            ? `<button class="action-btn record-export-open-btn" data-time="${record.time}" aria-label="${exportAriaLabel}">
+                <i class="fas fa-file-export"></i>
+                <span class="btn-tooltip">${exportAriaLabel}</span>
+            </button>`
+            : '';
+        const detailSearchActionHtml = recordCapabilities.canSearch
+            ? `<button class="action-btn detail-search-open-btn" data-time="${record.time}" data-artifact="${preferredDetailArtifact}" aria-label="${detailSearchAriaLabel}">
+                <i class="fas fa-search"></i>
+                <span class="btn-tooltip">${detailSearchAriaLabel}</span>
+            </button>`
+            : '';
+        const restoreActionHtml = recordCapabilities.canRestore
+            ? `<button class="action-btn restore-btn" data-time="${record.time}" data-display-title="${escapeHtml(displayTitle)}" aria-label="${restoreAriaLabel}">
+                <i class="fas fa-undo"></i>
+                <span class="btn-tooltip">${restoreTooltipLabel}</span>
+            </button>`
+            : '';
+        const detailActionHtml = recordCapabilities.canExpand
+            ? `<button class="action-btn detail-btn" data-time="${record.time}" data-artifact="${preferredDetailArtifact}">
+                <i class="fas fa-angle-right"></i>
+                <span class="btn-tooltip">${detailActionLabel}</span>
+            </button>`
+            : '';
+        const dataCapabilityBadge = buildHistoryDataCapabilityBadge(recordCapabilities, currentLang);
 
         return `
             <div class="history-record-group">
@@ -10126,22 +10448,10 @@ function renderHistoryView() {
                             </button>
                         </div>
                         <div class="commit-actions">
-                            <button class="action-btn record-export-open-btn" data-time="${record.time}" aria-label="${exportAriaLabel}">
-                                <i class="fas fa-file-export"></i>
-                                <span class="btn-tooltip">${exportAriaLabel}</span>
-                            </button>
-                            <button class="action-btn detail-search-open-btn" data-time="${record.time}" aria-label="${detailSearchAriaLabel}">
-                                <i class="fas fa-search"></i>
-                                <span class="btn-tooltip">${detailSearchAriaLabel}</span>
-                            </button>
-                            <button class="action-btn restore-btn" data-time="${record.time}" data-display-title="${escapeHtml(displayTitle)}" aria-label="${currentLang === 'zh_CN' ? '恢复到此版本' : 'Restore to this version'}">
-                                <i class="fas fa-undo"></i>
-                                <span class="btn-tooltip">${currentLang === 'zh_CN' ? '恢复' : 'Restore'}</span>
-                            </button>
-                            <button class="action-btn detail-btn" data-time="${record.time}">
-                                <i class="fas fa-angle-right"></i>
-                                <span class="btn-tooltip">${modeText}</span>
-                            </button>
+                            ${exportActionHtml}
+                            ${detailSearchActionHtml}
+                            ${restoreActionHtml}
+                            ${detailActionHtml}
                         </div>
                     </div>
                     <div class="commit-meta">
@@ -10157,6 +10467,7 @@ function renderHistoryView() {
                             ${typeBadge}
                             ${operationStrategyBadge}
                             ${strategyBadge}
+                            ${dataCapabilityBadge}
                             <span class="commit-badge direction" title="${escapeHtml(directionText)}" aria-label="${escapeHtml(directionText)}">
                                 ${directionIcon}
                             </span>
@@ -10175,7 +10486,7 @@ function renderHistoryView() {
             e.preventDefault();
             const recordTime = btn.dataset.time;
             const record = syncHistoryPageRecords.find(r => r.time === recordTime);
-            if (record) showDetailModal(record);
+            if (record) showDetailModal(record, { artifact: btn.dataset.artifact || '' });
         });
     });
 
@@ -10198,7 +10509,7 @@ function renderHistoryView() {
             e.preventDefault();
             const recordTime = btn.dataset.time;
             const record = syncHistoryPageRecords.find(r => r.time === recordTime);
-            if (record) showDetailModal(record, { openDetailSearch: true });
+            if (record) showDetailModal(record, { openDetailSearch: true, artifact: btn.dataset.artifact || '' });
         });
     });
 
@@ -10210,8 +10521,10 @@ function renderHistoryView() {
             const recordTime = btn.dataset.time;
             const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (!record) return;
+            const capabilities = getHistoryRecordCapabilities(record);
             showHistoryExportChangesModal(record.time, {
                 preferredMode: getRecordDetailMode(record.time),
+                preferredArtifact: capabilities.hasChangeData ? 'changes' : 'snapshot',
                 useDomTreeContainer: false,
                 treeContainer: null
             });
@@ -10237,9 +10550,9 @@ function renderHistoryView() {
 
             const recordTime = item.dataset.recordTime;
             const record = syncHistoryPageRecords.find(r => r.time === recordTime);
-            if (record) showDetailModal(record);
+            if (record && getHistoryRecordCapabilities(record).canExpand) showDetailModal(record);
         });
-    });
+	    });
 }
 
 function initHistoryPagination() {
@@ -10462,6 +10775,23 @@ function getSelectedRestoreStrategy() {
     return normalizeRestoreStrategyValue(value);
 }
 
+function setSelectedRestoreStrategy(strategy) {
+    const normalized = normalizeRestoreStrategyValue(strategy);
+    const radioAuto = document.getElementById('restoreStrategyAuto');
+    const radioOverwrite = document.getElementById('restoreStrategyOverwrite');
+    const radioMerge = document.getElementById('restoreStrategyMerge');
+    const radioPatch = document.getElementById('restoreStrategyPatch');
+    if (radioAuto) radioAuto.checked = normalized === 'auto';
+    if (radioOverwrite) radioOverwrite.checked = normalized === 'overwrite';
+    if (radioMerge) radioMerge.checked = normalized === 'merge';
+    if (radioPatch) radioPatch.checked = normalized === 'patch';
+}
+
+function isChangeOnlyRestoreRecord(record = currentRestoreRecord) {
+    const capabilities = getHistoryRecordCapabilities(record || {});
+    return capabilities.hasChangeData === true && capabilities.hasSnapshotData !== true;
+}
+
 function normalizeRestoreMergeViewMode(mode) {
     const value = String(mode || '').toLowerCase();
     if (value === 'detailed') return 'detailed';
@@ -10481,39 +10811,14 @@ function getRestoreMergeViewModeAvailability(record = currentRestoreRecord) {
         return { supported: false, simple: false, detailed: false, collection: false };
     }
 
-    const recordTime = String(record.time || '');
-    if (!recordTime) {
+    const capabilities = getHistoryRecordCapabilities(record);
+    if (!capabilities.hasChangeData) {
         return { supported: false, simple: false, detailed: false, collection: false };
     }
 
-    if (record.isFirstBackup === true) {
-        return { supported: true, simple: true, detailed: true, collection: true };
+    if (!capabilities.hasSnapshotData) {
+        return { supported: true, simple: false, detailed: false, collection: true };
     }
-
-    if (record.hasChangeData === true || String(record.changeDataKey || '').trim() !== '') {
-        return { supported: true, simple: true, detailed: true, collection: true };
-    }
-
-    const list = Array.isArray(syncHistory) ? syncHistory : [];
-    const index = list.findIndex(item => String(item?.time || '') === recordTime);
-    if (index < 0) {
-        return { supported: true, simple: true, detailed: true, collection: true };
-    }
-
-    let hasPreviousWithData = false;
-    for (let i = index - 1; i >= 0; i--) {
-        const prev = list[i];
-        if (!prev || prev.status !== 'success') continue;
-        if (prev.bookmarkTree || prev.hasData) {
-            hasPreviousWithData = true;
-            break;
-        }
-    }
-
-    if (!hasPreviousWithData) {
-        return { supported: false, simple: false, detailed: false, collection: false };
-    }
-
     return { supported: true, simple: true, detailed: true, collection: true };
 }
 
@@ -10559,6 +10864,9 @@ function updateRestoreMergeViewModeUi(strategy = getSelectedRestoreStrategy()) {
     if (simpleRadio) simpleRadio.disabled = simpleDisabled;
     if (detailedRadio) detailedRadio.disabled = detailedDisabled;
     if (collectionRadio) collectionRadio.disabled = collectionDisabled;
+    if (simpleWrap) simpleWrap.style.display = shouldShow && availability.simple ? '' : 'none';
+    if (detailedWrap) detailedWrap.style.display = shouldShow && availability.detailed ? '' : 'none';
+    if (collectionWrap) collectionWrap.style.display = shouldShow && availability.collection ? '' : 'none';
     if (group) group.classList.toggle('disabled', disabled);
 
     if (disabled) return;
@@ -11176,6 +11484,10 @@ function lockRestoreStrategy(lock) {
     const mergeModeSimpleRadio = document.getElementById('restoreMergeViewModeSimple');
     const mergeModeDetailedRadio = document.getElementById('restoreMergeViewModeDetailed');
     const mergeModeCollectionRadio = document.getElementById('restoreMergeViewModeCollection');
+    const forceMergeOnly = !lock && isChangeOnlyRestoreRecord(currentRestoreRecord);
+    if (forceMergeOnly) {
+        setSelectedRestoreStrategy('merge');
+    }
     if (strategyGroup) {
         if (lock) strategyGroup.classList.add('disabled');
         else strategyGroup.classList.remove('disabled');
@@ -11184,11 +11496,11 @@ function lockRestoreStrategy(lock) {
         if (lock) strategyMergeGroup.classList.add('disabled');
         else strategyMergeGroup.classList.remove('disabled');
     }
-    if (strategyAutoRadio) strategyAutoRadio.disabled = !!lock;
-    if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = !!lock;
+    if (strategyAutoRadio) strategyAutoRadio.disabled = !!lock || forceMergeOnly;
+    if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = !!lock || forceMergeOnly;
     if (strategyMergeRadio) strategyMergeRadio.disabled = !!lock;
-    if (strategyPatchRadio) strategyPatchRadio.disabled = !!lock;
-    if (thresholdInput) thresholdInput.disabled = !!lock;
+    if (strategyPatchRadio) strategyPatchRadio.disabled = !!lock || forceMergeOnly;
+    if (thresholdInput) thresholdInput.disabled = !!lock || forceMergeOnly;
 
     if (lock) {
         if (mergeModeGroup) mergeModeGroup.classList.add('disabled');
@@ -12602,7 +12914,10 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         };
     }
 
-    await ensureRecordBookmarkTree(record);
+    const recordCapabilities = getHistoryRecordCapabilities(record);
+    if (recordCapabilities.hasSnapshotData) {
+        await ensureRecordBookmarkTree(record);
+    }
     const currentTree = await browserAPI.bookmarks.getTree();
 
     const normalizedRequestedStrategy = normalizeRestoreStrategyValue(strategy);
@@ -12656,6 +12971,12 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
     if (normalizedRequestedStrategy === 'merge') {
         const availability = getRestoreMergeViewModeAvailability(record);
         mergeViewMode = getSelectedRestoreMergeViewMode();
+        if (!availability[mergeViewMode]) {
+            mergeViewMode = availability.simple
+                ? 'simple'
+                : (availability.detailed ? 'detailed' : (availability.collection ? 'collection' : mergeViewMode));
+            setSelectedRestoreMergeViewMode(mergeViewMode);
+        }
         if (availability.supported) {
             try {
                 const processed = await getProcessedTreeForRecord(record, mergeViewMode);
@@ -12829,17 +13150,23 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
             : (requestedStrategy === 'overwrite'
                 ? 'overwrite'
                 : (requestedStrategy === 'merge' ? 'merge' : 'overwrite')));
-    const selectedMergeMode = normalizedStrategy === 'merge' ? getSelectedRestoreMergeViewMode() : null;
-    const normalizedSelectedMergeMode = normalizeRestoreMergeViewMode(selectedMergeMode) || 'simple';
-    const mergeModeLabel = selectedMergeMode ? getRestoreMergeViewModeLabel(selectedMergeMode, isZh) : null;
+    let selectedMergeMode = normalizedStrategy === 'merge' ? getSelectedRestoreMergeViewMode() : null;
+    let normalizedSelectedMergeMode = normalizeRestoreMergeViewMode(selectedMergeMode) || 'simple';
 
     let previewSource = 'snapshot';
     if (normalizedStrategy === 'merge') {
         const mergeAvailability = getRestoreMergeViewModeAvailability(currentRestoreRecord);
+        if (!mergeAvailability[normalizedSelectedMergeMode]) {
+            normalizedSelectedMergeMode = mergeAvailability.simple
+                ? 'simple'
+                : (mergeAvailability.detailed ? 'detailed' : (mergeAvailability.collection ? 'collection' : normalizedSelectedMergeMode));
+            selectedMergeMode = normalizedSelectedMergeMode;
+        }
         if (mergeAvailability.supported) {
             previewSource = 'changes';
         }
     }
+    const mergeModeLabel = selectedMergeMode ? getRestoreMergeViewModeLabel(selectedMergeMode, isZh) : null;
 
     const resolvePreviewMeta = (sourceType = previewSource) => {
         if (normalizedStrategy === 'overwrite') {
@@ -13179,15 +13506,23 @@ async function estimateRestoreMergeProjectedCounts(record, currentCounts, mergeV
     const safeCurrentCounts = normalizeRestoreCountsForDisplay(currentCounts);
     if (!record) return safeCurrentCounts;
 
-    await ensureRecordBookmarkTree(record);
+    const capabilities = getHistoryRecordCapabilities(record);
+    if (capabilities.hasSnapshotData) {
+        await ensureRecordBookmarkTree(record);
+    }
     let treeToImport = record.bookmarkTree;
 
     const availability = getRestoreMergeViewModeAvailability(record);
     if (availability.supported) {
         try {
-            const preferredMode = normalizeRestoreMergeViewMode(mergeViewMode)
+            let preferredMode = normalizeRestoreMergeViewMode(mergeViewMode)
                 || normalizeRestoreMergeViewMode(getRecordDetailMode(record.time))
                 || 'simple';
+            if (!availability[preferredMode]) {
+                preferredMode = availability.simple
+                    ? 'simple'
+                    : (availability.detailed ? 'detailed' : (availability.collection ? 'collection' : preferredMode));
+            }
             const processed = await getProcessedTreeForRecord(record, preferredMode);
             if (processed && Array.isArray(processed.children)) {
                 treeToImport = { title: 'root', children: processed.children };
@@ -13505,6 +13840,10 @@ async function showRestoreModal(record, displayTitle) {
     updateRestoreModalI18n();
 
     currentRestoreRecord = record;
+    const recordCapabilities = getHistoryRecordCapabilities(record);
+    if (!recordCapabilities.hasSnapshotData && recordCapabilities.hasChangeData) {
+        setSelectedRestoreStrategy('merge');
+    }
     const mergeAvailability = getRestoreMergeViewModeAvailability(record);
     const savedMode = normalizeRestoreMergeViewMode(getRecordDetailMode(record.time));
     const defaultMergeMode = savedMode && mergeAvailability[savedMode]
@@ -13729,9 +14068,24 @@ function initRestoreModalEvents() {
             let targetTree = preflight?.targetTree;
             let changeMap = preflight?.changeMap;
             if (!currentTree || !targetTree) {
-                await ensureRecordBookmarkTree(currentRestoreRecord);
                 currentTree = await browserAPI.bookmarks.getTree();
-                targetTree = currentRestoreRecord.bookmarkTree;
+                const recordCapabilities = getHistoryRecordCapabilities(currentRestoreRecord);
+                if (strategy === 'merge' && recordCapabilities.hasChangeData) {
+                    const availability = getRestoreMergeViewModeAvailability(currentRestoreRecord);
+                    let selectedMode = getSelectedRestoreMergeViewMode();
+                    if (!availability[selectedMode]) {
+                        selectedMode = availability.simple
+                            ? 'simple'
+                            : (availability.detailed ? 'detailed' : (availability.collection ? 'collection' : selectedMode));
+                    }
+                    const processed = await getProcessedTreeForRecord(currentRestoreRecord, selectedMode);
+                    targetTree = processed && Array.isArray(processed.children)
+                        ? { title: 'root', children: processed.children }
+                        : null;
+                } else {
+                    await ensureRecordBookmarkTree(currentRestoreRecord);
+                    targetTree = currentRestoreRecord.bookmarkTree;
+                }
             }
             await switchToRestorePreview(currentTree, targetTree, changeMap, {
                 strategy,
@@ -13746,6 +14100,11 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
     if (!currentRestoreRecord) return;
 
     strategy = normalizeRestoreStrategyValue(strategy);
+    const recordCapabilities = getHistoryRecordCapabilities(currentRestoreRecord);
+    if (!recordCapabilities.hasSnapshotData && recordCapabilities.hasChangeData) {
+        strategy = 'merge';
+        setSelectedRestoreStrategy('merge');
+    }
 
     const recordTime = String(currentRestoreRecord.time || '');
     const thresholdPercent = getCurrentRestorePatchThresholdPercent();
@@ -13845,9 +14204,11 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
 
     restoreGeneralPreflight = null;
 
-    await ensureRecordBookmarkTree(currentRestoreRecord);
-    const bookmarkTree = currentRestoreRecord.bookmarkTree;
-    if (!bookmarkTree) {
+    if (recordCapabilities.hasSnapshotData) {
+        await ensureRecordBookmarkTree(currentRestoreRecord);
+    }
+    const bookmarkTree = currentRestoreRecord.bookmarkTree || null;
+    if (!bookmarkTree && !(strategy === 'merge' && recordCapabilities.hasChangeData)) {
         showToast(currentLang === 'zh_CN' ? '此记录不包含书签树数据' : 'This record does not contain bookmark tree data');
         return;
     }
@@ -14294,12 +14655,6 @@ async function uploadHistoryMergeImportTreeToken(mergeImportTree) {
 async function executeMergeRestore(bookmarkTree, options = {}) {
     const isZh = currentLang === 'zh_CN';
 
-    assertBookmarkTreeContent(bookmarkTree, {
-        message: isZh
-            ? '目标书签树为空，已阻止导入合并。'
-            : 'Target bookmark tree is empty. Import merge blocked.'
-    });
-
     setRestoreProgress(10, isZh ? '正在创建导入文件夹...' : 'Creating import folder...');
 
     const [root] = await browserAPI.bookmarks.getTree();
@@ -14375,7 +14730,12 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
         return savedMode || 'simple';
     };
 
-    const viewMode = resolveViewMode();
+    let viewMode = resolveViewMode();
+    if (useChangesView && !mergeAvailability[viewMode]) {
+        viewMode = mergeAvailability.simple
+            ? 'simple'
+            : (mergeAvailability.detailed ? 'detailed' : (mergeAvailability.collection ? 'collection' : viewMode));
+    }
 
     const importProgressText = useChangesView
         ? (isZh ? '正在导入变化视图（简略/详细/集合）...' : 'Importing changes view (Simple/Detailed/Collection)...')
@@ -14400,6 +14760,12 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
     } else {
         treeToImport = bookmarkTree;
     }
+
+    assertBookmarkTreeContent(treeToImport, {
+        message: isZh
+            ? '目标书签树为空，已阻止导入合并。'
+            : 'Target bookmark tree is empty. Import merge blocked.'
+    });
 
     let mergeImportTreeToken = '';
     try {
@@ -18762,26 +19128,54 @@ function getHistoryDetailSearchPlaceholder(artifact = currentDetailArtifact) {
         : (isZh ? '搜索书签 / 文件夹 / URL / 域名 / 子域名变化...' : 'Search bookmark / folder / URL / domain / subdomain changes...');
 }
 
+function resolveHistoryDetailArtifactForRecord(record, requestedArtifact = '') {
+    const capabilities = getHistoryRecordCapabilities(record);
+    const requested = requestedArtifact ? normalizeHistoryDetailArtifact(requestedArtifact) : '';
+    if (requested === 'changes' && capabilities.hasChangeData) return 'changes';
+    if (requested === 'snapshot' && capabilities.hasSnapshotData) return 'snapshot';
+    if (capabilities.hasChangeData) return 'changes';
+    if (capabilities.hasSnapshotData) return 'snapshot';
+    return 'changes';
+}
+
+function getDetailModeAvailabilityForRecord(record, artifact = currentDetailArtifact) {
+    if (normalizeHistoryDetailArtifact(artifact) !== 'changes') {
+        return { supported: false, simple: false, detailed: false, collection: false };
+    }
+    return getRestoreMergeViewModeAvailability(record);
+}
+
 function updateDetailArtifactToggleUI(artifact = currentDetailArtifact) {
     const normalized = normalizeHistoryDetailArtifact(artifact);
     const changesBtn = document.getElementById('detailArtifactChangesBtn');
     const snapshotBtn = document.getElementById('detailArtifactSnapshotBtn');
+    const toggle = document.getElementById('detailArtifactToggle');
     const changesText = document.getElementById('detailArtifactChangesText');
     const snapshotText = document.getElementById('detailArtifactSnapshotText');
     const modalTitle = document.getElementById('modalTitle');
+    const capabilities = getHistoryRecordCapabilities(currentDetailRecord || {});
+    const canShowChanges = capabilities.hasChangeData === true;
+    const canShowSnapshot = capabilities.hasSnapshotData === true;
 
     if (changesText) changesText.textContent = getHistoryDetailArtifactLabel('changes');
     if (snapshotText) snapshotText.textContent = getHistoryDetailArtifactLabel('snapshot');
     if (modalTitle) modalTitle.textContent = getHistoryDetailModalTitle(normalized);
 
+    if (toggle) {
+        toggle.style.display = canShowChanges && canShowSnapshot ? 'inline-flex' : 'none';
+    }
     if (changesBtn) {
         const active = normalized === 'changes';
+        changesBtn.style.display = canShowChanges ? '' : 'none';
+        changesBtn.disabled = !canShowChanges;
         changesBtn.classList.toggle('active', active);
         changesBtn.setAttribute('aria-selected', active ? 'true' : 'false');
         changesBtn.title = getHistoryDetailArtifactLabel('changes');
     }
     if (snapshotBtn) {
         const active = normalized === 'snapshot';
+        snapshotBtn.style.display = canShowSnapshot ? '' : 'none';
+        snapshotBtn.disabled = !canShowSnapshot;
         snapshotBtn.classList.toggle('active', active);
         snapshotBtn.setAttribute('aria-selected', active ? 'true' : 'false');
         snapshotBtn.title = getHistoryDetailArtifactLabel('snapshot');
@@ -18803,6 +19197,9 @@ function initDetailArtifactToggle() {
         const button = event.target?.closest?.('.detail-artifact-toggle-btn[data-artifact]');
         if (!button || !toggle.contains(button)) return;
         const nextArtifact = normalizeHistoryDetailArtifact(button.dataset.artifact);
+        const capabilities = getHistoryRecordCapabilities(currentDetailRecord || {});
+        if (nextArtifact === 'changes' && !capabilities.hasChangeData) return;
+        if (nextArtifact === 'snapshot' && !capabilities.hasSnapshotData) return;
         if (normalizeHistoryDetailArtifact(currentDetailArtifact) === nextArtifact) return;
         currentDetailArtifact = nextArtifact;
         updateDetailArtifactToggleUI(nextArtifact);
@@ -18820,7 +19217,25 @@ function updateDetailModalToggleUI(mode) {
     const collectionBtn = document.getElementById('historyDetailModeCollectionModal');
     if (!simpleBtn || !detailedBtn || !collectionBtn) return;
 
-    const normalized = normalizeHistoryDetailMode(mode);
+    const availability = getDetailModeAvailabilityForRecord(currentDetailRecord, currentDetailArtifact);
+    let normalized = normalizeHistoryDetailMode(mode);
+    const selectedDisabled = (normalized === 'simple' && !availability.simple)
+        || (normalized === 'detailed' && !availability.detailed)
+        || (normalized === 'collection' && !availability.collection);
+    if (selectedDisabled) {
+        normalized = availability.simple ? 'simple' : (availability.detailed ? 'detailed' : (availability.collection ? 'collection' : normalized));
+        if (currentDetailRecordTime && normalized) {
+            currentDetailRecordMode = normalized;
+            setRecordDetailMode(currentDetailRecordTime, normalized);
+        }
+    }
+
+    simpleBtn.style.display = availability.simple ? '' : 'none';
+    detailedBtn.style.display = availability.detailed ? '' : 'none';
+    collectionBtn.style.display = availability.collection ? '' : 'none';
+    simpleBtn.disabled = !availability.simple;
+    detailedBtn.disabled = !availability.detailed;
+    collectionBtn.disabled = !availability.collection;
     simpleBtn.classList.toggle('active', normalized === 'simple');
     detailedBtn.classList.toggle('active', normalized === 'detailed');
     collectionBtn.classList.toggle('active', normalized === 'collection');
@@ -18847,6 +19262,8 @@ function initDetailModalActions() {
         button.addEventListener('click', () => {
             if (!currentDetailRecordTime) return;
             const normalizedMode = normalizeHistoryDetailMode(targetMode);
+            const availability = getDetailModeAvailabilityForRecord(currentDetailRecord, currentDetailArtifact);
+            if (!availability[normalizedMode]) return;
             if (normalizeHistoryDetailMode(currentDetailRecordMode) === normalizedMode) return;
             currentDetailRecordMode = normalizedMode;
             setRecordDetailMode(currentDetailRecordTime, normalizedMode);
@@ -19197,7 +19614,14 @@ function showDetailModal(record, options = {}) {
     currentDetailRecordTime = record.time;
     currentDetailRecord = record;
     currentDetailRecordMode = getRecordDetailMode(record.time);
-    currentDetailArtifact = normalizeHistoryDetailArtifact(options?.artifact || 'changes');
+    currentDetailArtifact = resolveHistoryDetailArtifactForRecord(record, options?.artifact || '');
+    const modeAvailability = getDetailModeAvailabilityForRecord(record, currentDetailArtifact);
+    if (currentDetailArtifact === 'changes' && !modeAvailability[currentDetailRecordMode]) {
+        currentDetailRecordMode = modeAvailability.simple
+            ? 'simple'
+            : (modeAvailability.detailed ? 'detailed' : (modeAvailability.collection ? 'collection' : currentDetailRecordMode));
+        setRecordDetailMode(record.time, currentDetailRecordMode);
+    }
 
     updateDetailModalToggleUI(currentDetailRecordMode);
     updateDetailArtifactToggleUI(currentDetailArtifact);
@@ -19304,6 +19728,89 @@ function initHistoryDetailModeToggle() {
     simpleBtn.addEventListener('click', () => applyMode('simple'));
     detailedBtn.addEventListener('click', () => applyMode('detailed'));
     collectionBtn.addEventListener('click', () => applyMode('collection'));
+}
+
+function initBackupHistorySlimmingAndSafetyControls() {
+    const settingsBtn = document.getElementById('historySlimmingSettingsBtn');
+    const safetyBtn = document.getElementById('historySafetyCheckpointBtn');
+    const settingsModal = document.getElementById('historySlimmingSettingsModal');
+    const safetyModal = document.getElementById('historySafetyCheckpointModal');
+
+    if (settingsBtn && settingsModal && !settingsBtn.hasAttribute('data-history-slimming-settings-bound')) {
+        settingsBtn.addEventListener('click', openHistorySlimmingSettingsModal);
+        settingsBtn.setAttribute('data-history-slimming-settings-bound', 'true');
+    }
+
+    if (safetyBtn && safetyModal && !safetyBtn.hasAttribute('data-history-safety-bound')) {
+        safetyBtn.addEventListener('click', openHistorySafetyCheckpointModal);
+        safetyBtn.setAttribute('data-history-safety-bound', 'true');
+    }
+
+    if (settingsModal && !settingsModal.hasAttribute('data-history-slimming-modal-bound')) {
+        const closeBtn = document.getElementById('historySlimmingSettingsModalClose');
+        const cancelBtn = document.getElementById('historySlimmingSettingsCancelBtn');
+        const saveBtn = document.getElementById('historySlimmingSettingsSaveBtn');
+        const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
+        const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
+
+        const commitSettings = async () => {
+            const response = await saveHistoryBackupHistorySlimmingSettings({
+                saveSnapshotData: snapshotCheckbox ? snapshotCheckbox.checked : historyBackupHistorySlimmingSettings.saveSnapshotData,
+                saveChangeData: changeCheckbox ? changeCheckbox.checked : historyBackupHistorySlimmingSettings.saveChangeData
+            });
+            if (response && response.success) {
+                closeHistorySlimmingSettingsModal();
+            }
+        };
+
+        if (closeBtn) closeBtn.addEventListener('click', closeHistorySlimmingSettingsModal);
+        if (cancelBtn) cancelBtn.addEventListener('click', closeHistorySlimmingSettingsModal);
+        if (saveBtn) saveBtn.addEventListener('click', commitSettings);
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) closeHistorySlimmingSettingsModal();
+        });
+        settingsModal.setAttribute('data-history-slimming-modal-bound', 'true');
+    }
+
+    if (safetyModal && !safetyModal.hasAttribute('data-history-safety-modal-bound')) {
+        const closeBtn = document.getElementById('historySafetyCheckpointModalClose');
+        const helpBtn = document.getElementById('historySafetyCheckpointHelpBtn');
+        const helpPanel = document.getElementById('historySafetyCheckpointHelpPanel');
+        const closeFooterBtn = document.getElementById('historySafetyCheckpointCloseBtn');
+        const exportBtn = document.getElementById('historySafetyCheckpointExportBtn');
+        const exportAllInput = document.getElementById('historySafetyExportAll');
+        const exportItemInputs = Array.from(document.querySelectorAll('.history-safety-export-item'));
+
+        if (closeBtn) closeBtn.addEventListener('click', closeHistorySafetyCheckpointModal);
+        if (helpBtn && helpPanel) {
+            helpBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const isOpen = helpPanel.style.display !== 'none';
+                helpPanel.style.display = isOpen ? 'none' : 'block';
+                helpBtn.classList.toggle('active', !isOpen);
+            });
+        }
+        if (closeFooterBtn) closeFooterBtn.addEventListener('click', closeHistorySafetyCheckpointModal);
+        if (exportBtn) exportBtn.addEventListener('click', exportLatestSafetyCheckpointPackage);
+        if (exportAllInput) {
+            exportAllInput.addEventListener('change', () => {
+                exportItemInputs.forEach((input) => {
+                    input.checked = exportAllInput.checked;
+                });
+                syncHistorySafetyExportSelectionState();
+            });
+        }
+        exportItemInputs.forEach((input) => {
+            input.addEventListener('change', syncHistorySafetyExportSelectionState);
+        });
+        safetyModal.addEventListener('click', (e) => {
+            if (e.target === safetyModal) closeHistorySafetyCheckpointModal();
+        });
+        safetyModal.setAttribute('data-history-safety-modal-bound', 'true');
+    }
+
+    syncHistorySlimmingSettingsModalUi();
+    renderHistorySafetyCheckpointModal();
 }
 
 // 生成详情内容（异步）
@@ -19654,6 +20161,10 @@ async function generateSnapshotDetailTree(record) {
 // 生成树形视图的变化详情
 async function generateTreeBasedChanges(record, mode) {
     const detailMode = normalizeHistoryDetailMode(mode);
+    const capabilities = getHistoryRecordCapabilities(record);
+    if (!capabilities.hasChangeData) {
+        return null;
+    }
     const cachedDetail = getDetailChangeCache(record.time, detailMode);
     if (cachedDetail && cachedDetail.treeToRender && cachedDetail.changeMap instanceof Map) {
         if (detailMode === 'collection') {
@@ -19676,11 +20187,6 @@ async function generateTreeBasedChanges(record, mode) {
         }
 
         return generateHistoryTreeHtml(cachedDetail.treeToRender, cachedDetail.changeMap, detailMode, record.time);
-    }
-
-    await ensureRecordBookmarkTree(record);
-    if (!record.bookmarkTree) {
-        return null;
     }
 
     const prepared = await prepareDataForExport(record);
@@ -19714,6 +20220,10 @@ async function generateTreeBasedChanges(record, mode) {
             recordTime: record.time,
             lazyKey: `${record.time}:collection`
         });
+    }
+
+    if (!treeToRender) {
+        return null;
     }
 
     setDetailChangeCache(record.time, detailMode, {
@@ -21904,6 +22414,507 @@ function showToast(message, type = 'info', duration = 2000) {
     showHistoryPageToast(message, { type, duration });
 }
 
+function formatHistorySafetyCheckpointDate(value) {
+    const date = new Date(value || '');
+    if (!Number.isFinite(date.getTime())) {
+        return String(value || '');
+    }
+    try {
+        return date.toLocaleString(currentLang === 'en' ? 'en-US' : 'zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (_) {
+        return date.toISOString();
+    }
+}
+
+function getHistorySafetyCheckpointDisplayValue(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    return String(value);
+}
+
+function getHistorySafetyCheckpointOperationLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const labels = {
+        restore: { zh_CN: '恢复', en: 'Restore' },
+        revert: { zh_CN: '撤销', en: 'Revert' },
+        merge: { zh_CN: '合并导入', en: 'Import Merge' }
+    };
+    return labels[normalized]?.[currentLang] || getHistorySafetyCheckpointDisplayValue(value);
+}
+
+function getHistorySafetyCheckpointSourceLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const labels = {
+        background: { zh_CN: '后台', en: 'Background' },
+        popup: { zh_CN: '主界面', en: 'Main UI' },
+        history: { zh_CN: '历史页面', en: 'History Page' },
+        html: { zh_CN: '历史页面', en: 'History Page' },
+        restore: { zh_CN: '恢复', en: 'Restore' },
+        revert: { zh_CN: '撤销', en: 'Revert' }
+    };
+    return labels[normalized]?.[currentLang] || getHistorySafetyCheckpointDisplayValue(value);
+}
+
+function getHistorySafetyCheckpointSourceTypeLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const labels = {
+        last_backup: { zh_CN: '上次备份', en: 'Last backup' },
+        history_record: { zh_CN: '备份历史记录', en: 'Backup history record' },
+        changes_artifact: { zh_CN: '变化数据', en: 'Change artifact' },
+        snapshot: { zh_CN: '快照数据', en: 'Snapshot data' },
+        changes: { zh_CN: '变化数据', en: 'Change data' },
+        html: { zh_CN: 'HTML 文件', en: 'HTML file' },
+        json: { zh_CN: 'JSON 文件', en: 'JSON file' },
+        zip: { zh_CN: 'ZIP 包', en: 'ZIP package' },
+        webdav: { zh_CN: 'WebDAV', en: 'WebDAV' },
+        github: { zh_CN: 'GitHub', en: 'GitHub' }
+    };
+    return labels[normalized]?.[currentLang] || String(value || '').trim();
+}
+
+function getHistorySafetyCheckpointStrategyLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const labels = {
+        patch: { zh_CN: '补丁写入', en: 'Patch' },
+        overwrite: { zh_CN: '覆盖写入', en: 'Overwrite' },
+        merge: { zh_CN: '合并导入', en: 'Import Merge' },
+        auto: { zh_CN: '自动选择', en: 'Auto' }
+    };
+    return labels[normalized]?.[currentLang] || getHistorySafetyCheckpointDisplayValue(value);
+}
+
+function formatHistorySafetySnapshotCounts(checkpoint, prefix) {
+    if (!checkpoint || typeof checkpoint !== 'object') return '-';
+    if (prefix === 'current') {
+        if (checkpoint.currentSnapshotAvailable === false) {
+            return currentLang === 'zh_CN' ? '实时读取失败' : 'Unable to read live browser';
+        }
+        if (!Object.prototype.hasOwnProperty.call(checkpoint, 'currentNodeCount')) {
+            return currentLang === 'zh_CN' ? '导出时即时生成' : 'Generated at export time';
+        }
+    }
+    const nodeCount = Number(checkpoint[`${prefix}NodeCount`]) || 0;
+    const bookmarkCount = Number(checkpoint[`${prefix}BookmarkCount`]) || 0;
+    const folderCount = Number(checkpoint[`${prefix}FolderCount`]) || 0;
+    if (currentLang === 'zh_CN') {
+        return `节点 ${nodeCount} · 书签 ${bookmarkCount} · 文件夹 ${folderCount}`;
+    }
+    return `Nodes ${nodeCount} · Bookmarks ${bookmarkCount} · Folders ${folderCount}`;
+}
+
+function escapeHistorySafetyAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatHistorySafetyCheckpointDiffSummary(summary) {
+    if (!summary || typeof summary !== 'object') return '';
+    const toCount = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+    };
+    const bookmarkAdded = toCount(summary.bookmarkAdded);
+    const bookmarkDeleted = toCount(summary.bookmarkDeleted);
+    const folderAdded = toCount(summary.folderAdded);
+    const folderDeleted = toCount(summary.folderDeleted);
+    const movedCount = toCount(summary.movedCount || (toCount(summary.movedBookmarkCount) + toCount(summary.movedFolderCount)));
+    const modifiedCount = toCount(summary.modifiedCount || (toCount(summary.modifiedBookmarkCount) + toCount(summary.modifiedFolderCount)));
+    if (!(bookmarkAdded || bookmarkDeleted || folderAdded || folderDeleted || movedCount || modifiedCount)) {
+        return '';
+    }
+    const isZh = currentLang === 'zh_CN';
+    const parts = [];
+    if (bookmarkAdded || bookmarkDeleted) {
+        parts.push(`${isZh ? '书签' : 'Bookmarks'} ${bookmarkAdded ? `+${bookmarkAdded}` : ''}${bookmarkAdded && bookmarkDeleted ? '/' : ''}${bookmarkDeleted ? `-${bookmarkDeleted}` : ''}`);
+    }
+    if (folderAdded || folderDeleted) {
+        parts.push(`${isZh ? '文件夹' : 'Folders'} ${folderAdded ? `+${folderAdded}` : ''}${folderAdded && folderDeleted ? '/' : ''}${folderDeleted ? `-${folderDeleted}` : ''}`);
+    }
+    if (movedCount) parts.push(`${isZh ? '移动' : 'Moved'} ${movedCount}`);
+    if (modifiedCount) parts.push(`${isZh ? '修改' : 'Modified'} ${modifiedCount}`);
+    return parts.join(' · ');
+}
+
+function formatHistorySafetyCheckpointMergeMode(checkpoint) {
+    if (!checkpoint || typeof checkpoint !== 'object') return '';
+    const isZh = currentLang === 'zh_CN';
+    const kind = String(checkpoint.mergeImportKind || '').trim().toLowerCase();
+    const viewMode = String(checkpoint.mergeImportViewMode || '').trim().toLowerCase();
+    if (!kind && !viewMode) return '';
+    const kindLabel = kind === 'changes'
+        ? (isZh ? '变化视图' : 'Changes view')
+        : (kind === 'snapshot' ? (isZh ? '快照' : 'Snapshot') : kind);
+    const viewLabels = {
+        simple: isZh ? '简略' : 'Simple',
+        detailed: isZh ? '详细' : 'Detailed',
+        collection: isZh ? '集合' : 'Collection'
+    };
+    const viewLabel = viewLabels[viewMode] || viewMode;
+    return [kindLabel, viewLabel].filter(Boolean).join(' · ');
+}
+
+function buildHistorySafetySnapshotInfoButton(info) {
+    const text = String(info || '').trim();
+    if (!text) return '';
+    const label = currentLang === 'zh_CN' ? '快照说明' : 'Snapshot info';
+    return `
+        <button class="backup-history-snapshot-info-btn" type="button" aria-label="${escapeHistorySafetyAttr(label)}">
+            <i class="fas fa-info"></i>
+        </button>
+        <div class="backup-history-snapshot-info-tooltip">${escapeHtml(text)}</div>
+    `;
+}
+
+function buildHistorySafetySnapshotDetailRows(rows = []) {
+    const normalizedRows = rows
+        .map((row) => Array.isArray(row) ? row : [])
+        .map(([label, value]) => [String(label || '').trim(), String(value || '').trim()])
+        .filter(([label, value]) => label && value);
+    if (!normalizedRows.length) return '';
+    return `
+        <div class="backup-history-snapshot-detail-list">
+            ${normalizedRows.map(([label, value]) => `
+                <div class="backup-history-snapshot-detail-row">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildHistorySafetyCheckpointHelpHtml() {
+    if (currentLang !== 'zh_CN') {
+        return `
+            <div class="backup-history-safety-help-title">What Temporary Safety Snapshot Is</div>
+            <ul class="backup-history-safety-help-list">
+                <li>It is a fallback snapshot created before high-risk write operations, focused on data-first recovery.</li>
+                <li>It is triggered by restore/revert flows that enter the recovery transaction layer, mainly <span class="backup-history-safety-help-highlight">overwrite restore, patch restore, overwrite revert, and patch revert</span> from the main UI or history page.</li>
+                <li>Import merge is additive and keeps existing bookmarks. It may use internal transaction data for interruption cleanup, but it does not replace the displayed latest temporary safety snapshot.</li>
+                <li>It keeps only the latest operation's before-operation browser snapshot and target-state snapshot; the current browser snapshot is generated only when you export it.</li>
+                <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is only a last-resort fallback.</li>
+            </ul>
+        `;
+    }
+    return `
+        <div class="backup-history-safety-help-title">临时安全快照是什么</div>
+        <ul class="backup-history-safety-help-list">
+            <li>它是高风险写入操作前自动生成的兜底快照，核心目标是数据优先，避免用户丢数据。</li>
+            <li>触发范围是进入恢复事务层的恢复/撤销流程，主要包括主 UI 或历史页面里的 <span class="backup-history-safety-help-highlight">覆盖恢复、补丁恢复、覆盖撤销、补丁撤销</span>。</li>
+            <li>导入合并是添加型操作，会保留现有书签；它只保留中断清理所需的内部事务数据，不会覆盖这里展示的最近一次临时安全快照。</li>
+            <li>这里只保留最近一次操作的“操作前浏览器快照”和“目标状态快照”；“当前浏览器快照”是在导出时即时读取的。</li>
+            <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照只是兜底。</li>
+        </ul>
+    `;
+}
+
+function formatHistorySafetyCheckpointSummary(checkpoint) {
+    if (!checkpoint || typeof checkpoint !== 'object') {
+        return `<div class="backup-history-summary-title">${escapeHtml(i18n.historySafetyCheckpointEmpty[currentLang])}</div>`;
+    }
+
+    const operationLabel = getHistorySafetyCheckpointOperationLabel(checkpoint.operationKind);
+    const sourceLabel = getHistorySafetyCheckpointSourceLabel(checkpoint.source);
+    const createdAt = getHistorySafetyCheckpointDisplayValue(formatHistorySafetyCheckpointDate(checkpoint.createdAtIso));
+    const resolvedStrategy = getHistorySafetyCheckpointStrategyLabel(checkpoint.resolvedStrategy);
+    const requestedStrategy = getHistorySafetyCheckpointStrategyLabel(checkpoint.requestedStrategy);
+    const sourceTypeRaw = String(checkpoint.sourceType || '').trim();
+    const sourceType = getHistorySafetyCheckpointSourceTypeLabel(sourceTypeRaw);
+    const sourceSeqNumber = String(checkpoint.sourceSeqNumber || '').trim();
+    const sourceRecordTime = String(checkpoint.sourceRecordTime || checkpoint.targetBaselineTimestamp || '').trim();
+    const sourceNote = String(checkpoint.sourceNote || '').trim();
+    const targetNote = String(checkpoint.targetNote || sourceNote || '').trim();
+    const restoreActionNote = String(checkpoint.restoreActionNote || '').trim();
+    const diffSummaryText = formatHistorySafetyCheckpointDiffSummary(checkpoint.precomputedDiffSummary);
+    const mergeModeText = formatHistorySafetyCheckpointMergeMode(checkpoint);
+    const mergeRootTitle = String(checkpoint.mergeImportRootTitle || '').trim();
+    const metaLine = currentLang === 'zh_CN'
+        ? `创建时间：${createdAt}`
+        : `Created: ${createdAt}`;
+    const sourceLineParts = [];
+    if (sourceTypeRaw && sourceType) sourceLineParts.push(currentLang === 'zh_CN' ? `来源类型：${sourceType}` : `Source type: ${sourceType}`);
+    if (sourceSeqNumber) sourceLineParts.push(currentLang === 'zh_CN' ? `记录序号：#${sourceSeqNumber}` : `Record: #${sourceSeqNumber}`);
+    if (sourceRecordTime) sourceLineParts.push(currentLang === 'zh_CN' ? `来源时间：${sourceRecordTime}` : `Source time: ${sourceRecordTime}`);
+    const sourceTagLabel = sourceType || sourceLabel;
+    const tagItems = [
+        { kind: 'operation', label: operationLabel },
+        { kind: 'source', label: sourceTagLabel },
+        { kind: 'strategy', label: requestedStrategy !== resolvedStrategy ? `${resolvedStrategy} / ${requestedStrategy}` : resolvedStrategy }
+    ].filter((item) => item.label && item.label !== '-');
+    const targetDetails = [
+        [currentLang === 'zh_CN' ? '备注' : 'Remark', targetNote],
+        [currentLang === 'zh_CN' ? '操作备注' : 'Operation note', restoreActionNote && restoreActionNote !== sourceNote ? restoreActionNote : ''],
+        [currentLang === 'zh_CN' ? '变化' : 'Changes', diffSummaryText],
+        [currentLang === 'zh_CN' ? '合并模式' : 'Merge mode', mergeModeText],
+        [currentLang === 'zh_CN' ? '导入文件夹' : 'Import folder', mergeRootTitle]
+    ];
+    const snapshotCards = [
+        {
+            kind: 'before',
+            title: currentLang === 'zh_CN' ? '操作前浏览器快照' : 'Before Operation Browser Snapshot',
+            info: currentLang === 'zh_CN'
+                ? '高风险操作开始前的浏览器书签树，用于回滚到写入前状态。'
+                : 'Browser bookmark tree captured before the high-risk write; used to roll back to the pre-operation state.',
+            meta: formatHistorySafetySnapshotCounts(checkpoint, 'before'),
+            details: []
+        },
+        {
+            kind: 'current',
+            title: currentLang === 'zh_CN' ? '当前浏览器快照' : 'Current Browser Snapshot',
+            info: currentLang === 'zh_CN'
+                ? '点击导出时实时读取当前浏览器书签，不是长期保存的安全快照。'
+                : 'Read from the live browser when exporting; this is not stored as a long-term safety snapshot.',
+            meta: formatHistorySafetySnapshotCounts(checkpoint, 'current'),
+            details: []
+        },
+        {
+            kind: 'target',
+            title: currentLang === 'zh_CN' ? '目标状态快照' : 'Target State Snapshot',
+            info: currentLang === 'zh_CN'
+                ? '本次恢复/撤销准备写入的目标状态快照，用于继续到预期状态。'
+                : 'The expected target tree prepared for this restore/revert; used to continue to the intended state.',
+            meta: formatHistorySafetySnapshotCounts(checkpoint, 'target'),
+            details: targetDetails
+        }
+    ];
+
+    return `
+        <div class="backup-history-summary-tag-row">
+            ${tagItems.map((item) => `<span class="backup-history-summary-tag ${escapeHtml(item.kind)}">${escapeHtml(item.label)}</span>`).join('')}
+        </div>
+        <div class="backup-history-summary-subtitle">${escapeHtml(metaLine)}</div>
+        ${sourceLineParts.length ? `<div class="backup-history-summary-strip">${sourceLineParts.map((item) => `<span class="backup-history-summary-chip">${escapeHtml(item)}</span>`).join('')}</div>` : ''}
+        <div class="backup-history-snapshot-grid">
+            ${snapshotCards.map((item) => `
+                <div class="backup-history-snapshot-card ${escapeHtml(item.kind)}">
+                    <div class="backup-history-snapshot-title-row">
+                        <div class="backup-history-snapshot-title">${escapeHtml(item.title)}</div>
+                        ${buildHistorySafetySnapshotInfoButton(item.info)}
+                    </div>
+                    ${buildHistorySafetySnapshotDetailRows(item.details)}
+                    <div class="backup-history-snapshot-meta">${escapeHtml(item.meta)}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function syncHistorySlimmingSettingsModalUi() {
+    syncHistorySlimmingSettingsButtonState();
+    const modal = document.getElementById('historySlimmingSettingsModal');
+    if (!modal) return;
+
+    const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
+    const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
+    const statusEl = document.getElementById('historySlimmingSettingsStatus');
+    if (snapshotCheckbox) snapshotCheckbox.checked = historyBackupHistorySlimmingSettings.saveSnapshotData === true;
+    if (changeCheckbox) changeCheckbox.checked = historyBackupHistorySlimmingSettings.saveChangeData === true;
+    if (statusEl) {
+        statusEl.textContent = '';
+    }
+}
+
+function getHistorySafetyCheckpointExportItems() {
+    return Array.from(document.querySelectorAll('.history-safety-export-item'))
+        .filter((input) => input && input.checked)
+        .map((input) => String(input.dataset.exportItem || '').trim())
+        .filter(Boolean);
+}
+
+function syncHistorySafetyExportSelectionState() {
+    const itemInputs = Array.from(document.querySelectorAll('.history-safety-export-item'));
+    const allInput = document.getElementById('historySafetyExportAll');
+    const exportBtn = document.getElementById('historySafetyCheckpointExportBtn');
+    const checkedCount = itemInputs.filter((input) => input.checked).length;
+    if (allInput) {
+        allInput.checked = itemInputs.length > 0 && checkedCount === itemInputs.length;
+        allInput.indeterminate = checkedCount > 0 && checkedCount < itemInputs.length;
+    }
+    if (exportBtn) {
+        exportBtn.disabled = !historyLatestSafetyCheckpoint || checkedCount === 0;
+    }
+}
+
+function renderHistorySafetyCheckpointModal() {
+    const statusEl = document.getElementById('historySafetyCheckpointStatus');
+    const summaryEl = document.getElementById('historySafetyCheckpointSummary');
+    const summaryShell = summaryEl ? summaryEl.closest('.backup-history-checkpoint-summary, .history-summary-shell') : null;
+    const exportOptionsEl = document.getElementById('historySafetyCheckpointExportOptions');
+    const exportResultEl = document.getElementById('historySafetyCheckpointExportResult');
+    const exportBtn = document.getElementById('historySafetyCheckpointExportBtn');
+    const checkpoint = historyLatestSafetyCheckpoint && typeof historyLatestSafetyCheckpoint === 'object'
+        ? historyLatestSafetyCheckpoint
+        : null;
+
+    if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.style.display = 'none';
+    }
+
+    if (summaryShell) {
+        summaryShell.style.display = 'flex';
+    }
+
+    if (summaryEl) {
+        summaryEl.innerHTML = formatHistorySafetyCheckpointSummary(checkpoint);
+    }
+
+    if (exportOptionsEl) {
+        exportOptionsEl.style.display = checkpoint ? 'flex' : 'none';
+    }
+
+    if (exportResultEl) {
+        exportResultEl.textContent = '';
+    }
+    if (exportBtn) {
+        exportBtn.disabled = !checkpoint;
+    }
+    syncHistorySafetyExportSelectionState();
+}
+
+async function refreshHistoryBackupHistorySlimmingSettings({ silent = false } = {}) {
+    const response = await sendHistoryRuntimeMessage({ action: 'getBackupHistorySlimmingSettings' });
+    if (response && response.success && response.settings) {
+        historyBackupHistorySlimmingSettings = normalizeHistoryBackupHistorySlimmingSettings(response.settings);
+    } else {
+        historyBackupHistorySlimmingSettings = normalizeHistoryBackupHistorySlimmingSettings(historyBackupHistorySlimmingSettings);
+    }
+    historyBackupHistorySlimmingSettingsLoaded = true;
+    syncHistorySlimmingSettingsModalUi();
+    return response;
+}
+
+async function saveHistoryBackupHistorySlimmingSettings(nextSettings) {
+    const normalizedSettings = normalizeHistoryBackupHistorySlimmingSettings(nextSettings);
+    const response = await sendHistoryRuntimeMessage({
+        action: 'setBackupHistorySlimmingSettings',
+        settings: normalizedSettings
+    });
+    if (response && response.success) {
+        historyBackupHistorySlimmingSettings = normalizedSettings;
+        historyBackupHistorySlimmingSettingsLoaded = true;
+        syncHistorySlimmingSettingsModalUi();
+        showToast(i18n.historySlimmingSettingsSaved[currentLang]);
+    } else {
+        showToast(i18n.historySlimmingSettingsSaveFailed[currentLang], 'error');
+    }
+    return response;
+}
+
+async function refreshLatestSafetyCheckpointStatus({ silent = false } = {}) {
+    const response = await sendHistoryRuntimeMessage({ action: 'getLatestSafetyCheckpointStatus' });
+    if (response && response.success) {
+        historyLatestSafetyCheckpoint = response.checkpoint || null;
+    } else if (!silent) {
+        historyLatestSafetyCheckpoint = null;
+    }
+    renderHistorySafetyCheckpointModal();
+    return response;
+}
+
+async function exportLatestSafetyCheckpointPackage() {
+    const checkpoint = historyLatestSafetyCheckpoint && typeof historyLatestSafetyCheckpoint === 'object'
+        ? historyLatestSafetyCheckpoint
+        : null;
+    if (!checkpoint) {
+        showToast(i18n.historySafetyCheckpointEmpty[currentLang], 'info');
+        return { success: false, error: 'no checkpoint' };
+    }
+    const exportItems = getHistorySafetyCheckpointExportItems();
+    if (!exportItems.length) {
+        showToast(i18n.historySafetyCheckpointSelectOne[currentLang], 'info');
+        syncHistorySafetyExportSelectionState();
+        return { success: false, error: 'no export items selected' };
+    }
+
+    const exportResultEl = document.getElementById('historySafetyCheckpointExportResult');
+    const exportBtn = document.getElementById('historySafetyCheckpointExportBtn');
+    if (exportResultEl) {
+        exportResultEl.textContent = i18n.historySafetyCheckpointExporting[currentLang];
+    }
+    if (exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.textContent = i18n.historySafetyCheckpointExporting[currentLang].replace('...', '');
+    }
+
+    try {
+        const response = await sendHistoryRuntimeMessage({
+            action: 'exportLatestSafetyCheckpointPackage',
+            options: { items: exportItems }
+        });
+        if (response && response.success) {
+            const fileCount = Number(response.fileCount || (Array.isArray(response.files) ? response.files.length : 0)) || 0;
+            if (exportResultEl) {
+                exportResultEl.textContent = i18n.historySafetyCheckpointExportSuccess[currentLang](fileCount);
+            }
+            showToast(i18n.historySafetyCheckpointExportSuccess[currentLang](fileCount));
+        } else {
+            if (exportResultEl) {
+                exportResultEl.textContent = i18n.historySafetyCheckpointExportFailed[currentLang];
+            }
+            showToast(i18n.historySafetyCheckpointExportFailed[currentLang], 'error');
+        }
+        return response;
+    } finally {
+        if (exportBtn) {
+            syncHistorySafetyExportSelectionState();
+            exportBtn.textContent = i18n.historySafetyCheckpointExportBtn[currentLang];
+        }
+    }
+}
+
+function openHistorySlimmingSettingsModal() {
+    const modal = document.getElementById('historySlimmingSettingsModal');
+    if (!modal) return;
+    syncHistorySlimmingSettingsModalUi();
+    const statusEl = document.getElementById('historySlimmingSettingsStatus');
+    if (statusEl) {
+        statusEl.textContent = historyBackupHistorySlimmingSettingsLoaded
+            ? ''
+            : i18n.loading[currentLang];
+    }
+    modal.classList.add('show');
+    refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
+}
+
+function closeHistorySlimmingSettingsModal() {
+    const modal = document.getElementById('historySlimmingSettingsModal');
+    if (modal) modal.classList.remove('show');
+}
+
+function openHistorySafetyCheckpointModal() {
+    const modal = document.getElementById('historySafetyCheckpointModal');
+    if (!modal) return;
+    const statusEl = document.getElementById('historySafetyCheckpointStatus');
+    const exportResultEl = document.getElementById('historySafetyCheckpointExportResult');
+    const summaryEl = document.getElementById('historySafetyCheckpointSummary');
+    const summaryShell = summaryEl ? summaryEl.closest('.backup-history-checkpoint-summary, .history-summary-shell') : null;
+    const helpBtn = document.getElementById('historySafetyCheckpointHelpBtn');
+    const helpPanel = document.getElementById('historySafetyCheckpointHelpPanel');
+    const exportOptionsEl = document.getElementById('historySafetyCheckpointExportOptions');
+    if (statusEl) statusEl.textContent = i18n.historySafetyCheckpointLoading[currentLang];
+    if (exportResultEl) exportResultEl.textContent = '';
+    if (summaryShell) summaryShell.style.display = 'none';
+    if (helpBtn) helpBtn.classList.remove('active');
+    if (helpPanel) {
+        helpPanel.innerHTML = buildHistorySafetyCheckpointHelpHtml();
+        helpPanel.style.display = 'none';
+    }
+    if (exportOptionsEl) exportOptionsEl.style.display = 'none';
+    modal.classList.add('show');
+    refreshLatestSafetyCheckpointStatus({ silent: true }).catch(() => { });
+}
+
+function closeHistorySafetyCheckpointModal() {
+    const modal = document.getElementById('historySafetyCheckpointModal');
+    if (modal) modal.classList.remove('show');
+}
+
 
 function formatRestoreRecoveryPhaseLabel(phase, lang = currentLang) {
     const normalized = String(phase || '').toLowerCase();
@@ -23381,9 +24392,20 @@ function updateExportChangesModalContextUi(modal = document.getElementById('expo
 
     const isZh = currentLang === 'zh_CN';
     const isHistoryExport = !!currentExportHistoryRecord;
-    const selectedArtifactType = isHistoryExport
+    const capabilities = getHistoryRecordCapabilities(currentExportHistoryRecord || {});
+    const canExportChanges = capabilities.hasChangeData === true;
+    const canExportSnapshot = capabilities.hasSnapshotData === true;
+    let selectedArtifactType = isHistoryExport
         ? getSelectedHistoryExportArtifactType(modal)
         : 'changes';
+    if (isHistoryExport) {
+        if (selectedArtifactType === 'changes' && !canExportChanges) {
+            selectedArtifactType = canExportSnapshot ? 'snapshot' : 'changes';
+        }
+        if (selectedArtifactType === 'snapshot' && !canExportSnapshot) {
+            selectedArtifactType = canExportChanges ? 'changes' : 'snapshot';
+        }
+    }
     const isSnapshotExport = isHistoryExport && selectedArtifactType === 'snapshot';
     currentExportHistoryArtifactType = selectedArtifactType;
 
@@ -23400,15 +24422,54 @@ function updateExportChangesModalContextUi(modal = document.getElementById('expo
     const formatHtmlInput = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
     const formatJsonInput = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
     const formatJsonLabel = formatJsonInput ? formatJsonInput.closest('label') : null;
+    const artifactChangesInput = modal.querySelector('input[name="historyExportArtifactType"][value="changes"]');
+    const artifactSnapshotInput = modal.querySelector('input[name="historyExportArtifactType"][value="snapshot"]');
+    const artifactChangesLabel = artifactChangesInput ? artifactChangesInput.closest('label') : null;
+    const artifactSnapshotLabel = artifactSnapshotInput ? artifactSnapshotInput.closest('label') : null;
 
     if (artifactSection) {
-        artifactSection.style.display = isHistoryExport ? '' : 'none';
+        artifactSection.style.display = isHistoryExport && canExportChanges && canExportSnapshot ? '' : 'none';
+    }
+    if (artifactChangesInput) {
+        artifactChangesInput.disabled = isHistoryExport && !canExportChanges;
+        artifactChangesInput.checked = isHistoryExport && selectedArtifactType === 'changes';
+    }
+    if (artifactSnapshotInput) {
+        artifactSnapshotInput.disabled = isHistoryExport && !canExportSnapshot;
+        artifactSnapshotInput.checked = isHistoryExport && selectedArtifactType === 'snapshot';
+    }
+    if (artifactChangesLabel) {
+        artifactChangesLabel.style.display = !isHistoryExport || canExportChanges ? '' : 'none';
+    }
+    if (artifactSnapshotLabel) {
+        artifactSnapshotLabel.style.display = !isHistoryExport || canExportSnapshot ? '' : 'none';
     }
 
     updateExportChangesModalHeader(selectedArtifactType);
 
     if (modeSection) {
         modeSection.style.display = isSnapshotExport ? 'none' : '';
+    }
+    if (!isSnapshotExport) {
+        const modeAvailability = isHistoryExport
+            ? getDetailModeAvailabilityForRecord(currentExportHistoryRecord, 'changes')
+            : { simple: true, detailed: true, collection: true };
+        const modeInputs = Array.from(modal.querySelectorAll('input[name="exportChangesMode"]'));
+        let selectedMode = modal.querySelector('input[name="exportChangesMode"]:checked')?.value || 'simple';
+        if (!modeAvailability[selectedMode]) {
+            selectedMode = modeAvailability.simple
+                ? 'simple'
+                : (modeAvailability.detailed ? 'detailed' : (modeAvailability.collection ? 'collection' : selectedMode));
+            const fallbackInput = modal.querySelector(`input[name="exportChangesMode"][value="${selectedMode}"]`);
+            if (fallbackInput) fallbackInput.checked = true;
+        }
+        modeInputs.forEach((input) => {
+            const mode = normalizeExportChangesModalMode(input.value, '');
+            const available = modeAvailability[mode] !== false;
+            const label = input.closest('label');
+            input.disabled = !available;
+            if (label) label.style.display = available ? '' : 'none';
+        });
     }
     if (actionSection) {
         actionSection.style.display = '';
@@ -23542,9 +24603,11 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         return;
     }
 
-    // 检查是否有 bookmarkTree
-    await ensureRecordBookmarkTree(record);
-    if (!record.bookmarkTree) {
+    const capabilities = getHistoryRecordCapabilities(record);
+    if (capabilities.hasSnapshotData) {
+        await ensureRecordBookmarkTree(record);
+    }
+    if (!record.bookmarkTree && !capabilities.hasChangeData) {
         showToast(currentLang === 'zh_CN' ? '该记录没有详细数据（旧记录已清理）' : 'No detailed data available (old records cleaned)');
         return;
     }
@@ -23560,7 +24623,10 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
     currentExportHistoryRecord = record;
     currentExportBookmarkTree = treeToExport;
     currentExportHistoryTreeContainer = useDomTreeContainer ? (treeContainer || document.querySelector('#modalBody .history-tree-container')) : null;
-    currentExportHistoryArtifactType = normalizeHistoryExportArtifactType(preferredArtifact, 'changes');
+    currentExportHistoryArtifactType = normalizeHistoryExportArtifactType(
+        resolveHistoryDetailArtifactForRecord(record, preferredArtifact || ''),
+        'changes'
+    );
 
     // 显示模态框
     const modal = document.getElementById('exportChangesModal');
@@ -23577,13 +24643,19 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         else if (formatHtml) formatHtml.checked = true;
 
         // 使用当前备份历史的详略模式
-        const modeValue = normalizeExportChangesModalMode(
+        let modeValue = normalizeExportChangesModalMode(
             normalizeRestoreMergeViewMode(preferredMode)
             || normalizeRestoreMergeViewMode(getRecordDetailMode(recordTime))
             || normalizeRestoreMergeViewMode(historyDetailMode)
             || 'simple',
             'simple'
         );
+        const modeAvailability = getDetailModeAvailabilityForRecord(record, 'changes');
+        if (currentExportHistoryArtifactType === 'changes' && !modeAvailability[modeValue]) {
+            modeValue = modeAvailability.simple
+                ? 'simple'
+                : (modeAvailability.detailed ? 'detailed' : (modeAvailability.collection ? 'collection' : modeValue));
+        }
         const modeRadio = modal.querySelector(`input[name="exportChangesMode"][value="${modeValue}"]`);
         if (modeRadio) modeRadio.checked = true;
 
@@ -27641,7 +28713,37 @@ function downloadBlob(url, filename) {
 // 辅助：准备导出数据 (Tree + ChangeMap)
 async function prepareDataForExport(record) {
     let changeMap = new Map();
-    await ensureRecordBookmarkTree(record);
+    const capabilities = getHistoryRecordCapabilities(record);
+    const persistedChangeData = await getRecordChangeDataLazy(record.time)
+        || (record?.__persistedChangeData && typeof record.__persistedChangeData === 'object' ? record.__persistedChangeData : null);
+    if (!record.bookmarkTree && capabilities.hasSnapshotData) {
+        await ensureRecordBookmarkTree(record);
+    }
+    if (!record.bookmarkTree && persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
+        changeMap = deserializeRecordChangeMap(persistedChangeData);
+
+        let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
+            ? cloneSerializableData(persistedChangeData.treeWithDeleted)
+            : null;
+
+        if (!treeToExport) {
+            const collectionChildren = Array.isArray(persistedChangeData.collectionChildren)
+                ? cloneSerializableData(persistedChangeData.collectionChildren)
+                : [];
+            if (Array.isArray(collectionChildren) && collectionChildren.length) {
+                treeToExport = { title: 'root', children: collectionChildren };
+            }
+        }
+
+        return {
+            treeToExport,
+            changeMap,
+            changeData: persistedChangeData,
+            missingComparisonBase: false,
+            comparisonBaseTree: null,
+            changeDataOnly: true
+        };
+    }
     if (!record.bookmarkTree) {
         return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false, comparisonBaseTree: null };
     }
@@ -27676,7 +28778,6 @@ async function prepareDataForExport(record) {
         return previousRecord && previousRecord.bookmarkTree ? previousRecord : null;
     };
 
-    const persistedChangeData = await getRecordChangeDataLazy(record.time);
     if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
         const previousRecord = await resolvePreviousRecordForComparison();
         const comparisonBaseTree = previousRecord && previousRecord.bookmarkTree

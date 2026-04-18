@@ -841,6 +841,698 @@
             /* 确保标题在阴影之上 */
         }
 
+        .sync-history-title-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .sync-history-title-row h3 {
+            line-height: 24px;
+            white-space: nowrap;
+        }
+
+        .sync-history-title-tools {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--history-ops-btn-gap);
+            flex-wrap: nowrap;
+            min-width: 0;
+            height: 22px;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .backup-history-header-btn .tooltip {
+            top: -25px;
+        }
+
+        .restore-safety-entry {
+            margin-top: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            background: var(--theme-bg-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .restore-safety-entry-text {
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--theme-text-secondary);
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .restore-safety-entry-btn {
+            width: 22px;
+            height: 22px;
+            flex: 0 0 22px;
+            border-radius: 5px;
+        }
+
+        .backup-history-dialog-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .backup-history-dialog-note,
+        .backup-history-secondary-note {
+            padding: 9px 10px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 7px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            font-size: 12px;
+            line-height: 1.55;
+        }
+
+        .backup-history-dialog-row,
+        .backup-history-secondary-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 11px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 7px;
+            background: var(--theme-bg-secondary);
+            cursor: pointer;
+        }
+
+        .backup-history-dialog-row-label,
+        .backup-history-secondary-row-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .backup-history-dialog-row-label i,
+        .backup-history-secondary-row-label i {
+            color: var(--theme-accent-color);
+            font-size: 12px;
+        }
+
+        .backup-history-dialog-checkbox,
+        .backup-history-secondary-checkbox {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            flex: 0 0 auto;
+            cursor: pointer;
+            accent-color: var(--theme-accent-color);
+        }
+
+        .backup-history-dialog-checkbox:focus-visible,
+        .backup-history-secondary-checkbox:focus-visible {
+            outline: 2px solid var(--theme-accent-color);
+            outline-offset: 2px;
+        }
+
+        .backup-history-choice-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .backup-history-choice-card {
+            position: relative;
+            min-width: 0;
+            display: block;
+            cursor: pointer;
+        }
+
+        .backup-history-choice-input {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .backup-history-choice-content {
+            position: relative;
+            z-index: 1;
+            min-height: 74px;
+            padding: 12px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            text-align: center;
+            box-sizing: border-box;
+            transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .backup-history-choice-title {
+            min-width: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 0 18px;
+            color: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .backup-history-choice-title i {
+            flex: 0 0 auto;
+            color: var(--theme-accent-color);
+            font-size: 13px;
+        }
+
+        .backup-history-choice-title span {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .backup-history-choice-check {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 18px;
+            height: 18px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 50%;
+            color: transparent;
+            background: var(--theme-bg-elevated);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+        }
+
+        .backup-history-choice-input:checked + .backup-history-choice-content {
+            border-color: var(--theme-accent-color);
+            background: rgba(0, 122, 255, 0.12);
+            box-shadow: inset 0 0 0 1px var(--theme-accent-color);
+        }
+
+        .backup-history-choice-input:checked + .backup-history-choice-content .backup-history-choice-check {
+            border-color: var(--theme-accent-color);
+            background: var(--theme-accent-color);
+            color: #fff;
+        }
+
+        .backup-history-choice-input:focus-visible + .backup-history-choice-content {
+            outline: 2px solid var(--theme-accent-color);
+            outline-offset: 2px;
+        }
+
+        .backup-history-export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .backup-history-export-title {
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .backup-history-export-check-list {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 16px;
+            padding: 12px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            background: var(--theme-bg-secondary);
+        }
+
+        .backup-history-export-check-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            color: var(--theme-text-primary);
+            font-size: 13px;
+            line-height: 1.35;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .backup-history-export-check-row input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            flex: 0 0 auto;
+            cursor: pointer;
+            accent-color: var(--theme-accent-color);
+        }
+
+        .backup-history-export-check-row-all {
+            font-weight: 700;
+        }
+
+        .backup-history-export-check-divider {
+            width: 1px;
+            min-height: 16px;
+            background: var(--theme-border-primary);
+            opacity: 0.78;
+        }
+
+        .backup-history-dialog-status,
+        .backup-history-dialog-result,
+        .backup-history-secondary-status,
+        .backup-history-secondary-result {
+            min-height: 18px;
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .backup-history-dialog-actions,
+        .backup-history-secondary-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding-top: 2px;
+        }
+
+        .backup-history-floating-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 16px 24px;
+            background: transparent;
+            pointer-events: none;
+        }
+
+        .backup-history-floating-footer > button {
+            min-width: 88px;
+            pointer-events: auto;
+        }
+
+        .backup-history-floating-footer > button.primary {
+            min-width: 128px;
+        }
+
+        .backup-history-checkpoint-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px 11px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 7px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .backup-history-modal-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
+
+        .backup-history-help-btn {
+            width: 32px;
+            height: 32px;
+            flex: 0 0 32px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .backup-history-help-btn:hover,
+        .backup-history-help-btn.active {
+            background: var(--theme-hover-bg);
+            color: var(--theme-accent-color);
+        }
+
+        #backupHistorySlimmingSettingsBtn[data-slimming-state="partial"] {
+            border-color: rgba(255, 152, 0, 0.48);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(255, 152, 0, 0.22);
+        }
+
+        #backupHistorySlimmingSettingsBtn[data-slimming-state="partial"] .backup-history-settings-icon {
+            opacity: 0.82;
+        }
+
+        #backupHistorySlimmingSettingsBtn[data-slimming-state="none"] {
+            background: transparent;
+            border-color: rgba(128, 128, 128, 0.24);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+        }
+
+        #backupHistorySlimmingSettingsBtn[data-slimming-state="none"] .backup-history-settings-icon {
+            opacity: 0.36;
+        }
+
+        #backupHistorySlimmingSettingsBtn[data-slimming-state="none"]:hover .backup-history-settings-icon {
+            opacity: 0.58;
+        }
+
+        .backup-history-safety-help {
+            font-size: 12px;
+        }
+
+        .backup-history-safety-help-title {
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .backup-history-safety-help-list {
+            margin: 0;
+            padding-left: 18px;
+        }
+
+        .backup-history-safety-help-list li {
+            margin: 4px 0;
+        }
+
+        .backup-history-safety-help-highlight {
+            color: var(--theme-warning-color);
+            font-weight: 700;
+        }
+
+        .backup-history-summary-title {
+            color: var(--theme-text-primary);
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .backup-history-summary-heading {
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .backup-history-summary-tag-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .backup-history-summary-tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 22px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-elevated);
+            color: var(--theme-text-primary);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .backup-history-summary-tag.operation {
+            color: #ffcf66;
+            border-color: rgba(255, 207, 102, 0.42);
+            background: rgba(255, 207, 102, 0.1);
+        }
+
+        .backup-history-summary-tag.source {
+            color: #7fc7ff;
+            border-color: rgba(127, 199, 255, 0.42);
+            background: rgba(127, 199, 255, 0.1);
+        }
+
+        .backup-history-summary-tag.strategy {
+            color: #8df0bc;
+            border-color: rgba(141, 240, 188, 0.42);
+            background: rgba(141, 240, 188, 0.1);
+        }
+
+        .backup-history-summary-subtitle {
+            color: var(--theme-text-secondary);
+            font-size: 12px;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .backup-history-summary-cards {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .backup-history-summary-card {
+            min-width: 0;
+            padding: 8px 10px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            background: var(--theme-bg-primary);
+        }
+
+        .backup-history-summary-label {
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .backup-history-summary-value {
+            margin-top: 2px;
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .backup-history-summary-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 12px;
+            padding: 8px 10px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            background: var(--theme-bg-primary);
+        }
+
+        .backup-history-summary-chip {
+            color: var(--theme-text-secondary);
+            font-size: 12px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .backup-history-summary-chip strong {
+            color: var(--theme-text-primary);
+        }
+
+        .backup-history-snapshot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .backup-history-snapshot-card.target {
+            grid-column: 1 / -1;
+        }
+
+        .backup-history-snapshot-card {
+            min-width: 0;
+            position: relative;
+            overflow: visible;
+            padding: 9px 10px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            background: var(--theme-bg-elevated);
+        }
+
+        .backup-history-snapshot-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            min-width: 0;
+            position: relative;
+            overflow: visible;
+        }
+
+        .backup-history-snapshot-title {
+            min-width: 0;
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .backup-history-snapshot-info-btn {
+            position: relative;
+            width: 18px;
+            height: 18px;
+            flex: 0 0 18px;
+            padding: 0;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 50%;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            cursor: help;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            line-height: 1;
+        }
+
+        .backup-history-snapshot-info-btn:hover,
+        .backup-history-snapshot-info-btn:focus-visible {
+            color: var(--theme-accent-color);
+            border-color: var(--theme-accent-color);
+            outline: none;
+        }
+
+        .backup-history-snapshot-info-tooltip {
+            position: absolute;
+            top: 50%;
+            right: 24px;
+            bottom: auto;
+            left: auto;
+            width: clamp(190px, calc(100% - 26px), 248px);
+            max-width: calc(100% - 26px);
+            box-sizing: border-box;
+            padding: 7px 9px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            background: var(--theme-bg-primary);
+            color: var(--theme-text-primary);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.38;
+            text-align: left;
+            white-space: normal;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translate(-2px, -50%);
+            transition: opacity 0.08s ease, visibility 0.08s ease, transform 0.08s ease;
+            z-index: 20;
+        }
+
+        .backup-history-snapshot-info-tooltip::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 8px;
+            height: 8px;
+            border-top: 1px solid var(--theme-border-primary);
+            border-right: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-primary);
+            transform: translate(-5px, -50%) rotate(45deg);
+        }
+
+        .backup-history-snapshot-info-btn:hover + .backup-history-snapshot-info-tooltip,
+        .backup-history-snapshot-info-btn:focus-visible + .backup-history-snapshot-info-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-4px, -50%);
+        }
+
+        .backup-history-snapshot-desc {
+            margin-top: 5px;
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .backup-history-snapshot-detail-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 5px;
+            margin-top: 8px;
+        }
+
+        .backup-history-snapshot-detail-row {
+            display: grid;
+            grid-template-columns: 64px minmax(0, 1fr);
+            align-items: flex-start;
+            gap: 8px;
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .backup-history-snapshot-detail-row strong {
+            min-width: 0;
+            color: var(--theme-text-primary);
+            font-weight: 600;
+            text-align: left;
+            word-break: break-word;
+        }
+
+        .backup-history-snapshot-meta {
+            margin-top: 7px;
+            color: var(--theme-text-primary);
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        @media (max-width: 760px) {
+            .backup-history-snapshot-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .backup-history-snapshot-card.target {
+                grid-column: auto;
+            }
+
+            .backup-history-snapshot-detail-list {
+                grid-template-columns: 1fr;
+            }
+        }
+
         /* 历史记录列表 */
         .history-list {
             height: 320px;
@@ -982,6 +1674,10 @@
         /* 历史记录项悬停效果 */
         .history-item:hover {
             background-color: var(--theme-hover-bg);
+        }
+
+        .history-item.history-item-record-only {
+            cursor: default;
         }
 
         /* 历史记录项最后一项无底部边框 */
@@ -4003,6 +4699,15 @@
             color: var(--theme-text-primary);
         }
 
+        .restore-confirm-safety-note {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid var(--theme-border-primary);
+            font-size: 12px;
+            line-height: 1.35;
+            color: var(--theme-text-secondary);
+        }
+
         .restore-confirm-threshold {
             margin-top: 8px;
             display: inline-flex;
@@ -5631,6 +6336,15 @@
                                     </button>
                                 </div>
 
+                                <div class="restore-safety-entry">
+                                    <div id="restoreSafetyCheckpointEntryText" class="restore-safety-entry-text">恢复前会生成“操作前浏览器快照”和“目标状态快照”。</div>
+                                    <button id="restoreSafetyCheckpointEntryBtn" class="action-button history-nav-btn restore-safety-entry-btn" type="button">
+                                        <i class="fas fa-shield-alt"></i>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">查看临时安全快照</span>
+                                    </button>
+                                </div>
+
                                 <div class="modern-init-buttons-grid restore-reset-row">
                                     <button id="resetAll" class="modern-init-btn reset-btn">
                                         <i class="fas fa-undo"></i>
@@ -5732,8 +6446,24 @@
                         style="margin: 0; flex: 1 1 100%; padding: 12px 20px;">
                         <div
                             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sync-history-title-row">
                                 <h3 style="margin: 0;">备份历史</h3>
+                                <div class="sync-history-title-tools">
+                                    <button id="backupHistorySlimmingSettingsBtn"
+                                        class="action-button history-nav-btn backup-history-header-btn"
+                                        type="button" data-slimming-state="all" style="display: inline-flex;">
+                                        <i class="fas fa-cog backup-history-settings-icon"></i>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">精简设置</span>
+                                    </button>
+                                    <button id="backupHistorySafetyCheckpointBtn"
+                                        class="action-button history-nav-btn backup-history-header-btn"
+                                        type="button" style="display: inline-flex;">
+                                        <i class="fas fa-shield-alt"></i>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">临时安全快照</span>
+                                    </button>
+                                </div>
                                 <!-- 分页控件（10条/页）- 紧靠“备份历史”标题右侧 -->
                                 <div id="syncHistoryPager" class="sync-history-pager" style="display: none;">
                                     <button id="syncHistoryPrevPage" class="action-button" type="button"

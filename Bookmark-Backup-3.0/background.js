@@ -69,6 +69,11 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
 };
 const BOOKMARK_CHANGES_DIRTY_KEY = 'bookmarkChangesDirty';
 const ACTIVE_BACKUP_PROGRESS_KEY = 'activeBackupProgress';
+const BACKUP_HISTORY_SLIMMING_SETTINGS_KEY = 'backupHistorySlimming';
+const DEFAULT_BACKUP_HISTORY_SLIMMING_SETTINGS = Object.freeze({
+    saveSnapshotData: true,
+    saveChangeData: true
+});
 const BACKUP_PROGRESS_FINAL_STATE_LINGER_MS = 1600;
 const BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS = 80;
 const ANALYSIS_QUICK_REOPEN_CACHE_MS = 2000;
@@ -235,6 +240,74 @@ function buildSnapshotNamingContext(options = {}) {
         timePart,
         snapshotName,
         snapshotFolder
+    };
+}
+
+function normalizeBackupHistorySlimmingSettings(rawSettings = null) {
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    return {
+        saveSnapshotData: source.saveSnapshotData !== false,
+        saveChangeData: source.saveChangeData !== false
+    };
+}
+
+async function getBackupHistorySlimmingSettings() {
+    const store = await browserAPI.storage.local.get([BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]);
+    return normalizeBackupHistorySlimmingSettings(store?.[BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]);
+}
+
+async function setBackupHistorySlimmingSettings(rawSettings = {}) {
+    const current = await getBackupHistorySlimmingSettings();
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const nextSettings = normalizeBackupHistorySlimmingSettings({
+        ...current,
+        ...source
+    });
+    await browserAPI.storage.local.set({
+        [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: nextSettings
+    });
+    return nextSettings;
+}
+
+function shouldRetainBackupHistorySnapshotData(settings = null) {
+    const normalized = normalizeBackupHistorySlimmingSettings(settings);
+    return normalized.saveSnapshotData !== false;
+}
+
+function shouldRetainBackupHistoryChangeData(settings = null) {
+    const normalized = normalizeBackupHistorySlimmingSettings(settings);
+    return normalized.saveChangeData !== false;
+}
+
+function buildHistoryRecordCapabilities(record = {}) {
+    const hasSnapshotData = !!(record?.bookmarkTree || record?.hasData === true);
+    const hasChangeData = !!(
+        record?.hasChangeData === true
+        || String(record?.changeDataKey || '').trim()
+        || record?.__persistedChangeData
+    );
+    return {
+        hasSnapshotData,
+        hasChangeData,
+        recordOnly: !hasSnapshotData && !hasChangeData,
+        canExpand: hasSnapshotData || hasChangeData,
+        canSearch: hasSnapshotData || hasChangeData,
+        canExportSnapshot: hasSnapshotData,
+        canExportChanges: hasChangeData,
+        canRestore: hasSnapshotData || hasChangeData,
+        canMergeRestore: hasChangeData,
+        canPatchRestore: hasSnapshotData,
+        canViewChanges: hasChangeData,
+        canViewSnapshot: hasSnapshotData
+    };
+}
+
+function attachHistoryRecordCapabilities(record = {}) {
+    if (!record || typeof record !== 'object') return record;
+    const capabilities = buildHistoryRecordCapabilities(record);
+    return {
+        ...record,
+        capabilities
     };
 }
 
@@ -1945,6 +2018,7 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
                 'lastBookmarkData',
                 'lastCalculatedDiff',
                 'lastSyncStats', // 可选：也初始化 lastSyncStats
+                BACKUP_HISTORY_SLIMMING_SETTINGS_KEY,
                 BOOKMARK_COMPARISON_GENERATION_KEY
             ]);
             const updateObj = {};
@@ -1956,6 +2030,11 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
             }
             if (!currentData.lastSyncStats) {
                 updateObj.lastSyncStats = null; // 明确设为 null
+            }
+            if (!currentData[BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]) {
+                updateObj[BACKUP_HISTORY_SLIMMING_SETTINGS_KEY] = {
+                    ...DEFAULT_BACKUP_HISTORY_SLIMMING_SETTINGS
+                };
             }
             if (!Number.isFinite(Number(currentData?.[BOOKMARK_COMPARISON_GENERATION_KEY])) || Number(currentData?.[BOOKMARK_COMPARISON_GENERATION_KEY]) < 1) {
                 updateObj[BOOKMARK_COMPARISON_GENERATION_KEY] = BOOKMARK_COMPARISON_INITIAL_GENERATION;
@@ -4672,7 +4751,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         });
                     } catch (_) { }
 
-                    const { lastBookmarkData = null, preferredLang: resolvedPreferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['lastBookmarkData', 'preferredLang']);
+                    const { lastBookmarkData = null, preferredLang: resolvedPreferredLang = 'zh_CN', syncHistory = [] } = await browserAPI.storage.local.get(['lastBookmarkData', 'preferredLang', 'syncHistory']);
                     preferredLang = resolvedPreferredLang === 'en' ? 'en' : 'zh_CN';
                     const tree = lastBookmarkData && lastBookmarkData.bookmarkTree;
                     const hasValidTree = isBookmarkTreeShapeValid(tree);
@@ -4680,6 +4759,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({ success: false, error: preferredLang === 'en' ? 'No valid backup snapshot' : '没有可用的备份快照' });
                         return;
                     }
+                    const lastBackupHistoryRecord = Array.isArray(syncHistory)
+                        ? syncHistory.find((record) => {
+                            if (!record || typeof record !== 'object') return false;
+                            const recordTime = String(record.time || '').trim();
+                            const baselineTime = String(lastBookmarkData?.timestamp || '').trim();
+                            if (recordTime && baselineTime && recordTime === baselineTime) return true;
+                            const recordFingerprint = String(record.fingerprint || '').trim();
+                            const baselineFingerprint = String(lastBookmarkData?.fingerprint || '').trim();
+                            return !!(recordFingerprint && baselineFingerprint && recordFingerprint === baselineFingerprint);
+                        })
+                        : null;
+                    const lastBackupSourceNote = String(lastBackupHistoryRecord?.note || lastBookmarkData?.note || '').trim();
+                    const lastBackupRecordMeta = {
+                        note: preferredLang === 'en' ? 'Last backup target state' : '上次备份目标状态',
+                        sourceSeqNumber: lastBackupHistoryRecord?.seqNumber ?? '',
+                        sourceTime: lastBookmarkData?.timestamp || '',
+                        sourceNote: lastBackupSourceNote,
+                        sourceFingerprint: lastBookmarkData?.fingerprint || lastBackupHistoryRecord?.fingerprint || '',
+                        sourceSnapshotKey: '__last_backup__',
+                        sourceOverwriteMode: 'versioned'
+                    };
 
                     if (!hasBookmarkTreeContent(tree)) {
                         const currentCount = await getCurrentRestorableNodeCount();
@@ -4710,14 +4810,18 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         uiSource: 'background',
                         sourceType: 'last_backup',
                         phase: 'intent_preparing_target',
-                        displayTitle: preferredLang === 'en' ? 'Revert to last backup' : '撤销到上次备份',
+                        displayTitle: preferredLang === 'en' ? 'Last Backup Target State' : '上次备份目标状态',
                         targetRef: {
                             recordTime: String(lastBookmarkData?.timestamp || ''),
                             snapshotKey: '__last_backup__',
                             sourceType: 'last_backup'
                         },
                         meta: {
-                            targetBaselineTimestamp: String(lastBookmarkData?.timestamp || '')
+                            targetBaselineTimestamp: String(lastBookmarkData?.timestamp || ''),
+                            sourceNote: lastBackupSourceNote,
+                            restoreRecordMeta: {
+                                ...lastBackupRecordMeta
+                            }
                         }
                     });
                     recoveryIntentCreated = true;
@@ -4818,12 +4922,16 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         resolvedStrategy: decision.strategy,
                         uiSource: 'background',
                         sourceType: 'last_backup',
-                        displayTitle: preferredLang === 'en' ? 'Revert to last backup' : '撤销到上次备份',
+                        displayTitle: preferredLang === 'en' ? 'Last Backup Target State' : '上次备份目标状态',
                         startSnapshot: currentTree,
                         targetSnapshot: tree,
                         meta: {
                             targetBaselineTimestamp: String(lastBookmarkData?.timestamp || ''),
-                            verifyStableIdComparable: true
+                            verifyStableIdComparable: true,
+                            sourceNote: lastBackupSourceNote,
+                            restoreRecordMeta: {
+                                ...lastBackupRecordMeta
+                            }
                         }
                     });
                     recoveryTransactionStarted = true;
@@ -5168,6 +5276,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             uiSource: 'history',
                             sourceType: 'history_record',
                             displayTitle: intentDisplayTitle,
+                            exposeSafetyCheckpoint: false,
                             startSnapshot: currentTree,
                             targetSnapshot: mergeRecoveryPlan.targetSnapshot,
                             startedAtIso: preRestoreCapturedAtIso,
@@ -6085,6 +6194,26 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
             }
             return true; // 保持消息通道开放
+        } else if (message.action === "getBackupHistorySlimmingSettings") {
+            getBackupHistorySlimmingSettings()
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "setBackupHistorySlimmingSettings") {
+            setBackupHistorySlimmingSettings(message.settings)
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "getLatestSafetyCheckpointStatus") {
+            getLatestSafetyCheckpointStatus()
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "exportLatestSafetyCheckpointPackage") {
+            exportLatestSafetyCheckpointPackage(message.options || message.exportOptions || {})
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
         } else if (message.action === "getSyncHistory") {
             // 从存储中获取备份历史记录
             browserAPI.storage.local.get(['syncHistory'], (data) => {
@@ -6106,7 +6235,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // syncHistory 是时间升序（旧 -> 新）；分页按“最新优先”返回
                     const endExclusive = Math.max(0, totalRecords - ((currentPage - 1) * pageSize));
                     const startInclusive = Math.max(0, endExclusive - pageSize);
-                    const pageRecords = syncHistory.slice(startInclusive, endExclusive).reverse();
+                    const pageRecords = syncHistory.slice(startInclusive, endExclusive).reverse().map(attachHistoryRecordCapabilities);
 
                     sendResponse({
                         success: true,
@@ -6131,7 +6260,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 sendResponse({
                     success: true,
-                    syncHistory: payloadHistory,
+                    syncHistory: payloadHistory.map(attachHistoryRecordCapabilities),
                     totalRecords: syncHistory.length,
                     totalPages: Math.max(1, Math.ceil(syncHistory.length / (recentLimit || Math.max(1, syncHistory.length || 1))))
                 });
@@ -12859,6 +12988,8 @@ function normalizeAppliedRestoreStrategy(strategy) {
 
 const RESTORE_RECOVERY_TRANSACTION_KEY = 'restoreRecoveryTransaction'
 const RESTORE_RECOVERY_INTENT_KEY = 'restoreRecoveryIntent'
+const LATEST_SAFETY_CHECKPOINT_KEY = 'latestSafetyCheckpoint'
+const SAFETY_CHECKPOINT_STORAGE_PREFIX = `${LATEST_SAFETY_CHECKPOINT_KEY}:snapshot`
 const RESTORE_RECOVERY_SNAPSHOT_CHUNK_SIZE = 24 * 1024
 const RESTORE_RECOVERY_PROMPT_DISMISS_THRESHOLD = 5
 const RESTORE_RECOVERY_PROMPT_SESSION_MARKER_PREFIX = `${RESTORE_RECOVERY_TRANSACTION_KEY}:promptSeen`
@@ -13319,6 +13450,244 @@ async function removeRestoreRecoverySnapshotParts(baseKey) {
     } catch (_) { }
 }
 
+function buildSafetyCheckpointSnapshotKey(kind, checkpointId) {
+    const normalizedKind = String(kind || '').trim().toLowerCase() === 'target' ? 'target' : 'before'
+    const normalizedId = String(checkpointId || '').trim()
+    return `${SAFETY_CHECKPOINT_STORAGE_PREFIX}:${normalizedKind}:${normalizedId}`
+}
+
+function sanitizeSafetyCheckpointToken(value = '') {
+    const normalized = String(value || '').trim().replace(/[^a-zA-Z0-9_-]+/g, '_')
+    return (normalized || 'checkpoint').slice(0, 32)
+}
+
+function getSafetyCheckpointPackageFolderByLang(lang) {
+    return lang === 'zh_CN' ? '高危操作安全快照' : 'Safety Snapshots'
+}
+
+function normalizeSafetyCheckpointOperationKind(value = '') {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'revert') return 'revert'
+    if (normalized === 'merge') return 'merge'
+    return 'restore'
+}
+
+function buildSafetyCheckpointManifest(options = {}) {
+    const beforeSnapshot = normalizeRestoreRecoverySnapshot(options.beforeSnapshot || options.startSnapshot)
+    const targetSnapshot = normalizeRestoreRecoverySnapshot(options.targetSnapshot)
+    if (!beforeSnapshot || !targetSnapshot) {
+        throw new Error('Invalid safety snapshot data')
+    }
+
+    const createdAt = Number(options.createdAt || options.startedAt) || Date.now()
+    const checkpointId = String(
+        options.checkpointId
+        || `safety_${createdAt}_${Math.random().toString(36).slice(2, 10)}`
+    ).trim()
+    const beforeDigest = buildRestoreRecoveryStructureDigest(beforeSnapshot)
+    const targetDigest = buildRestoreRecoveryStructureDigest(targetSnapshot)
+    const operationKind = normalizeSafetyCheckpointOperationKind(options.operationKind)
+    const requestedStrategy = normalizeRestoreRecoveryRequestedStrategy(options.requestedStrategy)
+    const resolvedStrategy = normalizeAppliedRestoreStrategy(options.resolvedStrategy)
+    const meta = options.meta && typeof options.meta === 'object'
+        ? cloneRestoreRecoverySerializableData(options.meta)
+        : {}
+    const restoreRecordMeta = meta?.restoreRecordMeta && typeof meta.restoreRecordMeta === 'object'
+        ? meta.restoreRecordMeta
+        : {}
+    const precomputedDiffSummary = normalizeRestoreRecordDiffSummaryPayload(
+        restoreRecordMeta.precomputedDiffSummary || meta.precomputedDiffSummary || null
+    )
+
+    return {
+        version: 1,
+        checkpointId,
+        transactionId: String(options.transactionId || options.sessionId || '').trim(),
+        sessionId: String(options.sessionId || '').trim(),
+        operationKind,
+        requestedStrategy,
+        resolvedStrategy,
+        source: String(options.source || options.uiSource || '').trim(),
+        uiSource: normalizeRestoreRecoveryUiSource(options.uiSource),
+        sourceType: String(options.sourceType || '').trim().toLowerCase(),
+        displayTitle: String(options.displayTitle || '').trim(),
+        restoreActionNote: String(restoreRecordMeta.note || meta.note || '').trim(),
+        sourceNote: String(restoreRecordMeta.sourceNote || meta.sourceNote || '').trim(),
+        targetNote: String(restoreRecordMeta.sourceNote || restoreRecordMeta.note || meta.sourceNote || meta.note || '').trim(),
+        sourceSeqNumber: String(restoreRecordMeta.sourceSeqNumber ?? meta.seqNumber ?? '').trim(),
+        sourceRecordTime: String(restoreRecordMeta.sourceTime || meta.recordTime || meta.targetBaselineTimestamp || '').trim(),
+        sourceFingerprint: String(restoreRecordMeta.sourceFingerprint || meta.fingerprint || '').trim(),
+        sourceSnapshotKey: String(restoreRecordMeta.sourceSnapshotKey || meta.snapshotKey || '').trim(),
+        sourceOverwriteMode: String(restoreRecordMeta.sourceOverwriteMode || meta.sourceOverwriteMode || '').trim().toLowerCase(),
+        targetBaselineTimestamp: String(meta.targetBaselineTimestamp || meta.recordTime || '').trim(),
+        displayRequestedStrategy: String(meta.displayRequestedStrategy || '').trim().toLowerCase(),
+        displayResolvedStrategy: String(meta.displayResolvedStrategy || '').trim().toLowerCase(),
+        mergeImportKind: String(meta.mergeImportKind || '').trim().toLowerCase(),
+        mergeImportViewMode: String(meta.mergeImportViewMode || '').trim().toLowerCase(),
+        mergeImportRootTitle: String(meta.mergeImportRootTitle || '').trim(),
+        precomputedDiffSummary,
+        createdAt,
+        createdAtIso: String(options.createdAtIso || options.startedAtIso || new Date(createdAt).toISOString()),
+        updatedAt: Date.now(),
+        beforeSnapshotKey: buildSafetyCheckpointSnapshotKey('before', checkpointId),
+        targetSnapshotKey: buildSafetyCheckpointSnapshotKey('target', checkpointId),
+        beforeNodeCount: beforeDigest.nodeCount,
+        beforeBookmarkCount: beforeDigest.bookmarkCount,
+        beforeFolderCount: beforeDigest.folderCount,
+        beforeRootCount: beforeDigest.rootCount,
+        beforeStructureHash: beforeDigest.hash,
+        targetNodeCount: targetDigest.nodeCount,
+        targetBookmarkCount: targetDigest.bookmarkCount,
+        targetFolderCount: targetDigest.folderCount,
+        targetRootCount: targetDigest.rootCount,
+        targetStructureHash: targetDigest.hash,
+        exportedAtIso: '',
+        exportedFiles: [],
+        meta
+    }
+}
+
+function buildSafetyCheckpointStatusPayload(checkpoint = null) {
+    if (!checkpoint || typeof checkpoint !== 'object') return null
+    const meta = checkpoint?.meta && typeof checkpoint.meta === 'object' ? checkpoint.meta : {}
+    const restoreRecordMeta = meta?.restoreRecordMeta && typeof meta.restoreRecordMeta === 'object'
+        ? meta.restoreRecordMeta
+        : {}
+    return {
+        version: Number(checkpoint.version) || 1,
+        checkpointId: String(checkpoint.checkpointId || '').trim(),
+        transactionId: String(checkpoint.transactionId || checkpoint.sessionId || '').trim(),
+        sessionId: String(checkpoint.sessionId || '').trim(),
+        operationKind: normalizeSafetyCheckpointOperationKind(checkpoint.operationKind),
+        requestedStrategy: normalizeRestoreRecoveryRequestedStrategy(checkpoint.requestedStrategy),
+        resolvedStrategy: normalizeAppliedRestoreStrategy(checkpoint.resolvedStrategy),
+        source: String(checkpoint.source || checkpoint.uiSource || '').trim(),
+        uiSource: normalizeRestoreRecoveryUiSource(checkpoint.uiSource),
+        sourceType: String(checkpoint.sourceType || '').trim().toLowerCase(),
+        displayTitle: String(checkpoint.displayTitle || '').trim(),
+        restoreActionNote: String(checkpoint.restoreActionNote || restoreRecordMeta.note || meta.note || '').trim(),
+        sourceNote: String(checkpoint.sourceNote || restoreRecordMeta.sourceNote || meta.sourceNote || '').trim(),
+        targetNote: String(checkpoint.targetNote || restoreRecordMeta.sourceNote || restoreRecordMeta.note || meta.sourceNote || meta.note || '').trim(),
+        sourceSeqNumber: String(checkpoint.sourceSeqNumber || restoreRecordMeta.sourceSeqNumber || meta.seqNumber || '').trim(),
+        sourceRecordTime: String(checkpoint.sourceRecordTime || restoreRecordMeta.sourceTime || meta.recordTime || meta.targetBaselineTimestamp || '').trim(),
+        sourceFingerprint: String(checkpoint.sourceFingerprint || restoreRecordMeta.sourceFingerprint || meta.fingerprint || '').trim(),
+        sourceSnapshotKey: String(checkpoint.sourceSnapshotKey || restoreRecordMeta.sourceSnapshotKey || meta.snapshotKey || '').trim(),
+        sourceOverwriteMode: String(checkpoint.sourceOverwriteMode || restoreRecordMeta.sourceOverwriteMode || meta.sourceOverwriteMode || '').trim().toLowerCase(),
+        targetBaselineTimestamp: String(checkpoint.targetBaselineTimestamp || meta.targetBaselineTimestamp || meta.recordTime || '').trim(),
+        displayRequestedStrategy: String(checkpoint.displayRequestedStrategy || meta.displayRequestedStrategy || '').trim().toLowerCase(),
+        displayResolvedStrategy: String(checkpoint.displayResolvedStrategy || meta.displayResolvedStrategy || '').trim().toLowerCase(),
+        mergeImportKind: String(checkpoint.mergeImportKind || meta.mergeImportKind || '').trim().toLowerCase(),
+        mergeImportViewMode: String(checkpoint.mergeImportViewMode || meta.mergeImportViewMode || '').trim().toLowerCase(),
+        mergeImportRootTitle: String(checkpoint.mergeImportRootTitle || meta.mergeImportRootTitle || '').trim(),
+        precomputedDiffSummary: normalizeRestoreRecordDiffSummaryPayload(
+            checkpoint.precomputedDiffSummary || restoreRecordMeta.precomputedDiffSummary || meta.precomputedDiffSummary || null
+        ),
+        createdAt: Number(checkpoint.createdAt) || 0,
+        createdAtIso: String(checkpoint.createdAtIso || '').trim(),
+        updatedAt: Number(checkpoint.updatedAt) || 0,
+        beforeNodeCount: Number(checkpoint.beforeNodeCount) || 0,
+        beforeBookmarkCount: Number(checkpoint.beforeBookmarkCount) || 0,
+        beforeFolderCount: Number(checkpoint.beforeFolderCount) || 0,
+        targetNodeCount: Number(checkpoint.targetNodeCount) || 0,
+        targetBookmarkCount: Number(checkpoint.targetBookmarkCount) || 0,
+        targetFolderCount: Number(checkpoint.targetFolderCount) || 0,
+        beforeStructureHash: String(checkpoint.beforeStructureHash || '').trim(),
+        targetStructureHash: String(checkpoint.targetStructureHash || '').trim(),
+        exportedAtIso: String(checkpoint.exportedAtIso || '').trim(),
+        exportedFiles: Array.isArray(checkpoint.exportedFiles) ? checkpoint.exportedFiles : [],
+        canExport: !!(checkpoint.beforeSnapshotKey && checkpoint.targetSnapshotKey)
+    }
+}
+
+async function loadLatestSafetyCheckpoint() {
+    const store = await browserAPI.storage.local.get([LATEST_SAFETY_CHECKPOINT_KEY])
+    const checkpoint = store?.[LATEST_SAFETY_CHECKPOINT_KEY]
+    return checkpoint && typeof checkpoint === 'object' ? checkpoint : null
+}
+
+async function replaceLatestSafetyCheckpointAtomically(options = {}) {
+    const beforeSnapshot = normalizeRestoreRecoverySnapshot(options.beforeSnapshot || options.startSnapshot)
+    const targetSnapshot = normalizeRestoreRecoverySnapshot(options.targetSnapshot)
+    if (!beforeSnapshot || !targetSnapshot) {
+        throw new Error('Invalid safety snapshot data')
+    }
+
+    const previous = await loadLatestSafetyCheckpoint()
+    const checkpoint = buildSafetyCheckpointManifest({
+        ...options,
+        beforeSnapshot,
+        targetSnapshot
+    })
+
+    await storeRestoreRecoverySnapshot(checkpoint.beforeSnapshotKey, beforeSnapshot)
+    await storeRestoreRecoverySnapshot(checkpoint.targetSnapshotKey, targetSnapshot)
+    await browserAPI.storage.local.set({ [LATEST_SAFETY_CHECKPOINT_KEY]: checkpoint })
+
+    try {
+        if (previous?.beforeSnapshotKey && previous.beforeSnapshotKey !== checkpoint.beforeSnapshotKey) {
+            await removeRestoreRecoverySnapshotParts(previous.beforeSnapshotKey)
+        }
+        if (previous?.targetSnapshotKey && previous.targetSnapshotKey !== checkpoint.targetSnapshotKey) {
+            await removeRestoreRecoverySnapshotParts(previous.targetSnapshotKey)
+        }
+    } catch (_) { }
+
+    return checkpoint
+}
+
+async function createSafetyCheckpoint(options = {}) {
+    return await replaceLatestSafetyCheckpointAtomically(options)
+}
+
+async function loadSafetyCheckpointSnapshots(checkpoint = null) {
+    const activeCheckpoint = checkpoint && typeof checkpoint === 'object'
+        ? checkpoint
+        : await loadLatestSafetyCheckpoint()
+    if (!activeCheckpoint) {
+        return {
+            checkpoint: null,
+            beforeSnapshot: null,
+            targetSnapshot: null
+        }
+    }
+    const beforeSnapshot = await loadRestoreRecoverySnapshot(activeCheckpoint.beforeSnapshotKey)
+    const targetSnapshot = await loadRestoreRecoverySnapshot(activeCheckpoint.targetSnapshotKey)
+    return {
+        checkpoint: activeCheckpoint,
+        beforeSnapshot,
+        targetSnapshot
+    }
+}
+
+async function getLatestSafetyCheckpointStatus() {
+    const checkpoint = await loadLatestSafetyCheckpoint()
+    const payload = buildSafetyCheckpointStatusPayload(checkpoint)
+    if (payload) {
+        try {
+            const currentTree = await browserAPI.bookmarks.getTree()
+            const currentDigest = buildRestoreRecoveryStructureDigest(currentTree)
+            const currentBookmarkCount = countAllBookmarks(currentTree)
+            const currentFolderCount = countAllFolders(currentTree)
+            payload.currentBookmarkCount = currentBookmarkCount
+            payload.currentFolderCount = currentFolderCount
+            payload.currentNodeCount = currentBookmarkCount + currentFolderCount
+            payload.currentRootCount = currentDigest.rootCount
+            payload.currentStructureHash = currentDigest.hash
+            payload.currentSnapshotAvailable = true
+        } catch (error) {
+            payload.currentNodeCount = null
+            payload.currentBookmarkCount = null
+            payload.currentFolderCount = null
+            payload.currentSnapshotAvailable = false
+            payload.currentSnapshotError = error?.message || String(error || '')
+        }
+    }
+    return {
+        success: true,
+        checkpoint: payload
+    }
+}
+
 async function getRawRestoreRecoveryTransaction() {
     const store = await browserAPI.storage.local.get([RESTORE_RECOVERY_TRANSACTION_KEY])
     const transaction = store?.[RESTORE_RECOVERY_TRANSACTION_KEY]
@@ -13473,6 +13842,10 @@ async function appendRestoreRecoveryFailureHistoryRecord(options = {}) {
         hasChangeData: false,
         changeDataKey: '',
         changeDataSchemaVersion: 0,
+        capabilities: buildHistoryRecordCapabilities({
+            hasData: false,
+            hasChangeData: false
+        }),
         fingerprint,
         snapshotKey,
         snapshotName: '',
@@ -13727,6 +14100,25 @@ async function beginRestoreRecoveryTransaction(options = {}) {
     }
 
     try {
+        const shouldExposeSafetyCheckpoint = options.exposeSafetyCheckpoint !== false
+            && options.skipSafetyCheckpoint !== true
+        if (shouldExposeSafetyCheckpoint) {
+            await createSafetyCheckpoint({
+                sessionId,
+                operationKind: transaction.operationKind,
+                requestedStrategy: transaction.requestedStrategy,
+                resolvedStrategy: transaction.resolvedStrategy,
+                source: transaction.uiSource,
+                uiSource: transaction.uiSource,
+                sourceType: transaction.sourceType,
+                displayTitle: transaction.displayTitle,
+                createdAt: startedAt,
+                createdAtIso: transaction.startedAtIso,
+                beforeSnapshot: startSnapshot,
+                targetSnapshot,
+                meta: initialMeta
+            })
+        }
         await storeRestoreRecoverySnapshot(startSnapshotKey, startSnapshot)
         await storeRestoreRecoverySnapshot(targetSnapshotKey, targetSnapshot)
         await browserAPI.storage.local.set({ [RESTORE_RECOVERY_TRANSACTION_KEY]: transaction })
@@ -13953,10 +14345,182 @@ function sanitizeRestoreRecoveryBackupPackageToken(value = '') {
     return normalized.slice(0, 24);
 }
 
+function normalizeSafetyCheckpointExportItems(options = {}) {
+    const allowed = new Set(['before', 'target', 'current', 'manifest']);
+    const rawItems = Array.isArray(options?.items)
+        ? options.items
+        : (Array.isArray(options?.exportItems) ? options.exportItems : null);
+    if (!rawItems) {
+        return ['before', 'target', 'manifest'];
+    }
+    const items = [];
+    rawItems.forEach((item) => {
+        const normalized = String(item || '').trim().toLowerCase();
+        if (allowed.has(normalized) && !items.includes(normalized)) {
+            items.push(normalized);
+        }
+    });
+    return items;
+}
+
+function getSafetyCheckpointExportFileName(item, lang) {
+    const isEn = lang === 'en';
+    if (item === 'before') {
+        return isEn ? 'Before Operation Browser Snapshot.html' : '操作前浏览器快照.html';
+    }
+    if (item === 'target') {
+        return isEn ? 'Target State Snapshot.html' : '目标状态快照.html';
+    }
+    if (item === 'current') {
+        return isEn ? 'Current Browser Snapshot.html' : '当前浏览器快照.html';
+    }
+    if (item === 'manifest') {
+        return isEn ? 'Safety Snapshot Manifest.json' : '安全快照清单.json';
+    }
+    return isEn ? 'Safety Snapshot.html' : '安全快照.html';
+}
+
+async function exportSafetyCheckpointPackage(checkpoint = null, options = {}) {
+    const langRaw = options?.lang || await getCurrentLang();
+    const lang = langRaw === 'en' ? 'en' : 'zh_CN';
+    const exportItems = normalizeSafetyCheckpointExportItems(options);
+    if (!exportItems.length) {
+        return {
+            success: false,
+            error: lang === 'en' ? 'Select at least one safety snapshot to export' : '请至少选择一个要导出的安全快照'
+        };
+    }
+    const activeCheckpoint = checkpoint && typeof checkpoint === 'object'
+        ? checkpoint
+        : await loadLatestSafetyCheckpoint();
+    if (!activeCheckpoint) {
+        return {
+            success: false,
+            error: lang === 'en' ? 'No safety snapshot found' : '未找到可导出的安全快照'
+        };
+    }
+
+    const { beforeSnapshot, targetSnapshot } = await loadSafetyCheckpointSnapshots(activeCheckpoint);
+    if (!beforeSnapshot || !targetSnapshot) {
+        return {
+            success: false,
+            error: lang === 'en' ? 'Safety snapshot data is unavailable' : '安全快照数据不可用'
+        };
+    }
+
+    try {
+        const exportRootFolder = getExportRootFolderByLang(lang);
+        const manualExportFolder = getManualExportParentFolderByLang(lang);
+        const packageFolder = getSafetyCheckpointPackageFolderByLang(lang);
+        const timeToken = formatSyncTimeForFileName(new Date().toISOString());
+        const checkpointToken = sanitizeSafetyCheckpointToken(activeCheckpoint.checkpointId || activeCheckpoint.sessionId);
+        const packageBasePath = `${exportRootFolder}/${manualExportFolder}/${packageFolder}/${timeToken}_${checkpointToken}`;
+
+        const manifestMeta = activeCheckpoint?.meta && typeof activeCheckpoint.meta === 'object'
+            ? cloneRestoreRecoverySerializableData(activeCheckpoint.meta)
+            : {};
+        if (manifestMeta && typeof manifestMeta === 'object') {
+            delete manifestMeta.mergeImportTree;
+        }
+
+        const exportedAtIso = new Date().toISOString();
+        const manifest = {
+            ...buildSafetyCheckpointStatusPayload(activeCheckpoint),
+            packageVersion: 1,
+            exportedAtIso,
+            selectedItems: exportItems,
+            meta: manifestMeta,
+            files: {}
+        };
+
+        const files = [];
+        const downloadHtmlItem = async (item, snapshot) => {
+            const fileName = getSafetyCheckpointExportFileName(item, lang);
+            const filePath = `${packageBasePath}/${fileName}`;
+            await downloadDataUrlWithShelfControl({
+                url: `data:text/html;charset=utf-8,${encodeURIComponent(convertToEdgeHTML(snapshot))}`,
+                filename: filePath,
+                conflictAction: 'uniquify',
+                suppressShelfNotification: false,
+                waitTimeoutMs: 3200
+            });
+            manifest.files[item] = fileName;
+            files.push(filePath);
+        };
+
+        if (exportItems.includes('before')) {
+            await downloadHtmlItem('before', beforeSnapshot);
+        }
+        if (exportItems.includes('target')) {
+            await downloadHtmlItem('target', targetSnapshot);
+        }
+        if (exportItems.includes('current')) {
+            const currentTree = await browserAPI.bookmarks.getTree();
+            await downloadHtmlItem('current', currentTree);
+        }
+        if (exportItems.includes('manifest')) {
+            const manifestFileName = getSafetyCheckpointExportFileName('manifest', lang);
+            const manifestPath = `${packageBasePath}/${manifestFileName}`;
+            await downloadDataUrlWithShelfControl({
+                url: `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(manifest, null, 2))}`,
+                filename: manifestPath,
+                conflictAction: 'uniquify',
+                suppressShelfNotification: false,
+                waitTimeoutMs: 3200
+            });
+            manifest.files.manifest = manifestFileName;
+            files.push(manifestPath);
+        }
+
+        try {
+            const latest = await loadLatestSafetyCheckpoint();
+            if (latest && String(latest.checkpointId || '') === String(activeCheckpoint.checkpointId || '')) {
+                await browserAPI.storage.local.set({
+                    [LATEST_SAFETY_CHECKPOINT_KEY]: {
+                        ...latest,
+                        exportedAtIso,
+                        exportedFiles: files,
+                        updatedAt: Date.now()
+                    }
+                });
+            }
+        } catch (_) { }
+
+        return {
+            success: true,
+            checkpointId: String(activeCheckpoint.checkpointId || '').trim(),
+            sessionId: String(activeCheckpoint.sessionId || '').trim(),
+            files,
+            fileCount: files.length
+        };
+    } catch (error) {
+        console.error('[safety-checkpoint] export failed:', error);
+        return {
+            success: false,
+            error: error?.message || (lang === 'en' ? 'Export safety snapshot failed' : '导出安全快照失败')
+        };
+    }
+}
+
+async function exportLatestSafetyCheckpointPackage(options = {}) {
+    return await exportSafetyCheckpointPackage(null, options);
+}
+
 async function exportRestoreRecoveryBackupPackage(options = {}) {
     const langRaw = await getCurrentLang();
     const lang = langRaw === 'en' ? 'en' : 'zh_CN';
     const requestedSessionId = String(options?.sessionId || '').trim();
+
+    const latestCheckpoint = await loadLatestSafetyCheckpoint();
+    if (
+        latestCheckpoint
+        && (
+            !requestedSessionId
+            || String(latestCheckpoint.sessionId || '').trim() === requestedSessionId
+        )
+    ) {
+        return await exportSafetyCheckpointPackage(latestCheckpoint, { lang });
+    }
 
     const transaction = await getPendingRestoreRecoveryTransaction();
     if (!transaction) {
@@ -14000,11 +14564,11 @@ async function exportRestoreRecoveryBackupPackage(options = {}) {
         const packageBasePath = `${exportRootFolder}/${manualExportFolder}/${packageFolder}/${timeToken}_${sessionToken}`;
 
         const startFileName = lang === 'en'
-            ? 'start_snapshot.html'
-            : '开始前快照_start.html';
+            ? 'Start Snapshot.html'
+            : '开始前快照.html';
         const targetFileName = lang === 'en'
-            ? 'target_snapshot.html'
-            : '目标快照_target.html';
+            ? 'Target Snapshot.html'
+            : '目标快照.html';
 
         const startPath = `${packageBasePath}/${startFileName}`;
         const targetPath = `${packageBasePath}/${targetFileName}`;
@@ -14049,7 +14613,18 @@ async function getRestoreRecoveryTransactionCapabilities(transaction = null) {
     const lockedIncident = isRestoreRecoveryLockedIncident(activeTransaction)
     const canContinue = !!targetSnapshot && !lockedIncident
     const canRollback = !!startSnapshot && !lockedIncident
-    const canExportBackupPackage = !!startSnapshot && !!targetSnapshot
+    let canExportBackupPackage = !!startSnapshot && !!targetSnapshot
+    if (!canExportBackupPackage && activeTransaction?.sessionId) {
+        try {
+            const checkpoint = await loadLatestSafetyCheckpoint()
+            canExportBackupPackage = !!(
+                checkpoint
+                && String(checkpoint.sessionId || '').trim() === String(activeTransaction.sessionId || '').trim()
+                && checkpoint.beforeSnapshotKey
+                && checkpoint.targetSnapshotKey
+            )
+        } catch (_) { }
+    }
 
     return {
         transaction: activeTransaction,
@@ -16790,7 +17365,7 @@ async function updateBookmarks(bookmarksData) {
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
     try {
         const postSyncWarnings = [];
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned', lastBookmarkChangeTime = 0, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
@@ -16801,12 +17376,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             'recentAddedIds',
             'overwriteMode',
             'lastBookmarkChangeTime',
+            BACKUP_HISTORY_SLIMMING_SETTINGS_KEY,
             BOOKMARK_COMPARISON_GENERATION_KEY
         ]);
 
         const activeLang = currentLang === 'en' || currentLang === 'zh_CN'
             ? currentLang
             : (preferredLang === 'en' ? 'en' : 'zh_CN');
+        const backupHistorySlimming = normalizeBackupHistorySlimmingSettings(rawBackupHistorySlimming);
         const activeComparisonGeneration = normalizeBookmarkComparisonGeneration(
             options?.comparisonGeneration,
             normalizeBookmarkComparisonGeneration(storedComparisonGeneration, BOOKMARK_COMPARISON_INITIAL_GENERATION)
@@ -17043,12 +17620,13 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             folderDiff = 0;
         }
 
-        // 只为成功的备份保存 bookmarkTree（用于生成历史详情）
-        const shouldSaveTree = status === 'success';
+        // 普通备份历史按瘦身策略保存；高危操作安全快照走独立 checkpoint，不受这里影响。
+        const shouldSaveTree = status === 'success' && shouldRetainBackupHistorySnapshotData(backupHistorySlimming);
+        const shouldSaveChangeData = status === 'success' && shouldRetainBackupHistoryChangeData(backupHistorySlimming);
         let recordChangeDataPayload = null;
         const changeDataKey = `changes_data_${time}`;
 
-        if (shouldSaveTree && Array.isArray(localBookmarks) && localBookmarks.length) {
+        if (shouldSaveChangeData && Array.isArray(localBookmarks) && localBookmarks.length) {
             try {
                 recordChangeDataPayload = await buildHistoryRecordChangePayload({
                     recordTime: time,
@@ -17127,6 +17705,15 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             hasChangeData: !!recordChangeDataPayload,
             changeDataKey: recordChangeDataPayload ? changeDataKey : '',
             changeDataSchemaVersion: recordChangeDataPayload?.schemaVersion || 0,
+            capabilities: buildHistoryRecordCapabilities({
+                hasData: shouldSaveTree,
+                hasChangeData: !!recordChangeDataPayload,
+                changeDataKey: recordChangeDataPayload ? changeDataKey : ''
+            }),
+            dataRetention: {
+                saveSnapshotData: shouldSaveTree,
+                saveChangeData: !!recordChangeDataPayload
+            },
             comparisonGeneration: activeComparisonGeneration,
             fingerprint: fingerprint,
             snapshotKey: effectiveOverwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
@@ -17135,14 +17722,17 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         };
 
         // 独立保存书签树和对应变化数据
-        if (shouldSaveTree && localBookmarks) {
-            const splitDataToStore = {
-                [`backup_data_${time}`]: localBookmarks
-            };
+        {
+            const splitDataToStore = {};
+            if (shouldSaveTree && localBookmarks) {
+                splitDataToStore[`backup_data_${time}`] = localBookmarks;
+            }
             if (recordChangeDataPayload) {
                 splitDataToStore[changeDataKey] = recordChangeDataPayload;
             }
-            await browserAPI.storage.local.set(splitDataToStore);
+            if (Object.keys(splitDataToStore).length > 0) {
+                await browserAPI.storage.local.set(splitDataToStore);
+            }
         }
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];
@@ -21256,7 +21846,7 @@ function parseManualExportInfoLogJson(text) {
     return records
         .map((record, index) => normalizeManualExportInfoLogRecord(record, index))
         .filter(Boolean)
-        .filter((record) => record.hasSnapshot || record.hasChanges);
+        .filter((record) => record.hasSnapshot || record.hasChanges || !!String(record.timeRaw || '').trim() || record.seqNumber != null || !!String(record.note || '').trim());
 }
 
 function parseManualExportInfoLogStatusCell(value) {
@@ -26891,6 +27481,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 uiSource: 'popup',
                 sourceType,
                 displayTitle: restoreIntentDisplayTitle,
+                exposeSafetyCheckpoint: false,
                 startSnapshot: preRestoreTree,
                 targetSnapshot: mergeRecoveryPlan.targetSnapshot,
                 startedAtIso: preRestoreCapturedAtIso || new Date().toISOString(),

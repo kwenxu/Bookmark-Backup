@@ -92,6 +92,12 @@ const POPUP_BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
     github_repo: 1,
     webdav: 2
 });
+let backupHistorySlimmingState = {
+    saveSnapshotData: true,
+    saveChangeData: true
+};
+let backupHistorySlimmingStateLoaded = false;
+let latestSafetyCheckpointState = null;
 
 // =============================================================================
 // 辅助函数 (Helper Functions)
@@ -132,6 +138,446 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
 
     const historyTooltip = document.getElementById('historyViewerTooltip');
     if (historyTooltip) historyTooltip.textContent = isEn ? 'Open HTML page' : '打开HTML页面';
+
+    const slimmingTooltip = document.querySelector('#backupHistorySlimmingSettingsBtn .tooltip');
+    if (slimmingTooltip) slimmingTooltip.textContent = isEn ? 'Compaction settings' : '精简设置';
+
+    const safetyTooltip = document.querySelector('#backupHistorySafetyCheckpointBtn .tooltip');
+    if (safetyTooltip) safetyTooltip.textContent = isEn ? 'Temporary Safety Snapshot' : '临时安全快照';
+
+    const restoreSafetyTooltip = document.querySelector('#restoreSafetyCheckpointEntryBtn .tooltip');
+    if (restoreSafetyTooltip) restoreSafetyTooltip.textContent = isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照';
+}
+
+function normalizeBackupHistorySlimmingSettings(rawSettings) {
+    const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    return {
+        saveSnapshotData: settings.saveSnapshotData !== false,
+        saveChangeData: settings.saveChangeData !== false
+    };
+}
+
+function getPopupHistoryRecordCapabilities(record = {}) {
+    const explicit = record?.capabilities && typeof record.capabilities === 'object'
+        ? record.capabilities
+        : {};
+    const hasSnapshotData = explicit.hasSnapshotData === true || !!(record?.bookmarkTree || record?.hasData === true);
+    const hasChangeData = explicit.hasChangeData === true || !!(record?.hasChangeData === true || String(record?.changeDataKey || '').trim() || record?.__persistedChangeData);
+    return {
+        hasSnapshotData,
+        hasChangeData,
+        recordOnly: !hasSnapshotData && !hasChangeData,
+        canExpand: hasSnapshotData || hasChangeData,
+        canSearch: hasSnapshotData || hasChangeData,
+        canExportSnapshot: hasSnapshotData,
+        canExportChanges: hasChangeData,
+        canRestore: hasSnapshotData || hasChangeData,
+        canMergeRestore: hasChangeData,
+        canPatchRestore: hasSnapshotData,
+        canViewChanges: hasChangeData,
+        canViewSnapshot: hasSnapshotData
+    };
+}
+
+function getBackupHistorySlimmingSettingsSnapshot() {
+    return {
+        saveSnapshotData: backupHistorySlimmingState.saveSnapshotData !== false,
+        saveChangeData: backupHistorySlimmingState.saveChangeData !== false
+    };
+}
+
+function getBackupHistorySlimmingButtonState(settings = backupHistorySlimmingState) {
+    const normalized = normalizeBackupHistorySlimmingSettings(settings);
+    const selectedCount = [normalized.saveSnapshotData, normalized.saveChangeData].filter(Boolean).length;
+    if (selectedCount === 2) return 'all';
+    if (selectedCount === 1) return 'partial';
+    return 'none';
+}
+
+function syncBackupHistorySlimmingButtonState(settings = backupHistorySlimmingState) {
+    const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
+    if (!settingsBtn) return;
+    settingsBtn.dataset.slimmingState = getBackupHistorySlimmingButtonState(settings);
+}
+
+function applyBackupHistorySlimmingSettingsToUI(settings) {
+    const normalized = normalizeBackupHistorySlimmingSettings(settings);
+    backupHistorySlimmingState = { ...normalized };
+    backupHistorySlimmingStateLoaded = true;
+    const isEn = document.documentElement.getAttribute('lang') === 'en';
+
+    const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
+    if (settingsBtn) {
+        const title = isEn ? 'Compaction settings' : '精简设置';
+        settingsBtn.setAttribute('aria-label', title);
+        settingsBtn.setAttribute('title', title);
+    }
+    syncBackupHistorySlimmingButtonState(normalized);
+}
+
+function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
+    const isEn = lang === 'en';
+
+    const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
+    if (settingsBtn) {
+        settingsBtn.setAttribute('aria-label', isEn ? 'Compaction settings' : '精简设置');
+        settingsBtn.setAttribute('title', isEn ? 'Compaction settings' : '精简设置');
+        syncBackupHistorySlimmingButtonState();
+    }
+
+    const safetyBtn = document.getElementById('backupHistorySafetyCheckpointBtn');
+    if (safetyBtn) {
+        safetyBtn.setAttribute('aria-label', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
+        safetyBtn.setAttribute('title', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
+    }
+
+    const restoreSafetyText = document.getElementById('restoreSafetyCheckpointEntryText');
+    if (restoreSafetyText) {
+        restoreSafetyText.textContent = isEn
+            ? 'Before restore, before-operation browser and target-state snapshots are created.'
+            : '恢复前会生成“操作前浏览器快照”和“目标状态快照”。';
+    }
+
+    const restoreSafetyBtn = document.getElementById('restoreSafetyCheckpointEntryBtn');
+    if (restoreSafetyBtn) {
+        restoreSafetyBtn.setAttribute('aria-label', isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照');
+        restoreSafetyBtn.setAttribute('title', isEn ? 'View Temporary Safety Snapshot' : '查看临时安全快照');
+    }
+}
+
+function formatSafetyCheckpointTimeText(value, lang = 'zh_CN') {
+    const date = new Date(value || '');
+    if (!Number.isFinite(date.getTime())) return String(value || '-');
+    try {
+        return date.toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (_) {
+        return date.toISOString();
+    }
+}
+
+function formatSafetyCheckpointOperationLabel(value, lang = 'zh_CN') {
+    const normalized = String(value || '').trim().toLowerCase();
+    const isEn = lang === 'en';
+    const labels = {
+        restore: isEn ? 'Restore' : '恢复',
+        revert: isEn ? 'Revert' : '撤销',
+        merge: isEn ? 'Import Merge' : '合并导入'
+    };
+    return labels[normalized] || String(value || '-').trim() || '-';
+}
+
+function formatSafetyCheckpointSourceLabel(value, lang = 'zh_CN') {
+    const normalized = String(value || '').trim().toLowerCase();
+    const isEn = lang === 'en';
+    const labels = {
+        background: isEn ? 'Background' : '后台',
+        popup: isEn ? 'Main UI' : '主界面',
+        history: isEn ? 'History Page' : '历史页面',
+        html: isEn ? 'History Page' : '历史页面',
+        restore: isEn ? 'Restore' : '恢复',
+        revert: isEn ? 'Revert' : '撤销'
+    };
+    return labels[normalized] || String(value || '-').trim() || '-';
+}
+
+function formatSafetyCheckpointSourceTypeLabel(value, lang = 'zh_CN') {
+    const normalized = String(value || '').trim().toLowerCase();
+    const isEn = lang === 'en';
+    const labels = {
+        last_backup: isEn ? 'Last backup' : '上次备份',
+        history_record: isEn ? 'Backup history record' : '备份历史记录',
+        changes_artifact: isEn ? 'Change artifact' : '变化数据',
+        snapshot: isEn ? 'Snapshot data' : '快照数据',
+        changes: isEn ? 'Change data' : '变化数据',
+        html: isEn ? 'HTML file' : 'HTML 文件',
+        json: isEn ? 'JSON file' : 'JSON 文件',
+        zip: isEn ? 'ZIP package' : 'ZIP 包',
+        webdav: 'WebDAV',
+        github: 'GitHub'
+    };
+    return labels[normalized] || String(value || '').trim();
+}
+
+function formatSafetyCheckpointStrategyLabel(value, lang = 'zh_CN') {
+    const normalized = String(value || '').trim().toLowerCase();
+    const isEn = lang === 'en';
+    const labels = {
+        patch: isEn ? 'Patch' : '补丁写入',
+        overwrite: isEn ? 'Overwrite' : '覆盖写入',
+        merge: isEn ? 'Import Merge' : '合并导入',
+        auto: isEn ? 'Auto' : '自动选择'
+    };
+    return labels[normalized] || String(value || '-').trim() || '-';
+}
+
+function formatSafetyCheckpointSnapshotCounts(checkpoint, prefix, lang = 'zh_CN') {
+    if (!checkpoint || typeof checkpoint !== 'object') return '-';
+    if (prefix === 'current') {
+        if (checkpoint.currentSnapshotAvailable === false) {
+            return lang === 'en' ? 'Unable to read live browser' : '实时读取失败';
+        }
+        if (!Object.prototype.hasOwnProperty.call(checkpoint, 'currentNodeCount')) {
+            return lang === 'en' ? 'Generated at export time' : '导出时即时生成';
+        }
+    }
+    const nodeCount = Number(checkpoint[`${prefix}NodeCount`]) || 0;
+    const bookmarkCount = Number(checkpoint[`${prefix}BookmarkCount`]) || 0;
+    const folderCount = Number(checkpoint[`${prefix}FolderCount`]) || 0;
+    return lang === 'en'
+        ? `Nodes ${nodeCount} · Bookmarks ${bookmarkCount} · Folders ${folderCount}`
+        : `节点 ${nodeCount} · 书签 ${bookmarkCount} · 文件夹 ${folderCount}`;
+}
+
+function formatSafetyCheckpointDiffSummary(summary, lang = 'zh_CN') {
+    if (!summary || typeof summary !== 'object') return '';
+    const toCount = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+    };
+    const bookmarkAdded = toCount(summary.bookmarkAdded);
+    const bookmarkDeleted = toCount(summary.bookmarkDeleted);
+    const folderAdded = toCount(summary.folderAdded);
+    const folderDeleted = toCount(summary.folderDeleted);
+    const movedCount = toCount(summary.movedCount || (toCount(summary.movedBookmarkCount) + toCount(summary.movedFolderCount)));
+    const modifiedCount = toCount(summary.modifiedCount || (toCount(summary.modifiedBookmarkCount) + toCount(summary.modifiedFolderCount)));
+    if (!(bookmarkAdded || bookmarkDeleted || folderAdded || folderDeleted || movedCount || modifiedCount)) {
+        return '';
+    }
+    const isEn = lang === 'en';
+    const parts = [];
+    if (bookmarkAdded || bookmarkDeleted) {
+        parts.push(`${isEn ? 'Bookmarks' : '书签'} ${bookmarkAdded ? `+${bookmarkAdded}` : ''}${bookmarkAdded && bookmarkDeleted ? '/' : ''}${bookmarkDeleted ? `-${bookmarkDeleted}` : ''}`);
+    }
+    if (folderAdded || folderDeleted) {
+        parts.push(`${isEn ? 'Folders' : '文件夹'} ${folderAdded ? `+${folderAdded}` : ''}${folderAdded && folderDeleted ? '/' : ''}${folderDeleted ? `-${folderDeleted}` : ''}`);
+    }
+    if (movedCount) parts.push(`${isEn ? 'Moved' : '移动'} ${movedCount}`);
+    if (modifiedCount) parts.push(`${isEn ? 'Modified' : '修改'} ${modifiedCount}`);
+    return parts.join(' · ');
+}
+
+function formatSafetyCheckpointMergeMode(checkpoint, lang = 'zh_CN') {
+    if (!checkpoint || typeof checkpoint !== 'object') return '';
+    const isEn = lang === 'en';
+    const kind = String(checkpoint.mergeImportKind || '').trim().toLowerCase();
+    const viewMode = String(checkpoint.mergeImportViewMode || '').trim().toLowerCase();
+    if (!kind && !viewMode) return '';
+    const kindLabel = kind === 'changes'
+        ? (isEn ? 'Changes view' : '变化视图')
+        : (kind === 'snapshot' ? (isEn ? 'Snapshot' : '快照') : kind);
+    const viewLabels = {
+        simple: isEn ? 'Simple' : '简略',
+        detailed: isEn ? 'Detailed' : '详细',
+        collection: isEn ? 'Collection' : '集合'
+    };
+    const viewLabel = viewLabels[viewMode] || viewMode;
+    return [kindLabel, viewLabel].filter(Boolean).join(' · ');
+}
+
+function buildSafetySnapshotInfoButton(info, lang = 'zh_CN') {
+    const text = String(info || '').trim();
+    if (!text) return '';
+    const label = lang === 'en' ? 'Snapshot info' : '快照说明';
+    return `
+        <button class="backup-history-snapshot-info-btn" type="button" aria-label="${escapeHtml(label)}">
+            <i class="fas fa-info"></i>
+        </button>
+        <div class="backup-history-snapshot-info-tooltip">${escapeHtml(text)}</div>
+    `;
+}
+
+function buildSafetySnapshotDetailRows(rows = []) {
+    const normalizedRows = rows
+        .map((row) => Array.isArray(row) ? row : [])
+        .map(([label, value]) => [String(label || '').trim(), String(value || '').trim()])
+        .filter(([label, value]) => label && value);
+    if (!normalizedRows.length) return '';
+    return `
+        <div class="backup-history-snapshot-detail-list">
+            ${normalizedRows.map(([label, value]) => `
+                <div class="backup-history-snapshot-detail-row">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildSafetyCheckpointHelpHtml(lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    if (isEn) {
+        return `
+            <div class="backup-history-safety-help-title">What Temporary Safety Snapshot Is</div>
+            <ul class="backup-history-safety-help-list">
+                <li>It is a fallback snapshot created before high-risk write operations, focused on data-first recovery.</li>
+                <li>It is triggered by restore/revert flows that enter the recovery transaction layer, mainly <span class="backup-history-safety-help-highlight">overwrite restore, patch restore, overwrite revert, and patch revert</span> from the main UI or history page.</li>
+                <li>Import merge is additive and keeps existing bookmarks. It may use internal transaction data for interruption cleanup, but it does not replace the displayed latest temporary safety snapshot.</li>
+                <li>It keeps only the latest operation's before-operation browser snapshot and target-state snapshot; the current browser snapshot is generated only when you export it.</li>
+                <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is only a last-resort fallback.</li>
+            </ul>
+        `;
+    }
+    return `
+        <div class="backup-history-safety-help-title">临时安全快照是什么</div>
+        <ul class="backup-history-safety-help-list">
+            <li>它是高风险写入操作前自动生成的兜底快照，核心目标是数据优先，避免用户丢数据。</li>
+            <li>触发范围是进入恢复事务层的恢复/撤销流程，主要包括主 UI 或历史页面里的 <span class="backup-history-safety-help-highlight">覆盖恢复、补丁恢复、覆盖撤销、补丁撤销</span>。</li>
+            <li>导入合并是添加型操作，会保留现有书签；它只保留中断清理所需的内部事务数据，不会覆盖这里展示的最近一次临时安全快照。</li>
+            <li>这里只保留最近一次操作的“操作前浏览器快照”和“目标状态快照”；“当前浏览器快照”是在导出时即时读取的。</li>
+            <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照只是兜底。</li>
+        </ul>
+    `;
+}
+
+function formatSafetyCheckpointSummary(checkpoint, lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    if (!checkpoint || typeof checkpoint !== 'object') {
+        return `<div class="backup-history-summary-title">${isEn ? 'No temporary safety snapshot available.' : '暂无临时安全快照。'}</div>`;
+    }
+
+    const operationKind = formatSafetyCheckpointOperationLabel(checkpoint.operationKind, lang);
+    const source = formatSafetyCheckpointSourceLabel(checkpoint.source, lang);
+    const createdAt = formatSafetyCheckpointTimeText(checkpoint.createdAtIso, lang);
+    const resolvedStrategy = formatSafetyCheckpointStrategyLabel(checkpoint.resolvedStrategy, lang);
+    const requestedStrategy = formatSafetyCheckpointStrategyLabel(checkpoint.requestedStrategy, lang);
+    const sourceTypeRaw = String(checkpoint.sourceType || '').trim();
+    const sourceType = formatSafetyCheckpointSourceTypeLabel(sourceTypeRaw, lang);
+    const sourceSeqNumber = String(checkpoint.sourceSeqNumber || '').trim();
+    const sourceRecordTime = String(checkpoint.sourceRecordTime || checkpoint.targetBaselineTimestamp || '').trim();
+    const sourceNote = String(checkpoint.sourceNote || '').trim();
+    const targetNote = String(checkpoint.targetNote || sourceNote || '').trim();
+    const restoreActionNote = String(checkpoint.restoreActionNote || '').trim();
+    const diffSummaryText = formatSafetyCheckpointDiffSummary(checkpoint.precomputedDiffSummary, lang);
+    const mergeModeText = formatSafetyCheckpointMergeMode(checkpoint, lang);
+    const mergeRootTitle = String(checkpoint.mergeImportRootTitle || '').trim();
+    const metaLine = isEn
+        ? `Created: ${createdAt}`
+        : `创建时间：${createdAt}`;
+    const sourceLineParts = [];
+    if (sourceTypeRaw && sourceType) sourceLineParts.push(isEn ? `Source type: ${sourceType}` : `来源类型：${sourceType}`);
+    if (sourceSeqNumber) sourceLineParts.push(isEn ? `Record: #${sourceSeqNumber}` : `记录序号：#${sourceSeqNumber}`);
+    if (sourceRecordTime) sourceLineParts.push(isEn ? `Source time: ${sourceRecordTime}` : `来源时间：${sourceRecordTime}`);
+    const sourceTagLabel = sourceType || source;
+    const tagItems = [
+        { kind: 'operation', label: operationKind },
+        { kind: 'source', label: sourceTagLabel },
+        { kind: 'strategy', label: requestedStrategy !== resolvedStrategy ? `${resolvedStrategy} / ${requestedStrategy}` : resolvedStrategy }
+    ].filter((item) => item.label && item.label !== '-');
+    const targetDetails = [
+        [isEn ? 'Remark' : '备注', targetNote],
+        [isEn ? 'Operation note' : '操作备注', restoreActionNote && restoreActionNote !== sourceNote ? restoreActionNote : ''],
+        [isEn ? 'Changes' : '变化', diffSummaryText],
+        [isEn ? 'Merge mode' : '合并模式', mergeModeText],
+        [isEn ? 'Import folder' : '导入文件夹', mergeRootTitle]
+    ];
+    const snapshotCards = [
+        {
+            kind: 'before',
+            title: isEn ? 'Before Operation Browser Snapshot' : '操作前浏览器快照',
+            info: isEn
+                ? 'Browser bookmark tree captured before the high-risk write; used to roll back to the pre-operation state.'
+                : '高风险操作开始前的浏览器书签树，用于回滚到写入前状态。',
+            meta: formatSafetyCheckpointSnapshotCounts(checkpoint, 'before', lang),
+            details: []
+        },
+        {
+            kind: 'current',
+            title: isEn ? 'Current Browser Snapshot' : '当前浏览器快照',
+            info: isEn
+                ? 'Read from the live browser when exporting; this is not stored as a long-term safety snapshot.'
+                : '点击导出时实时读取当前浏览器书签，不是长期保存的安全快照。',
+            meta: formatSafetyCheckpointSnapshotCounts(checkpoint, 'current', lang),
+            details: []
+        },
+        {
+            kind: 'target',
+            title: isEn ? 'Target State Snapshot' : '目标状态快照',
+            info: isEn
+                ? 'The expected target tree prepared for this restore/revert; used to continue to the intended state.'
+                : '本次恢复/撤销准备写入的目标状态快照，用于继续到预期状态。',
+            meta: formatSafetyCheckpointSnapshotCounts(checkpoint, 'target', lang),
+            details: targetDetails
+        }
+    ];
+
+    return `
+        <div class="backup-history-summary-tag-row">
+            ${tagItems.map((item) => `<span class="backup-history-summary-tag ${escapeHtml(item.kind)}">${escapeHtml(item.label)}</span>`).join('')}
+        </div>
+        <div class="backup-history-summary-subtitle">${escapeHtml(metaLine)}</div>
+        ${sourceLineParts.length ? `<div class="backup-history-summary-strip">${sourceLineParts.map((item) => `<span class="backup-history-summary-chip">${escapeHtml(item)}</span>`).join('')}</div>` : ''}
+        <div class="backup-history-snapshot-grid">
+            ${snapshotCards.map((item) => `
+                <div class="backup-history-snapshot-card ${escapeHtml(item.kind)}">
+                    <div class="backup-history-snapshot-title-row">
+                        <div class="backup-history-snapshot-title">${escapeHtml(item.title)}</div>
+                        ${buildSafetySnapshotInfoButton(item.info, lang)}
+                    </div>
+                    ${buildSafetySnapshotDetailRows(item.details)}
+                    <div class="backup-history-snapshot-meta">${escapeHtml(item.meta)}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+async function refreshBackupHistorySlimmingSettings() {
+    try {
+        const response = await callBackgroundFunction('getBackupHistorySlimmingSettings');
+        if (response && response.success) {
+            const normalized = normalizeBackupHistorySlimmingSettings(response.settings);
+            applyBackupHistorySlimmingSettingsToUI(normalized);
+            return normalized;
+        }
+    } catch (error) {
+        console.warn('获取备份历史精简设置失败:', error);
+    }
+    const snapshot = getBackupHistorySlimmingSettingsSnapshot();
+    applyBackupHistorySlimmingSettingsToUI(snapshot);
+    return snapshot;
+}
+
+async function persistBackupHistorySlimmingSettings(nextSettings, opts = {}) {
+    const normalized = normalizeBackupHistorySlimmingSettings(nextSettings);
+    try {
+        const response = await callBackgroundFunction('setBackupHistorySlimmingSettings', { settings: normalized });
+        if (response && response.success) {
+            applyBackupHistorySlimmingSettingsToUI(normalized);
+            if (opts.silent !== true) {
+                showStatus(opts.successMessage || '备份历史精简设置已保存', 'success', 2200);
+            }
+            return true;
+        }
+        throw new Error(response?.error || '保存失败');
+    } catch (error) {
+        applyBackupHistorySlimmingSettingsToUI(backupHistorySlimmingState);
+        if (opts.silent !== true) {
+            showStatus(`备份历史精简设置保存失败: ${error?.message || '未知错误'}`, 'error', 3200);
+        }
+        return false;
+    }
+}
+
+async function refreshLatestSafetyCheckpointStatus() {
+    try {
+        const response = await callBackgroundFunction('getLatestSafetyCheckpointStatus');
+        if (response && response.success) {
+            latestSafetyCheckpointState = response.checkpoint || null;
+            return latestSafetyCheckpointState;
+        }
+    } catch (error) {
+        console.warn('获取最近安全快照失败:', error);
+    }
+    latestSafetyCheckpointState = null;
+    return null;
 }
 
 function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') {
@@ -3824,9 +4270,15 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
             pageRecords.forEach((record, index) => {
                 const globalIndex = startIndex + index;
+                const recordCapabilities = getPopupHistoryRecordCapabilities(record);
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
-                historyItem.setAttribute('data-record-time', record.time);
+                if (recordCapabilities.canExpand) {
+                    historyItem.setAttribute('data-record-time', record.time);
+                } else {
+                    historyItem.classList.add('history-item-record-only');
+                    historyItem.setAttribute('title', currentLang === 'en' ? 'Record only' : '仅记录');
+                }
                 const recordTypeForDisplay = String(record?.type || '').trim().toLowerCase();
                 const recordOperationStrategy = resolveHistoryRecordOperationStrategy(record);
                 const showOverwriteRiskLine = (recordTypeForDisplay === 'restore' || recordTypeForDisplay === 'revert')
@@ -4190,26 +4642,45 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 let qtyColStyle = "flex: 1; text-align: center;";
 
                 // 详情按钮：序号按钮 + 跳转图标
-                const detailsBtn = `
-                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '打开HTML条目' : 'Open HTML entry'}">
-                        <span class="details-seq">${seqNumber}</span>
-                        <svg class="details-jump-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                            <path d="M6 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V5.31L4.28 12.53a.75.75 0 0 1-1.06-1.06L10.44 4.25H6.75A.75.75 0 0 1 6 3.5z" />
-                        </svg>
-                    </button>
-                `;
+                const detailsBtn = recordCapabilities.canExpand
+                    ? `
+                        <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '打开HTML条目' : 'Open HTML entry'}">
+                            <span class="details-seq">${seqNumber}</span>
+                            <svg class="details-jump-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M6 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V5.31L4.28 12.53a.75.75 0 0 1-1.06-1.06L10.44 4.25H6.75A.75.75 0 0 1 6 3.5z" />
+                            </svg>
+                        </button>
+                    `
+                    : `<span class="details-btn" style="cursor:default;opacity:0.5;" title="${currentLang === 'zh_CN' ? '仅记录' : 'Record only'}"><span class="details-seq">${seqNumber}</span></span>`;
 
-                const opsBtns = `
-                    <div class="history-ops-row">
+                const opButtons = [];
+                if (recordCapabilities.canExportSnapshot || recordCapabilities.canExportChanges) {
+                    opButtons.push(`
                         <button class="history-jump-action-btn history-jump-export-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '导出' : 'Export'}">
                             <i class="fas fa-file-export"></i>
                         </button>
+                    `);
+                }
+                if (recordCapabilities.canSearch) {
+                    opButtons.push(`
                         <button class="history-jump-action-btn history-jump-search-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '搜索' : 'Search'}">
                             <i class="fas fa-search"></i>
                         </button>
-                        <button class="history-jump-action-btn history-jump-restore-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '恢复' : 'Restore'}">
+                    `);
+                }
+                if (recordCapabilities.canRestore) {
+                    const restoreActionTitle = !recordCapabilities.hasSnapshotData && recordCapabilities.hasChangeData
+                        ? (currentLang === 'zh_CN' ? '导入合并' : 'Import Merge')
+                        : (currentLang === 'zh_CN' ? '恢复' : 'Restore');
+                    opButtons.push(`
+                        <button class="history-jump-action-btn history-jump-restore-btn" data-record-time="${record.time}" title="${restoreActionTitle}">
                             <i class="fas fa-undo"></i>
                         </button>
+                    `);
+                }
+                const opsBtns = `
+                    <div class="history-ops-row">
+                        ${opButtons.length ? opButtons.join('') : `<span style="width:100%;text-align:center;font-size:11px;color:var(--theme-text-secondary);">${currentLang === 'zh_CN' ? '仅记录' : 'Record'}</span>`}
                     </div>
                 `;
 
@@ -8614,6 +9085,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         historyTitle.textContent = historyRecordsDescriptionStrings[lang] || historyRecordsDescriptionStrings['zh_CN'];
     }
 
+    applyBackupHistorySlimmingLocale(lang);
+
     const clearHistoryTooltip = document.querySelector('#clearHistoryBtn .tooltip');
     if (clearHistoryTooltip) {
         clearHistoryTooltip.textContent = clearHistoryStrings[lang] || clearHistoryStrings['zh_CN'];
@@ -8622,6 +9095,23 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const exportHistoryTooltip = document.querySelector('#exportHistoryBtn .tooltip');
     if (exportHistoryTooltip) {
         exportHistoryTooltip.textContent = exportHistoryStrings[lang] || exportHistoryStrings['zh_CN'];
+    }
+
+    const backupHistorySlimmingSettingsTooltip = document.querySelector('#backupHistorySlimmingSettingsBtn .tooltip');
+    if (backupHistorySlimmingSettingsTooltip) {
+        backupHistorySlimmingSettingsTooltip.textContent = lang === 'en' ? 'Compaction settings' : '精简设置';
+    }
+
+    const backupHistorySafetyCheckpointTooltip = document.querySelector('#backupHistorySafetyCheckpointBtn .tooltip');
+    if (backupHistorySafetyCheckpointTooltip) {
+        backupHistorySafetyCheckpointTooltip.textContent = lang === 'en' ? 'Temporary Safety Snapshot' : '临时安全快照';
+    }
+
+    const restoreSafetyCheckpointEntryText = document.getElementById('restoreSafetyCheckpointEntryText');
+    if (restoreSafetyCheckpointEntryText) {
+        restoreSafetyCheckpointEntryText.textContent = lang === 'en'
+            ? 'Before restore, before-operation browser and target-state snapshots are created.'
+            : '恢复前会生成“操作前浏览器快照”和“目标状态快照”。';
     }
 
     const historyHeaders = document.querySelectorAll('.history-header .header-item');
@@ -15061,6 +15551,14 @@ function showRestoreModal(versions, source) {
             }
         }
 
+        confirmWarning.insertAdjacentHTML('beforeend', `
+            <div class="restore-confirm-safety-note">
+                ${isEn
+                    ? 'Before writing bookmarks, this operation will first save two safety snapshots: before-operation browser and target state.'
+                    : '写入书签前会先保存两份安全快照：操作前浏览器快照和目标状态快照。'}
+            </div>
+        `);
+
         // Texts
         cancelBtn.textContent = isEn ? 'Cancel' : '取消';
         confirmBtn.textContent = isEn ? 'Confirm Restore' : '确认恢复';
@@ -18646,6 +19144,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (shouldShowSyncStatus) {
             updateSyncHistory(); // 加载备份历史
             updateLastSyncInfo(); // 新增：加载上次备份信息和书签计数
+            refreshBackupHistorySlimmingSettings();
+            refreshLatestSafetyCheckpointStatus();
             initScrollToTopButton(); // 初始化滚动按钮
 
             // 恢复自动滚动逻辑
@@ -18804,7 +19304,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let syncRestoreHelpTooltip = null;
     let restoreModalHelpTooltip = null;
 
-    const buildHelpDialog = ({ title = '', contentHtml = '', width = 520, close, bodyStyle = '' }) => {
+    const buildHelpDialog = ({ title = '', contentHtml = '', width = 520, close, bodyStyle = '', headerActionsHtml = '', footerHtml = '' }) => {
         const overlay = document.createElement('div');
         overlay.style.cssText = `
             position: fixed;
@@ -18832,31 +19332,44 @@ document.addEventListener('DOMContentLoaded', function () {
         `;
 
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;padding:10px 40px 10px 12px;border-bottom:1px solid var(--theme-border-primary);';
+        header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px 10px 22px;border-bottom:1px solid var(--theme-border-primary);';
 
         const titleEl = document.createElement('div');
         titleEl.textContent = String(title || 'Help');
-        titleEl.style.cssText = 'font-size:13px;font-weight:700;color:var(--theme-text-primary);';
+        titleEl.style.cssText = 'min-width:0;font-size:13px;font-weight:700;color:var(--theme-text-primary);line-height:1.35;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
 
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-        closeBtn.style.cssText = 'position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;border-radius:6px;background:var(--theme-bg-secondary);color:var(--theme-text-secondary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
+        closeBtn.style.cssText = 'width:32px;height:32px;flex:0 0 32px;border:none;border-radius:50%;background:var(--theme-bg-secondary);color:var(--theme-text-primary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
         closeBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (typeof close === 'function') close();
         });
 
+        const headerActions = document.createElement('div');
+        headerActions.className = 'backup-history-modal-header-actions';
+        if (headerActionsHtml) {
+            headerActions.insertAdjacentHTML('beforeend', headerActionsHtml);
+        }
+        headerActions.appendChild(closeBtn);
+
         header.appendChild(titleEl);
+        header.appendChild(headerActions);
 
         const body = document.createElement('div');
         body.style.cssText = `padding:12px;overflow:auto;display:flex;flex-direction:column;gap:8px;${bodyStyle || ''}`;
         body.innerHTML = contentHtml;
 
         panel.appendChild(header);
-        panel.appendChild(closeBtn);
         panel.appendChild(body);
+        if (footerHtml) {
+            const footer = document.createElement('div');
+            footer.className = 'backup-history-floating-footer';
+            footer.innerHTML = footerHtml;
+            panel.appendChild(footer);
+        }
         overlay.appendChild(panel);
 
         overlay.addEventListener('click', (e) => {
@@ -19073,6 +19586,315 @@ document.addEventListener('DOMContentLoaded', function () {
                 showBackupStrategyHelpTooltip();
             }
         });
+    }
+
+    const backupHistorySlimmingSettingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
+    const backupHistorySafetyCheckpointBtn = document.getElementById('backupHistorySafetyCheckpointBtn');
+    const restoreSafetyCheckpointEntryBtn = document.getElementById('restoreSafetyCheckpointEntryBtn');
+    let backupHistorySlimmingSettingsDialog = null;
+    let latestSafetyCheckpointDialog = null;
+
+    const removeBackupHistorySlimmingSettingsDialog = () => {
+        if (!backupHistorySlimmingSettingsDialog) return;
+        const dialogToRemove = backupHistorySlimmingSettingsDialog;
+        backupHistorySlimmingSettingsDialog = null;
+        dialogToRemove.remove();
+    };
+
+    const getLocalizedSlimmingLabels = (lang) => ({
+        title: lang === 'en' ? 'Compaction Settings' : '精简设置',
+        snapshotLabel: lang === 'en' ? 'Save snapshot data' : '保存快照数据',
+        changeLabel: lang === 'en' ? 'Save change data' : '保存变化数据',
+        cancelText: lang === 'en' ? 'Cancel' : '取消',
+        saveText: lang === 'en' ? 'Save' : '保存',
+        noteText: lang === 'en'
+            ? 'Choose which detail data the extension keeps in its local backup history. Unchecked data is not written to extension storage; only the history record remains.'
+            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。'
+    });
+
+    const openBackupHistorySlimmingSettingsDialog = async () => {
+        const lang = await getPopupPreferredLang();
+        const labels = getLocalizedSlimmingLabels(lang);
+        const currentState = await refreshBackupHistorySlimmingSettings();
+
+        removeBackupHistorySlimmingSettingsDialog();
+        backupHistorySlimmingSettingsDialog = buildHelpDialog({
+            width: 460,
+            title: labels.title,
+            close: removeBackupHistorySlimmingSettingsDialog,
+            contentHtml: `
+                <div class="backup-history-dialog-stack">
+                    <div class="backup-history-secondary-note">
+                        ${escapeHtml(labels.noteText)}
+                    </div>
+                    <div class="backup-history-choice-grid">
+                        <label class="backup-history-choice-card">
+                            <input class="backup-history-choice-input" type="checkbox" id="backupHistorySlimmingDialogSaveSnapshotData" ${currentState.saveSnapshotData ? 'checked' : ''}>
+                            <span class="backup-history-choice-content">
+                                <span class="backup-history-choice-title">
+                                    <i class="fas fa-bookmark"></i>
+                                    <span>${escapeHtml(labels.snapshotLabel)}</span>
+                                </span>
+                                <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                            </span>
+                        </label>
+                        <label class="backup-history-choice-card">
+                            <input class="backup-history-choice-input" type="checkbox" id="backupHistorySlimmingDialogSaveChangeData" ${currentState.saveChangeData ? 'checked' : ''}>
+                            <span class="backup-history-choice-content">
+                                <span class="backup-history-choice-title">
+                                    <i class="fas fa-code-branch"></i>
+                                    <span>${escapeHtml(labels.changeLabel)}</span>
+                                </span>
+                                <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="backup-history-secondary-actions">
+                        <button id="backupHistorySlimmingDialogCancelBtn" type="button" class="restore-modal-action-btn secondary">${escapeHtml(labels.cancelText)}</button>
+                        <button id="backupHistorySlimmingDialogSaveBtn" type="button" class="restore-modal-action-btn primary">${escapeHtml(labels.saveText)}</button>
+                    </div>
+                </div>
+            `
+        });
+        document.body.appendChild(backupHistorySlimmingSettingsDialog);
+
+        const saveSnapshotInput = document.getElementById('backupHistorySlimmingDialogSaveSnapshotData');
+        const saveChangeInput = document.getElementById('backupHistorySlimmingDialogSaveChangeData');
+        const cancelBtn = document.getElementById('backupHistorySlimmingDialogCancelBtn');
+        const saveBtn = document.getElementById('backupHistorySlimmingDialogSaveBtn');
+
+        const closeDialog = () => {
+            removeBackupHistorySlimmingSettingsDialog();
+        };
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeDialog();
+            });
+        }
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const nextSettings = {
+                    saveSnapshotData: saveSnapshotInput ? saveSnapshotInput.checked : currentState.saveSnapshotData,
+                    saveChangeData: saveChangeInput ? saveChangeInput.checked : currentState.saveChangeData
+                };
+                const ok = await persistBackupHistorySlimmingSettings(nextSettings, {
+                    silent: false,
+                    successMessage: lang === 'en' ? 'Backup history compaction settings saved' : '备份历史精简设置已保存'
+                });
+                if (ok) closeDialog();
+            });
+        }
+    };
+
+    const removeLatestSafetyCheckpointDialog = () => {
+        if (!latestSafetyCheckpointDialog) return;
+        const dialogToRemove = latestSafetyCheckpointDialog;
+        latestSafetyCheckpointDialog = null;
+        dialogToRemove.remove();
+    };
+
+    const openLatestSafetyCheckpointDialog = async () => {
+        const lang = await getPopupPreferredLang();
+        const isEn = lang === 'en';
+        const checkpoint = await refreshLatestSafetyCheckpointStatus();
+        const exportLabels = {
+            optionsTitle: isEn ? 'Select Export Content' : '选择导出内容',
+            all: isEn ? 'All' : '全部',
+            before: isEn ? 'Before Operation Browser Snapshot' : '操作前浏览器快照',
+            target: isEn ? 'Target State Snapshot' : '目标状态快照',
+            current: isEn ? 'Current Browser Snapshot' : '当前浏览器快照',
+            exportText: isEn ? 'Export Selected Snapshots' : '导出所选快照',
+            exportingText: isEn ? 'Exporting selected snapshots…' : '正在导出所选快照…',
+            selectOneText: isEn ? 'Select at least one snapshot to export.' : '请至少选择一个要导出的快照。'
+        };
+
+        removeLatestSafetyCheckpointDialog();
+        latestSafetyCheckpointDialog = buildHelpDialog({
+            width: 560,
+            title: isEn ? 'Temporary Safety Snapshot' : '临时安全快照',
+            close: removeLatestSafetyCheckpointDialog,
+            headerActionsHtml: `
+                <button class="backup-history-help-btn" id="latestSafetyCheckpointHelpBtn" type="button" aria-label="${isEn ? 'Safety snapshot help' : '安全快照说明'}" title="${isEn ? 'Safety snapshot help' : '安全快照说明'}">
+                    <i class="fas fa-question"></i>
+                </button>
+            `,
+            bodyStyle: 'padding-bottom:78px;',
+            contentHtml: `
+                <div class="backup-history-dialog-stack">
+                    <div id="latestSafetyCheckpointHelpPanel" class="backup-history-secondary-note backup-history-safety-help" style="display:none;">
+                        ${buildSafetyCheckpointHelpHtml(lang)}
+                    </div>
+                    <div id="latestSafetyCheckpointExportOptions" class="backup-history-export-options" style="${checkpoint ? '' : 'display:none;'}">
+                        <div class="backup-history-export-title">${escapeHtml(exportLabels.optionsTitle)}</div>
+                        <div class="backup-history-export-check-list">
+                            <label class="backup-history-export-check-row backup-history-export-check-row-all">
+                                <input type="checkbox" id="latestSafetyExportAll">
+                                <span>${escapeHtml(exportLabels.all)}</span>
+                            </label>
+                            <div class="backup-history-export-check-divider"></div>
+                            <label class="backup-history-export-check-row">
+                                <input class="latest-safety-export-item" type="checkbox" id="latestSafetyExportBefore" data-export-item="before" checked>
+                                <span>${escapeHtml(exportLabels.before)}</span>
+                            </label>
+                            <label class="backup-history-export-check-row">
+                                <input class="latest-safety-export-item" type="checkbox" id="latestSafetyExportTarget" data-export-item="target" checked>
+                                <span>${escapeHtml(exportLabels.target)}</span>
+                            </label>
+                            <label class="backup-history-export-check-row">
+                                <input class="latest-safety-export-item" type="checkbox" id="latestSafetyExportCurrent" data-export-item="current" checked>
+                                <span>${escapeHtml(exportLabels.current)}</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="latestSafetyCheckpointSummaryTitle" class="backup-history-export-title backup-history-summary-heading">${isEn ? 'Safety Snapshot Details' : '安全快照说明'}</div>
+                    <div id="latestSafetyCheckpointSummary" class="backup-history-checkpoint-summary">
+                        ${formatSafetyCheckpointSummary(checkpoint, lang)}
+                    </div>
+                    <div id="latestSafetyCheckpointExportResult" class="backup-history-secondary-result" style="display:none;"></div>
+                </div>
+            `,
+            footerHtml: `
+                <button id="latestSafetyCheckpointCloseBtn" type="button" class="restore-modal-action-btn secondary">${isEn ? 'Close' : '关闭'}</button>
+                <button id="latestSafetyCheckpointExportBtn" type="button" class="restore-modal-action-btn primary" ${checkpoint ? '' : 'disabled'}>${escapeHtml(exportLabels.exportText)}</button>
+            `
+        });
+        document.body.appendChild(latestSafetyCheckpointDialog);
+
+        const closeBtn = document.getElementById('latestSafetyCheckpointCloseBtn');
+        const exportBtn = document.getElementById('latestSafetyCheckpointExportBtn');
+        const exportResult = document.getElementById('latestSafetyCheckpointExportResult');
+        const summaryEl = document.getElementById('latestSafetyCheckpointSummary');
+        const helpBtn = document.getElementById('latestSafetyCheckpointHelpBtn');
+        const helpPanel = document.getElementById('latestSafetyCheckpointHelpPanel');
+        const exportAllInput = document.getElementById('latestSafetyExportAll');
+        const exportItemInputs = Array.from(document.querySelectorAll('.latest-safety-export-item'));
+
+        const updateExportResult = (html, visible = true) => {
+            if (!exportResult) return;
+            exportResult.style.display = visible ? 'block' : 'none';
+            exportResult.innerHTML = html;
+        };
+        const getSelectedExportItems = () => exportItemInputs
+            .filter((input) => input.checked)
+            .map((input) => String(input.dataset.exportItem || '').trim())
+            .filter(Boolean);
+        const syncExportSelectionState = () => {
+            const checkedCount = exportItemInputs.filter((input) => input.checked).length;
+            if (exportAllInput) {
+                exportAllInput.checked = exportItemInputs.length > 0 && checkedCount === exportItemInputs.length;
+                exportAllInput.indeterminate = checkedCount > 0 && checkedCount < exportItemInputs.length;
+            }
+            if (exportBtn) {
+                exportBtn.disabled = !checkpoint || checkedCount === 0;
+            }
+        };
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                removeLatestSafetyCheckpointDialog();
+            });
+        }
+        if (helpBtn && helpPanel) {
+            helpBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const isOpen = helpPanel.style.display !== 'none';
+                helpPanel.style.display = isOpen ? 'none' : 'block';
+                helpBtn.classList.toggle('active', !isOpen);
+            });
+        }
+
+        if (exportAllInput) {
+            exportAllInput.addEventListener('change', () => {
+                exportItemInputs.forEach((input) => {
+                    input.checked = exportAllInput.checked;
+                });
+                syncExportSelectionState();
+            });
+        }
+        exportItemInputs.forEach((input) => {
+            input.addEventListener('change', syncExportSelectionState);
+        });
+        syncExportSelectionState();
+
+        if (exportBtn && checkpoint) {
+            exportBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const exportItems = getSelectedExportItems();
+                if (!exportItems.length) {
+                    updateExportResult(escapeHtml(exportLabels.selectOneText), true);
+                    showStatus(exportLabels.selectOneText, 'info', 2200);
+                    syncExportSelectionState();
+                    return;
+                }
+                exportBtn.disabled = true;
+                exportBtn.textContent = exportLabels.exportingText.replace('…', '');
+                updateExportResult(escapeHtml(exportLabels.exportingText), true);
+                try {
+                    const response = await callBackgroundFunction('exportLatestSafetyCheckpointPackage', {
+                        options: { items: exportItems }
+                    });
+                    if (response && response.success) {
+                        const fileCount = Number.isFinite(Number(response.fileCount)) ? Number(response.fileCount) : 0;
+                        const files = Array.isArray(response.files) ? response.files : [];
+                        const fileList = files.length
+                            ? `<div style="margin-top:6px;word-break:break-word;">${files.map((item) => `<div>${escapeHtml(String(item))}</div>`).join('')}</div>`
+                            : '';
+                        updateExportResult(
+                            `${isEn ? 'Export completed.' : '导出完成。'} ${isEn ? 'Files' : '文件'}: <strong>${escapeHtml(fileCount)}</strong>${fileList}`,
+                            true
+                        );
+                        showStatus(isEn ? 'Selected safety snapshots exported.' : '已导出所选安全快照。', 'success', 2400);
+                    } else {
+                        throw new Error(response?.error || (isEn ? 'Export failed' : '导出失败'));
+                    }
+                } catch (error) {
+                    updateExportResult(escapeHtml(`${isEn ? 'Export failed: ' : '导出失败：'}${error?.message || 'Unknown error'}`), true);
+                    showStatus(`${isEn ? 'Safety snapshot export failed: ' : '安全快照导出失败：'}${error?.message || 'Unknown error'}`, 'error', 3200);
+                } finally {
+                    exportBtn.textContent = exportLabels.exportText;
+                    syncExportSelectionState();
+                }
+            });
+        }
+
+        if (summaryEl) {
+            summaryEl.innerHTML = formatSafetyCheckpointSummary(checkpoint, lang);
+        }
+    };
+
+    if (backupHistorySlimmingSettingsBtn && !backupHistorySlimmingSettingsBtn.hasAttribute('data-listener-attached')) {
+        backupHistorySlimmingSettingsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openBackupHistorySlimmingSettingsDialog();
+        });
+        bindHistoryActionButtonTooltip(backupHistorySlimmingSettingsBtn);
+        backupHistorySlimmingSettingsBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (backupHistorySafetyCheckpointBtn && !backupHistorySafetyCheckpointBtn.hasAttribute('data-listener-attached')) {
+        backupHistorySafetyCheckpointBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openLatestSafetyCheckpointDialog();
+        });
+        bindHistoryActionButtonTooltip(backupHistorySafetyCheckpointBtn);
+        backupHistorySafetyCheckpointBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (restoreSafetyCheckpointEntryBtn && !restoreSafetyCheckpointEntryBtn.hasAttribute('data-listener-attached')) {
+        restoreSafetyCheckpointEntryBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openLatestSafetyCheckpointDialog();
+        });
+        bindHistoryActionButtonTooltip(restoreSafetyCheckpointEntryBtn);
+        restoreSafetyCheckpointEntryBtn.setAttribute('data-listener-attached', 'true');
     }
 
     // 当前变化「视图」模式帮助按钮

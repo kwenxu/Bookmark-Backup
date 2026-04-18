@@ -151,7 +151,19 @@
                     <div class="view-header-left">
                         <!-- 分页控件 -->
                         <div class="history-header-title-group">
-                            <h2 id="historyViewTitle">备份历史</h2>
+                            <div class="history-header-title-line">
+                                <h2 id="historyViewTitle">备份历史</h2>
+                                <div id="historyHistoryControls" class="backup-history-title-tools">
+                                    <button id="historySlimmingSettingsBtn" class="action-btn compact backup-history-title-icon-btn" type="button" data-title="精简设置" data-slimming-state="all">
+                                        <i class="fas fa-cog backup-history-settings-icon"></i>
+                                        <span class="btn-tooltip" id="historySlimmingSettingsTooltip">精简设置</span>
+                                    </button>
+                                    <button id="historySafetyCheckpointBtn" class="action-btn compact backup-history-title-icon-btn" type="button" data-title="临时安全快照">
+                                        <i class="fas fa-shield-alt"></i>
+                                        <span class="btn-tooltip" id="historySafetyCheckpointTooltip">临时安全快照</span>
+                                    </button>
+                                </div>
+                            </div>
                             <div id="historyPagination" class="history-pagination-inline">
                             <button id="historyPrevPage" class="action-btn compact no-tooltip">
                                 <i class="fas fa-chevron-left"></i>
@@ -172,12 +184,14 @@
                     <div class="view-header-right">
 
                         <!-- 清除备份历史记录（与主UI一致） -->
-                        <button id="clearBackupHistoryBtn" class="action-btn compact" title="清除记录">
+                        <button id="clearBackupHistoryBtn" class="action-btn compact" data-title="清除记录">
                             <i class="fas fa-trash-alt"></i>
+                            <span class="btn-tooltip" id="clearBackupHistoryTooltip">清除记录</span>
                         </button>
                         <!-- 全局导出按钮 -->
-                        <button id="globalExportBtn" class="action-btn compact" title="全局导出">
+                        <button id="globalExportBtn" class="action-btn compact" data-title="全局导出">
                             <i class="fas fa-file-export"></i>
+                            <span class="btn-tooltip" id="globalExportTooltip">全局导出</span>
                         </button>
 
                         <!-- 详略切换按钮 -->
@@ -430,6 +444,102 @@
         <div class="revert-overlay-content">
             <div class="revert-spinner"></div>
             <div class="revert-text" id="revertOverlayText">正在处理中...</div>
+        </div>
+    </div>
+
+    <div id="historySlimmingSettingsModal" class="modal">
+        <div class="modal-content backup-history-secondary-modal" style="max-width: 460px;">
+            <div class="modal-header compact">
+                <h3 id="historySlimmingSettingsModalTitle" style="margin: 0; white-space: nowrap;">精简设置</h3>
+                <button class="modal-close" id="historySlimmingSettingsModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body history-slimming-modal-body backup-history-secondary-stack">
+                <div id="historySlimmingSettingsDesc" class="backup-history-secondary-note">
+                    选择插件本地备份历史保留哪些详情数据；未勾选的数据不会写入插件存储，只保留历史记录信息。
+                </div>
+                <div class="backup-history-choice-grid">
+                    <label class="backup-history-choice-card">
+                        <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveSnapshotData">
+                        <span class="backup-history-choice-content">
+                            <span class="backup-history-choice-title">
+                                <i class="fas fa-bookmark"></i>
+                                <span id="historySlimmingSaveSnapshotDataText">保存快照数据</span>
+                            </span>
+                            <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                        </span>
+                    </label>
+                    <label class="backup-history-choice-card">
+                        <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveChangeData">
+                        <span class="backup-history-choice-content">
+                            <span class="backup-history-choice-title">
+                                <i class="fas fa-code-branch"></i>
+                                <span id="historySlimmingSaveChangeDataText">保存变化数据</span>
+                            </span>
+                            <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                        </span>
+                    </label>
+                </div>
+                <div id="historySlimmingSettingsStatus" class="backup-history-secondary-status"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="historySlimmingSettingsCancelBtn">取消</button>
+                <button class="modal-btn primary" id="historySlimmingSettingsSaveBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="historySafetyCheckpointModal" class="modal">
+        <div class="modal-content backup-history-secondary-modal backup-history-floating-actions-modal history-safety-checkpoint-modal" style="max-width: 560px;">
+            <div class="modal-header compact">
+                <h3 id="historySafetyCheckpointModalTitle" style="margin: 0; white-space: nowrap;">临时安全快照</h3>
+                <div class="backup-history-modal-header-actions">
+                    <button class="backup-history-help-btn" id="historySafetyCheckpointHelpBtn" type="button" aria-label="安全快照说明">
+                        <i class="fas fa-question"></i>
+                    </button>
+                    <button class="modal-close" id="historySafetyCheckpointModalClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body history-safety-modal-body backup-history-secondary-stack">
+                <div id="historySafetyCheckpointStatus" class="backup-history-secondary-note history-safety-status">
+                    暂无临时安全快照
+                </div>
+                <div id="historySafetyCheckpointHelpPanel" class="backup-history-secondary-note backup-history-safety-help" style="display: none;"></div>
+                <div id="historySafetyCheckpointExportOptions" class="backup-history-export-options" style="display: none;">
+                    <div id="historySafetyCheckpointExportOptionsTitle" class="backup-history-export-title">选择导出内容</div>
+                    <div class="backup-history-export-check-list">
+                        <label class="backup-history-export-check-row backup-history-export-check-row-all">
+                            <input type="checkbox" id="historySafetyExportAll">
+                            <span id="historySafetyExportAllText">全部</span>
+                        </label>
+                        <div class="backup-history-export-check-divider"></div>
+                        <label class="backup-history-export-check-row">
+                            <input class="history-safety-export-item" type="checkbox" id="historySafetyExportBefore" data-export-item="before" checked>
+                            <span id="historySafetyExportBeforeText">操作前浏览器快照</span>
+                        </label>
+                        <label class="backup-history-export-check-row">
+                            <input class="history-safety-export-item" type="checkbox" id="historySafetyExportTarget" data-export-item="target" checked>
+                            <span id="historySafetyExportTargetText">目标状态快照</span>
+                        </label>
+                        <label class="backup-history-export-check-row">
+                            <input class="history-safety-export-item" type="checkbox" id="historySafetyExportCurrent" data-export-item="current" checked>
+                            <span id="historySafetyExportCurrentText">当前浏览器快照</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="historySafetyCheckpointSummaryTitle" class="backup-history-export-title backup-history-summary-heading">安全快照说明</div>
+                <div class="backup-history-checkpoint-summary">
+                    <div id="historySafetyCheckpointSummary"></div>
+                </div>
+                <div id="historySafetyCheckpointExportResult" class="backup-history-secondary-result"></div>
+            </div>
+            <div class="backup-history-floating-footer">
+                <button class="modal-btn" id="historySafetyCheckpointCloseBtn">关闭</button>
+                <button class="modal-btn primary" id="historySafetyCheckpointExportBtn">导出所选快照</button>
+            </div>
         </div>
     </div>
 

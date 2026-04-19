@@ -3992,6 +3992,1003 @@ function resolveMergeImportTreeFromMessage(message = {}) {
     return null;
 }
 
+const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';
+const DEV1_CAPTURE_RUN_STATE_VERSION = 1;
+const DEV1_CAPTURE_MAX_RETRY_LIMIT = 2;
+
+function dev1NowIso() {
+    return new Date().toISOString();
+}
+
+function dev1BuildRunId() {
+    return `dev1_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function dev1CloneJsonSafe(value, fallback = null) {
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function dev1NormalizeRunOptions(rawOptions = {}) {
+    const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
+    return {
+        closeTabAfterCapture: options.closeTabAfterCapture !== false,
+        renderWaitMs: Number.isFinite(Number(options.renderWaitMs))
+            ? Math.max(0, Math.min(10000, Math.floor(Number(options.renderWaitMs))))
+            : 1200,
+        loadTimeoutMs: Number.isFinite(Number(options.loadTimeoutMs))
+            ? Math.max(5000, Math.min(120000, Math.floor(Number(options.loadTimeoutMs))))
+            : 45000,
+        maxRetries: Number.isFinite(Number(options.maxRetries))
+            ? Math.max(0, Math.min(DEV1_CAPTURE_MAX_RETRY_LIMIT, Math.floor(Number(options.maxRetries))))
+            : 1
+    };
+}
+
+function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
+    const fallbackRow = fallback && typeof fallback === 'object' ? fallback : {};
+    const next = {
+        index: Number.isFinite(Number(rawRow?.index)) ? Math.max(0, Math.floor(Number(rawRow.index))) : (Number.isFinite(Number(fallbackRow?.index)) ? Math.max(0, Math.floor(Number(fallbackRow.index))) : 0),
+        url: String(rawRow?.url || fallbackRow?.url || '').trim(),
+        title: String(rawRow?.title || fallbackRow?.title || '').trim(),
+        folderPath: String(rawRow?.folderPath || fallbackRow?.folderPath || '').trim(),
+        domain: String(rawRow?.domain || fallbackRow?.domain || '').trim(),
+        subdomain: String(rawRow?.subdomain || fallbackRow?.subdomain || '').trim(),
+        actionText: String(rawRow?.actionText || fallbackRow?.actionText || '').trim(),
+        status: String(rawRow?.status || fallbackRow?.status || 'pending').trim().toLowerCase(),
+        files: Array.isArray(rawRow?.files)
+            ? rawRow.files.map(v => String(v || '').trim()).filter(Boolean)
+            : (Array.isArray(fallbackRow?.files) ? fallbackRow.files.map(v => String(v || '').trim()).filter(Boolean) : []),
+        errors: Array.isArray(rawRow?.errors)
+            ? rawRow.errors.map(v => String(v || '').trim()).filter(Boolean)
+            : (Array.isArray(fallbackRow?.errors) ? fallbackRow.errors.map(v => String(v || '').trim()).filter(Boolean) : []),
+        attempts: Number.isFinite(Number(rawRow?.attempts))
+            ? Math.max(0, Math.floor(Number(rawRow.attempts)))
+            : (Number.isFinite(Number(fallbackRow?.attempts)) ? Math.max(0, Math.floor(Number(fallbackRow.attempts))) : 0),
+        startedAt: String(rawRow?.startedAt || fallbackRow?.startedAt || '').trim(),
+        finishedAt: String(rawRow?.finishedAt || fallbackRow?.finishedAt || '').trim()
+    };
+
+    if (!['pending', 'success', 'partial', 'error'].includes(next.status)) {
+        next.status = 'pending';
+    }
+
+    if (!next.title) next.title = next.url;
+    return next;
+}
+
+function dev1ComputeSummaryFromRows(rows = []) {
+    const list = Array.isArray(rows) ? rows : [];
+    const summary = {
+        total: list.length,
+        successCount: 0,
+        partialCount: 0,
+        failureCount: 0,
+        pendingCount: 0
+    };
+
+    list.forEach((row) => {
+        const status = String(row?.status || '').toLowerCase();
+        if (status === 'success') summary.successCount += 1;
+        else if (status === 'partial') summary.partialCount += 1;
+        else if (status === 'error') summary.failureCount += 1;
+        else summary.pendingCount += 1;
+    });
+
+    return summary;
+}
+
+function dev1BuildPublicRunState(runState, options = {}) {
+    if (!runState || typeof runState !== 'object') return null;
+    const includeResults = options && options.includeResults === true;
+    const rows = Array.isArray(runState.items)
+        ? runState.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
+        : [];
+    const summary = dev1ComputeSummaryFromRows(rows);
+    const status = String(runState.status || '').trim().toLowerCase() || 'unknown';
+    return {
+        version: Number(runState.version) || DEV1_CAPTURE_RUN_STATE_VERSION,
+        runId: String(runState.runId || '').trim(),
+        status,
+        targetFolder: String(runState.targetFolder || '').trim(),
+        startedAt: String(runState.startedAt || '').trim(),
+        updatedAt: String(runState.updatedAt || '').trim(),
+        finishedAt: String(runState.finishedAt || '').trim(),
+        interruptedReason: String(runState.interruptedReason || '').trim(),
+        resumeCount: Number.isFinite(Number(runState.resumeCount)) ? Math.max(0, Math.floor(Number(runState.resumeCount))) : 0,
+        formats: dev1NormalizeFormats(runState.formats || {}),
+        options: dev1NormalizeRunOptions(runState.options || {}),
+        summary,
+        resumable: summary.pendingCount > 0 || summary.failureCount > 0 || summary.partialCount > 0,
+        results: includeResults ? rows : undefined
+    };
+}
+
+async function dev1LoadCaptureRunState() {
+    try {
+        const store = await browserAPI.storage.local.get([DEV1_CAPTURE_RUN_STATE_KEY]);
+        const raw = store?.[DEV1_CAPTURE_RUN_STATE_KEY];
+        if (!raw || typeof raw !== 'object') return null;
+        const items = Array.isArray(raw.items)
+            ? raw.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
+            : [];
+        return {
+            version: Number(raw.version) || DEV1_CAPTURE_RUN_STATE_VERSION,
+            runId: String(raw.runId || '').trim(),
+            status: String(raw.status || '').trim().toLowerCase() || 'unknown',
+            targetFolder: String(raw.targetFolder || '').trim(),
+            startedAt: String(raw.startedAt || '').trim(),
+            updatedAt: String(raw.updatedAt || '').trim(),
+            finishedAt: String(raw.finishedAt || '').trim(),
+            interruptedReason: String(raw.interruptedReason || '').trim(),
+            resumeCount: Number.isFinite(Number(raw.resumeCount)) ? Math.max(0, Math.floor(Number(raw.resumeCount))) : 0,
+            formats: dev1NormalizeFormats(raw.formats || {}),
+            options: dev1NormalizeRunOptions(raw.options || {}),
+            activeTabIds: Array.isArray(raw.activeTabIds)
+                ? Array.from(new Set(raw.activeTabIds
+                    .map(v => Number(v))
+                    .filter(v => Number.isFinite(v))))
+                : [],
+            items
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+async function dev1SaveCaptureRunState(runState) {
+    if (!runState || typeof runState !== 'object') return;
+    const payload = {
+        ...runState,
+        version: DEV1_CAPTURE_RUN_STATE_VERSION,
+        updatedAt: dev1NowIso(),
+        formats: dev1NormalizeFormats(runState.formats || {}),
+        options: dev1NormalizeRunOptions(runState.options || {}),
+        activeTabIds: Array.isArray(runState.activeTabIds)
+            ? Array.from(new Set(runState.activeTabIds.map(v => Number(v)).filter(v => Number.isFinite(v))))
+            : [],
+        items: Array.isArray(runState.items)
+            ? runState.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
+            : []
+    };
+    await browserAPI.storage.local.set({
+        [DEV1_CAPTURE_RUN_STATE_KEY]: dev1CloneJsonSafe(payload, payload)
+    });
+}
+
+function dev1BuildInitialRunState({ items = [], formats = {}, options = {}, targetFolder = '', runId = '' } = {}) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return {
+        version: DEV1_CAPTURE_RUN_STATE_VERSION,
+        runId: String(runId || dev1BuildRunId()).trim() || dev1BuildRunId(),
+        status: 'running',
+        targetFolder: String(targetFolder || '').trim(),
+        startedAt: dev1NowIso(),
+        updatedAt: dev1NowIso(),
+        finishedAt: '',
+        interruptedReason: '',
+        resumeCount: 0,
+        formats: dev1NormalizeFormats(formats),
+        options: dev1NormalizeRunOptions(options),
+        activeTabIds: [],
+        items: normalizedItems.map((item, index) => dev1NormalizeResultRow({
+            index,
+            ...item,
+            status: 'pending',
+            files: [],
+            errors: [],
+            attempts: 0
+        }, { index }))
+    };
+}
+
+function dev1ShouldResumeRow(row) {
+    const status = String(row?.status || '').toLowerCase();
+    return status !== 'success';
+}
+
+function dev1IsRetriableCaptureError(message = '') {
+    const text = String(message || '').toLowerCase();
+    if (!text) return false;
+    return (
+        text.includes('timeout')
+        || text.includes('tab closed')
+        || text.includes('no tab with id')
+        || text.includes('net::')
+        || text.includes('err_')
+        || text.includes('disconnected')
+        || text.includes('frame was removed')
+    );
+}
+
+async function dev1TrackRunTabId(runState, tabId, add = true) {
+    if (!runState || typeof runState !== 'object') return;
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) return;
+    const current = new Set(Array.isArray(runState.activeTabIds) ? runState.activeTabIds : []);
+    if (add) current.add(id);
+    else current.delete(id);
+    runState.activeTabIds = Array.from(current);
+    await dev1SaveCaptureRunState(runState);
+}
+
+function dev1BuildRunResponsePayload(runState) {
+    const publicState = dev1BuildPublicRunState(runState, { includeResults: true }) || {};
+    const summary = publicState.summary || {};
+    return {
+        success: true,
+        runId: String(publicState.runId || '').trim(),
+        status: String(publicState.status || '').trim() || 'unknown',
+        targetFolder: String(publicState.targetFolder || '').trim(),
+        interruptedReason: String(publicState.interruptedReason || '').trim(),
+        summary: {
+            total: Number(summary.total) || 0,
+            successCount: Number(summary.successCount) || 0,
+            partialCount: Number(summary.partialCount) || 0,
+            failureCount: Number(summary.failureCount) || 0,
+            pendingCount: Number(summary.pendingCount) || 0
+        },
+        results: Array.isArray(publicState.results) ? publicState.results : []
+    };
+}
+
+async function dev1MarkRunningRunInterrupted(reason = 'runtime_restarted') {
+    const runState = await dev1LoadCaptureRunState();
+    if (!runState || runState.status !== 'running') return null;
+    const activeTabIds = Array.isArray(runState.activeTabIds) ? runState.activeTabIds.slice() : [];
+
+    runState.status = 'interrupted';
+    runState.interruptedReason = String(reason || 'runtime_restarted');
+    runState.finishedAt = dev1NowIso();
+    runState.activeTabIds = [];
+    await dev1SaveCaptureRunState(runState);
+
+    if (activeTabIds.length > 0) {
+        await Promise.all(activeTabIds.map((id) => {
+            const tabId = Number(id);
+            if (!Number.isFinite(tabId)) return Promise.resolve();
+            return browserAPI.tabs.remove(tabId).catch(() => { });
+        }));
+    }
+
+    return runState;
+}
+
+function dev1Sleep(ms = 0) {
+    const delay = Number(ms);
+    return new Promise(resolve => setTimeout(resolve, Number.isFinite(delay) ? Math.max(0, delay) : 0));
+}
+
+function dev1SanitizeFilePart(value, fallback = 'item', maxLen = 64) {
+    const normalizedMax = Number.isFinite(Number(maxLen)) ? Math.max(8, Math.floor(Number(maxLen))) : 64;
+    let text = String(value || '').trim();
+    if (!text) text = String(fallback || 'item');
+    text = text
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!text) text = String(fallback || 'item');
+    if (text.length > normalizedMax) text = text.slice(0, normalizedMax).trim();
+    return text || String(fallback || 'item');
+}
+
+function dev1NormalizeCaptureItems(rawItems = []) {
+    if (!Array.isArray(rawItems)) return [];
+    const results = [];
+    const seen = new Set();
+
+    rawItems.forEach((raw, index) => {
+        const urlText = String(raw?.url || '').trim();
+        if (!urlText) return;
+
+        let parsed = null;
+        try {
+            parsed = new URL(urlText);
+        } catch (_) {
+            return;
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+
+        const normalizedUrl = parsed.toString();
+        if (seen.has(normalizedUrl)) return;
+        seen.add(normalizedUrl);
+
+        results.push({
+            index,
+            url: normalizedUrl,
+            title: String(raw?.title || '').trim(),
+            folderPath: String(raw?.folderPath || '').trim(),
+            domain: String(raw?.domain || parsed.hostname || '').trim(),
+            subdomain: String(raw?.subdomain || '').trim(),
+            actionText: String(raw?.actionText || '').trim()
+        });
+    });
+
+    return results;
+}
+
+function dev1NormalizeFormats(rawFormats = {}) {
+    const formats = rawFormats && typeof rawFormats === 'object' ? rawFormats : {};
+    return {
+        html: formats.html === true,
+        md: formats.md === true,
+        mhtml: formats.mhtml === true
+    };
+}
+
+async function dev1WaitForTabComplete(tabId, timeoutMs = 30000) {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) throw new Error('Invalid tab id');
+
+    const normalizedTimeout = Number.isFinite(Number(timeoutMs)) ? Math.max(3000, Math.floor(Number(timeoutMs))) : 30000;
+
+    const initialTab = await browserAPI.tabs.get(id).catch(() => null);
+    if (initialTab && initialTab.status === 'complete') return;
+
+    return await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try { browserAPI.tabs.onUpdated.removeListener(onUpdated); } catch (_) { }
+            try { browserAPI.tabs.onRemoved.removeListener(onRemoved); } catch (_) { }
+            reject(new Error('Tab load timeout'));
+        }, normalizedTimeout);
+
+        const done = (fn) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try { browserAPI.tabs.onUpdated.removeListener(onUpdated); } catch (_) { }
+            try { browserAPI.tabs.onRemoved.removeListener(onRemoved); } catch (_) { }
+            fn();
+        };
+
+        const onUpdated = (updatedTabId, changeInfo) => {
+            if (updatedTabId !== id) return;
+            if (changeInfo && changeInfo.status === 'complete') {
+                done(resolve);
+            }
+        };
+
+        const onRemoved = (removedTabId) => {
+            if (removedTabId !== id) return;
+            done(() => reject(new Error('Tab closed before capture')));
+        };
+
+        browserAPI.tabs.onUpdated.addListener(onUpdated);
+        browserAPI.tabs.onRemoved.addListener(onRemoved);
+    });
+}
+
+async function dev1ExecuteScript(tabId, func, args = []) {
+    return await new Promise((resolve, reject) => {
+        try {
+            browserAPI.scripting.executeScript({
+                target: { tabId: Number(tabId) },
+                func,
+                args
+            }, (results) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'executeScript failed'));
+                    return;
+                }
+                const payload = Array.isArray(results) && results[0] ? results[0].result : null;
+                resolve(payload);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+function dev1ExtractPagePayloadInTab() {
+    const normalizeText = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+    const escapeMdInline = (value) => String(value == null ? '' : value).replace(/([*_`[\]])/g, '\\$1');
+
+    const inlineToMarkdown = (node) => {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) {
+            return escapeMdInline(normalizeText(node.textContent || ''));
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+        const el = node;
+        const tag = String(el.tagName || '').toLowerCase();
+
+        if (tag === 'br') return '  \n';
+        if (tag === 'code' && tag !== 'pre') return `\`${escapeMdInline(el.textContent || '')}\``;
+        if (tag === 'strong' || tag === 'b') return `**${Array.from(el.childNodes).map(inlineToMarkdown).join('')}**`;
+        if (tag === 'em' || tag === 'i') return `*${Array.from(el.childNodes).map(inlineToMarkdown).join('')}*`;
+        if (tag === 'a') {
+            const href = String(el.getAttribute('href') || '').trim();
+            const text = Array.from(el.childNodes).map(inlineToMarkdown).join('') || href;
+            return href ? `[${text}](${href})` : text;
+        }
+        if (tag === 'img') {
+            const src = String(el.getAttribute('src') || '').trim();
+            const alt = escapeMdInline(String(el.getAttribute('alt') || '').trim());
+            if (!src) return '';
+            return `![${alt}](${src})`;
+        }
+        return Array.from(el.childNodes).map(inlineToMarkdown).join('');
+    };
+
+    const blockToMarkdown = (node, depth = 0) => {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) return '';
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+        const el = node;
+        const tag = String(el.tagName || '').toLowerCase();
+
+        if (['script', 'style', 'noscript', 'template'].includes(tag)) return '';
+        if (tag === 'hr') return '\n---\n\n';
+
+        if (tag === 'pre') {
+            const code = String(el.textContent || '').trimEnd();
+            if (!code) return '';
+            return `\n\`\`\`\n${code}\n\`\`\`\n\n`;
+        }
+
+        if (/^h[1-6]$/.test(tag)) {
+            const level = Math.max(1, Math.min(6, Number(tag.slice(1))));
+            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
+            if (!text) return '';
+            return `${'#'.repeat(level)} ${text}\n\n`;
+        }
+
+        if (tag === 'p') {
+            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
+            return text ? `${text}\n\n` : '';
+        }
+
+        if (tag === 'blockquote') {
+            const content = Array.from(el.childNodes).map(child => blockToMarkdown(child, depth + 1)).join('').trim();
+            if (!content) return '';
+            return `${content.split('\n').map(line => line ? `> ${line}` : '>').join('\n')}\n\n`;
+        }
+
+        if (tag === 'ul' || tag === 'ol') {
+            const lines = [];
+            const items = Array.from(el.children).filter(child => String(child.tagName || '').toLowerCase() === 'li');
+            items.forEach((li, idx) => {
+                const prefix = tag === 'ol' ? `${idx + 1}. ` : '- ';
+                const text = normalizeText(Array.from(li.childNodes).map(inlineToMarkdown).join(''));
+                if (text) lines.push(`${'  '.repeat(depth)}${prefix}${text}`);
+
+                Array.from(li.children).forEach((child) => {
+                    const childTag = String(child.tagName || '').toLowerCase();
+                    if (childTag === 'ul' || childTag === 'ol') {
+                        const nested = blockToMarkdown(child, depth + 1).trimEnd();
+                        if (nested) lines.push(nested);
+                    }
+                });
+            });
+            return lines.length ? `${lines.join('\n')}\n\n` : '';
+        }
+
+        if (tag === 'table') {
+            const rows = Array.from(el.querySelectorAll('tr'));
+            if (!rows.length) return '';
+            const matrix = rows.map((tr) => {
+                return Array.from(tr.querySelectorAll('th,td')).map((cell) => {
+                    return normalizeText(Array.from(cell.childNodes).map(inlineToMarkdown).join('')).replace(/\|/g, '\\|');
+                });
+            }).filter((row) => row.length > 0);
+            if (!matrix.length) return '';
+
+            const header = matrix[0];
+            const separator = header.map(() => '---');
+            const body = matrix.slice(1);
+            const lines = [
+                `| ${header.join(' | ')} |`,
+                `| ${separator.join(' | ')} |`,
+                ...body.map(row => `| ${row.join(' | ')} |`)
+            ];
+            return `${lines.join('\n')}\n\n`;
+        }
+
+        if (tag === 'li') {
+            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
+            return text ? `${'  '.repeat(depth)}- ${text}\n` : '';
+        }
+
+        const childBlocks = Array.from(el.childNodes).map(child => blockToMarkdown(child, depth)).join('');
+        if (childBlocks.trim()) return childBlocks;
+
+        const inline = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
+        return inline ? `${inline}\n\n` : '';
+    };
+
+    const doc = document;
+    const htmlDoctype = (() => {
+        const d = doc.doctype;
+        if (!d) return '<!DOCTYPE html>';
+        const publicId = d.publicId ? ` PUBLIC "${d.publicId}"` : '';
+        const systemId = d.systemId ? ` "${d.systemId}"` : '';
+        return `<!DOCTYPE ${d.name}${publicId}${systemId}>`;
+    })();
+
+    const html = `${htmlDoctype}\n${doc.documentElement.outerHTML}`;
+
+    const bodyClone = doc.body ? doc.body.cloneNode(true) : null;
+    if (bodyClone) {
+        bodyClone.querySelectorAll('script,style,noscript,template').forEach(el => el.remove());
+    }
+    const markdownSource = bodyClone || doc.body || doc.documentElement;
+    const markdown = Array.from(markdownSource ? markdownSource.childNodes : [])
+        .map(node => blockToMarkdown(node, 0))
+        .join('')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    return {
+        title: String(doc.title || '').trim(),
+        url: String(location.href || '').trim(),
+        html,
+        markdown,
+        capturedAt: new Date().toISOString()
+    };
+}
+
+async function dev1CaptureMhtmlBlob(tabId) {
+    if (!browserAPI.pageCapture || typeof browserAPI.pageCapture.saveAsMHTML !== 'function') {
+        throw new Error('pageCapture API unavailable');
+    }
+
+    return await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (fn) => {
+            if (settled) return;
+            settled = true;
+            fn();
+        };
+
+        try {
+            const maybePromise = browserAPI.pageCapture.saveAsMHTML({ tabId: Number(tabId) }, (blob) => {
+                if (browserAPI.runtime.lastError) {
+                    finish(() => reject(new Error(browserAPI.runtime.lastError.message || 'saveAsMHTML failed')));
+                    return;
+                }
+                if (!blob) {
+                    finish(() => reject(new Error('saveAsMHTML returned empty blob')));
+                    return;
+                }
+                finish(() => resolve(blob));
+            });
+
+            if (maybePromise && typeof maybePromise.then === 'function') {
+                maybePromise
+                    .then((blob) => finish(() => resolve(blob)))
+                    .catch((error) => finish(() => reject(error)));
+            }
+        } catch (error) {
+            finish(() => reject(error));
+        }
+    });
+}
+
+async function dev1DownloadBlobDataUrl(filePath, blob, mimeType = 'application/octet-stream') {
+    const safeMime = String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+    const base64 = await blobToBase64(blob);
+    if (!base64) throw new Error('Blob to base64 failed');
+    const dataUrl = `data:${safeMime};base64,${base64}`;
+
+    return await new Promise((resolve, reject) => {
+        browserAPI.downloads.download({
+            url: dataUrl,
+            filename: String(filePath || '').trim(),
+            saveAs: false,
+            conflictAction: 'uniquify'
+        }, (downloadId) => {
+            if (browserAPI.runtime.lastError) {
+                reject(new Error(browserAPI.runtime.lastError.message || 'Download failed'));
+            } else {
+                resolve(downloadId);
+            }
+        });
+    });
+}
+
+async function dev1DownloadBlobViaTab(tabId, filePath, blob, mimeType = 'application/octet-stream') {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) {
+        throw new Error('Invalid tab id for blob download');
+    }
+    const base64 = await blobToBase64(blob);
+    if (!base64) throw new Error('Blob to base64 failed');
+    const safeMime = String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+    const safeFilePath = String(filePath || '').trim();
+
+    const response = await dev1ExecuteScript(id, (blobBase64, type, filename) => {
+        try {
+            const binary = atob(String(blobBase64 || ''));
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+
+            const blob = new Blob([bytes], { type: String(type || 'application/octet-stream') });
+            const url = URL.createObjectURL(blob);
+
+            return new Promise((resolve) => {
+                try {
+                    chrome.runtime.sendMessage({
+                        action: 'downloadBlobUrl',
+                        url,
+                        filename
+                    }, (resp) => {
+                        const runtimeErr = chrome.runtime?.lastError;
+                        setTimeout(() => {
+                            try { URL.revokeObjectURL(url); } catch (_) { }
+                        }, 20000);
+
+                        if (runtimeErr) {
+                            resolve({ success: false, error: runtimeErr.message || 'downloadBlobUrl runtime error' });
+                            return;
+                        }
+                        if (!resp || resp.success !== true) {
+                            resolve({ success: false, error: resp?.error || 'downloadBlobUrl failed' });
+                            return;
+                        }
+                        resolve({ success: true, downloadId: resp.downloadId || null });
+                    });
+                } catch (e) {
+                    setTimeout(() => {
+                        try { URL.revokeObjectURL(url); } catch (_) { }
+                    }, 20000);
+                    resolve({ success: false, error: e?.message || 'downloadBlobUrl dispatch failed' });
+                }
+            });
+        } catch (e) {
+            return { success: false, error: e?.message || 'blob decode failed' };
+        }
+    }, [base64, safeMime, safeFilePath]);
+
+    if (!response || response.success !== true) {
+        throw new Error(response?.error || 'Blob download via tab failed');
+    }
+    return response.downloadId || null;
+}
+
+async function dev1DownloadBlobToLocal(filePath, blob, mimeType = 'application/octet-stream', options = {}) {
+    if (!blob) throw new Error('Missing blob payload');
+    const preferTabDownload = options && options.preferTabDownload === true;
+    const tabId = Number(options?.tabId);
+
+    if (preferTabDownload && Number.isFinite(tabId)) {
+        try {
+            return await dev1DownloadBlobViaTab(tabId, filePath, blob, mimeType);
+        } catch (_) {
+            // Fallback to data URL when tab-blob download is unavailable.
+        }
+    }
+
+    return await dev1DownloadBlobDataUrl(filePath, blob, mimeType);
+}
+
+async function dev1DownloadTextToLocal(filePath, text, mimeType, options = {}) {
+    const blob = new Blob([String(text == null ? '' : text)], {
+        type: String(mimeType || 'text/plain;charset=utf-8')
+    });
+    return await dev1DownloadBlobToLocal(
+        filePath,
+        blob,
+        String(mimeType || 'text/plain;charset=utf-8'),
+        options
+    );
+}
+
+function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
+    let host = '';
+    try {
+        host = new URL(String(effectiveUrl || item?.url || '')).hostname || '';
+    } catch (_) { }
+
+    const hostPart = dev1SanitizeFilePart(host || item?.domain || 'site', 'site', 40);
+    const titlePart = dev1SanitizeFilePart(effectiveTitle || item?.title || `item_${index + 1}`, `item_${index + 1}`, 64);
+    return `${String(index + 1).padStart(3, '0')}_${hostPart}_${titlePart}`;
+}
+
+async function runDev1CaptureAndExport(message = {}) {
+    const resumeFromLast = message.resumeFromLast === true;
+    let runState = null;
+    try {
+        const existingState = await dev1LoadCaptureRunState();
+        if (existingState && existingState.status === 'running') {
+            throw new Error('Another dev_1 capture run is still active');
+        }
+
+        const requestedFormats = dev1NormalizeFormats(message.formats);
+        const normalizedMessageOptions = message.options && typeof message.options === 'object' ? message.options : {};
+        const lang = message.lang === 'en' || message.lang === 'zh_CN'
+            ? message.lang
+            : await getCurrentLang();
+        const exportRootFolder = getExportRootFolderByLang(lang);
+        const manualFolder = getManualExportParentFolderByLang(lang);
+        const buildTargetFolder = () => {
+            const runToken = formatSyncTimeForFileName(new Date().toISOString());
+            return `${exportRootFolder}/${manualFolder}/dev_1/${runToken}`;
+        };
+
+        const runQueue = [];
+        if (resumeFromLast) {
+            const previousState = existingState;
+            if (!previousState) {
+                throw new Error('No previous dev_1 run found for resume');
+            }
+
+            const mergedFormats = dev1NormalizeFormats({
+                html: requestedFormats.html || previousState.formats?.html === true,
+                md: requestedFormats.md || previousState.formats?.md === true,
+                mhtml: requestedFormats.mhtml || previousState.formats?.mhtml === true
+            });
+            if (!mergedFormats.html && !mergedFormats.md && !mergedFormats.mhtml) {
+                throw new Error('No export format enabled');
+            }
+
+            const mergedOptions = dev1NormalizeRunOptions({
+                ...(previousState.options || {}),
+                ...normalizedMessageOptions
+            });
+
+            runState = {
+                ...previousState,
+                status: 'running',
+                interruptedReason: '',
+                finishedAt: '',
+                resumeCount: (Number(previousState.resumeCount) || 0) + 1,
+                formats: mergedFormats,
+                options: mergedOptions,
+                targetFolder: String(previousState.targetFolder || '').trim() || buildTargetFolder(),
+                activeTabIds: []
+            };
+
+            const rows = Array.isArray(runState.items) ? runState.items : [];
+            rows.forEach((row, rowIndex) => {
+                const normalizedRow = dev1NormalizeResultRow(row, { index: rowIndex });
+                runState.items[rowIndex] = normalizedRow;
+                if (dev1ShouldResumeRow(normalizedRow) && normalizedRow.url) {
+                    runQueue.push({
+                        rowIndex,
+                        item: {
+                            index: rowIndex,
+                            url: normalizedRow.url,
+                            title: normalizedRow.title,
+                            folderPath: normalizedRow.folderPath,
+                            domain: normalizedRow.domain,
+                            subdomain: normalizedRow.subdomain,
+                            actionText: normalizedRow.actionText
+                        }
+                    });
+                }
+            });
+
+            if (runQueue.length === 0) {
+                throw new Error('No unfinished items to resume');
+            }
+
+            await dev1SaveCaptureRunState(runState);
+        } else {
+            const items = dev1NormalizeCaptureItems(message.items);
+            if (items.length === 0) {
+                throw new Error('No valid URL items to capture');
+            }
+
+            if (!requestedFormats.html && !requestedFormats.md && !requestedFormats.mhtml) {
+                throw new Error('No export format enabled');
+            }
+
+            const normalizedOptions = dev1NormalizeRunOptions(normalizedMessageOptions);
+            runState = dev1BuildInitialRunState({
+                items,
+                formats: requestedFormats,
+                options: normalizedOptions,
+                targetFolder: buildTargetFolder(),
+                runId: dev1BuildRunId()
+            });
+            await dev1SaveCaptureRunState(runState);
+
+            runState.items.forEach((row, rowIndex) => {
+                runQueue.push({
+                    rowIndex,
+                    item: {
+                        index: rowIndex,
+                        url: row.url,
+                        title: row.title,
+                        folderPath: row.folderPath,
+                        domain: row.domain,
+                        subdomain: row.subdomain,
+                        actionText: row.actionText
+                    }
+                });
+            });
+        }
+
+        const formats = dev1NormalizeFormats(runState.formats || {});
+        const options = dev1NormalizeRunOptions(runState.options || {});
+
+        for (let i = 0; i < runQueue.length; i++) {
+            const queueEntry = runQueue[i];
+            const rowIndex = Number(queueEntry?.rowIndex);
+            if (!Number.isFinite(rowIndex) || rowIndex < 0) continue;
+
+            const item = queueEntry.item && typeof queueEntry.item === 'object' ? queueEntry.item : {};
+            const baseRow = dev1NormalizeResultRow(runState.items[rowIndex], {
+                index: rowIndex,
+                ...item
+            });
+            if (!baseRow.url) {
+                baseRow.status = 'error';
+                baseRow.errors = ['Missing URL'];
+                baseRow.finishedAt = dev1NowIso();
+                runState.items[rowIndex] = baseRow;
+                await dev1SaveCaptureRunState(runState);
+                continue;
+            }
+
+            baseRow.status = 'pending';
+            baseRow.startedAt = dev1NowIso();
+            baseRow.finishedAt = '';
+            baseRow.errors = [];
+            baseRow.attempts = 0;
+            if (!Array.isArray(baseRow.files)) baseRow.files = [];
+            runState.items[rowIndex] = baseRow;
+            await dev1SaveCaptureRunState(runState);
+
+            for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+                let tabId = null;
+                let pagePayload = null;
+                baseRow.attempts = attempt + 1;
+                try {
+                    const createdTab = await browserAPI.tabs.create({
+                        url: baseRow.url,
+                        active: false
+                    });
+                    tabId = createdTab && createdTab.id;
+                    if (!Number.isFinite(Number(tabId))) {
+                        throw new Error('Failed to create capture tab');
+                    }
+
+                    await dev1TrackRunTabId(runState, tabId, true);
+                    await dev1WaitForTabComplete(tabId, options.loadTimeoutMs);
+                    if (options.renderWaitMs > 0) {
+                        await dev1Sleep(options.renderWaitMs);
+                    }
+
+                    if (formats.html || formats.md) {
+                        pagePayload = await dev1ExecuteScript(tabId, dev1ExtractPagePayloadInTab, []);
+                        if (!pagePayload || typeof pagePayload !== 'object') {
+                            throw new Error('Failed to extract page payload');
+                        }
+                    }
+
+                    const effectiveUrl = String(pagePayload?.url || baseRow.url || '').trim();
+                    const effectiveTitle = String(pagePayload?.title || baseRow.title || '').trim();
+                    baseRow.url = effectiveUrl || baseRow.url;
+                    baseRow.title = effectiveTitle || baseRow.title;
+
+                    const leafBase = dev1BuildCaptureLeafName(rowIndex, baseRow, effectiveUrl, effectiveTitle);
+
+                    if (formats.html) {
+                        try {
+                            const htmlPath = `${runState.targetFolder}/${leafBase}.html`;
+                            await dev1DownloadTextToLocal(htmlPath, pagePayload?.html || '', 'text/html;charset=utf-8', {
+                                tabId: Number(tabId),
+                                preferTabDownload: true
+                            });
+                            baseRow.files.push(htmlPath);
+                        } catch (error) {
+                            baseRow.errors.push(`HTML: ${error?.message || 'failed'}`);
+                        }
+                    }
+
+                    if (formats.md) {
+                        try {
+                            const mdPath = `${runState.targetFolder}/${leafBase}.md`;
+                            await dev1DownloadTextToLocal(mdPath, pagePayload?.markdown || '', 'text/markdown;charset=utf-8', {
+                                tabId: Number(tabId),
+                                preferTabDownload: true
+                            });
+                            baseRow.files.push(mdPath);
+                        } catch (error) {
+                            baseRow.errors.push(`MD: ${error?.message || 'failed'}`);
+                        }
+                    }
+
+                    if (formats.mhtml) {
+                        try {
+                            const mhtmlPath = `${runState.targetFolder}/${leafBase}.mhtml`;
+                            const mhtmlBlob = await dev1CaptureMhtmlBlob(tabId);
+                            await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
+                                tabId: Number(tabId),
+                                preferTabDownload: true
+                            });
+                            baseRow.files.push(mhtmlPath);
+                        } catch (error) {
+                            baseRow.errors.push(`MHTML: ${error?.message || 'failed'}`);
+                        }
+                    }
+
+                    baseRow.files = Array.from(new Set(baseRow.files.map(v => String(v || '').trim()).filter(Boolean)));
+                    if (baseRow.files.length === 0 || baseRow.errors.length > 0) {
+                        baseRow.status = baseRow.files.length > 0 ? 'partial' : 'error';
+                    } else {
+                        baseRow.status = 'success';
+                    }
+                    break;
+                } catch (error) {
+                    const messageText = error?.message || 'capture failed';
+                    const canRetry = attempt < options.maxRetries && dev1IsRetriableCaptureError(messageText);
+                    if (canRetry) {
+                        baseRow.errors.push(`Retry ${attempt + 1}: ${messageText}`);
+                        await dev1Sleep(800 * (attempt + 1));
+                        continue;
+                    }
+                    baseRow.status = 'error';
+                    baseRow.errors.push(messageText);
+                    break;
+                } finally {
+                    if (options.closeTabAfterCapture && Number.isFinite(Number(tabId))) {
+                        try {
+                            await browserAPI.tabs.remove(Number(tabId));
+                        } catch (_) { }
+                    }
+                    if (Number.isFinite(Number(tabId))) {
+                        await dev1TrackRunTabId(runState, tabId, false);
+                    }
+                }
+            }
+
+            baseRow.files = Array.from(new Set(baseRow.files.map(v => String(v || '').trim()).filter(Boolean)));
+            if (!baseRow.status || baseRow.status === 'pending') {
+                baseRow.status = baseRow.files.length > 0
+                    ? (baseRow.errors.length > 0 ? 'partial' : 'success')
+                    : 'error';
+            }
+            baseRow.finishedAt = dev1NowIso();
+            runState.items[rowIndex] = baseRow;
+            await dev1SaveCaptureRunState(runState);
+        }
+
+        runState.status = 'completed';
+        runState.finishedAt = dev1NowIso();
+        runState.interruptedReason = '';
+        runState.activeTabIds = [];
+        await dev1SaveCaptureRunState(runState);
+        return dev1BuildRunResponsePayload(runState);
+    } catch (error) {
+        if (runState && typeof runState === 'object') {
+            runState.status = 'failed';
+            runState.finishedAt = dev1NowIso();
+            runState.interruptedReason = String(error?.message || 'run_failed');
+            runState.activeTabIds = [];
+            await dev1SaveCaptureRunState(runState);
+        }
+        throw error;
+    }
+}
+
+async function dev1RecoverInterruptedCaptureStateAtBoot(reason = 'service_worker_boot') {
+    try {
+        await dev1MarkRunningRunInterrupted(reason);
+    } catch (_) { }
+}
+
+dev1RecoverInterruptedCaptureStateAtBoot('service_worker_boot').catch(() => { });
+
+if (browserAPI?.runtime?.onSuspend && typeof browserAPI.runtime.onSuspend.addListener === 'function') {
+    browserAPI.runtime.onSuspend.addListener(() => {
+        dev1MarkRunningRunInterrupted('runtime_suspend').catch(() => { });
+    });
+}
+
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 基础校验
@@ -6104,6 +7101,52 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || '构建当前变化导出失败'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1GetCaptureRunState') {
+            (async () => {
+                try {
+                    const includeResults = message.includeResults === true;
+                    const runState = await dev1LoadCaptureRunState();
+                    sendResponse({
+                        success: true,
+                        state: dev1BuildPublicRunState(runState, { includeResults })
+                    });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 capture state query failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1ResumeCaptureRun') {
+            (async () => {
+                try {
+                    const result = await runDev1CaptureAndExport({
+                        ...message,
+                        resumeFromLast: true
+                    });
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 resume failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CaptureAndExportUrls') {
+            (async () => {
+                try {
+                    const result = await runDev1CaptureAndExport(message || {});
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 capture failed'
                     });
                 }
             })();

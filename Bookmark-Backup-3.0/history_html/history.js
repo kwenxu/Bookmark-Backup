@@ -33,7 +33,7 @@ try {
 
 window.currentLang = currentLang; // 暴露给其他模块使用
 // 允许外部页面限制可用视图（拆分插件时使用）
-const DEFAULT_VIEWS = ['current-changes', 'history'];
+const DEFAULT_VIEWS = ['current-changes', 'history', 'dev-1'];
 const ALLOWED_VIEWS = (Array.isArray(window.__ALLOWED_VIEWS) && window.__ALLOWED_VIEWS.length)
     ? window.__ALLOWED_VIEWS
     : DEFAULT_VIEWS;
@@ -2484,6 +2484,10 @@ const i18n = {
         'zh_CN': '备份历史',
         'en': 'Backup History'
     },
+    navDev1: {
+        'zh_CN': '第一维 / dev_1',
+        'en': 'Dimension-1 / dev_1'
+    },
     currentChangesViewTitle: {
         'zh_CN': '当前变化',
         'en': 'Current Changes'
@@ -2491,6 +2495,10 @@ const i18n = {
     historyViewTitle: {
         'zh_CN': '备份历史',
         'en': 'Backup History'
+    },
+    dev1ViewTitle: {
+        'zh_CN': '第一维 / dev_1 实验区',
+        'en': 'Dimension-1 / dev_1 Lab'
     },
     clearBackupHistoryTooltip: {
         'zh_CN': '清除记录',
@@ -3606,6 +3614,8 @@ function applyLanguage() {
     if (navCurrentChangesText) navCurrentChangesText.textContent = i18n.navCurrentChanges[currentLang];
     const navHistoryText = document.getElementById('navHistoryText');
     if (navHistoryText) navHistoryText.textContent = i18n.navHistory[currentLang];
+    const navDev1Text = document.getElementById('navDev1Text');
+    if (navDev1Text) navDev1Text.textContent = i18n.navDev1[currentLang];
     const bookmarkGitTitle = document.getElementById('bookmarkGitTitle');
     if (bookmarkGitTitle) bookmarkGitTitle.textContent = i18n.bookmarkGitTitle[currentLang];
 
@@ -3639,6 +3649,8 @@ function applyLanguage() {
     if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     const historyViewTitle = document.getElementById('historyViewTitle');
     if (historyViewTitle) historyViewTitle.textContent = i18n.historyViewTitle[currentLang];
+    const dev1ViewTitle = document.getElementById('dev1ViewTitle');
+    if (dev1ViewTitle) dev1ViewTitle.textContent = i18n.dev1ViewTitle[currentLang];
 
     // 备份历史：清除记录按钮与确认弹窗
     const clearBackupHistoryBtn = document.getElementById('clearBackupHistoryBtn');
@@ -6379,7 +6391,7 @@ function switchView(view) {
 
     const previousView = currentView;
 
-    // 仅保留 current-changes / history，不再处理其他视图的特殊逻辑
+    // 主视图：current-changes / history / dev-1
 
     // 更新全局变量
     currentView = view;
@@ -6480,6 +6492,13 @@ function renderCurrentView() {
                 });
             }
             renderHistoryView();
+            break;
+        case 'dev-1':
+            try {
+                if (window.Dev1PageBridge && typeof window.Dev1PageBridge.render === 'function') {
+                    window.Dev1PageBridge.render();
+                }
+            } catch (_) { }
             break;
     }
 }
@@ -21514,6 +21533,9 @@ function performSearch(query) {
                 searchHistoryLegacy(query);
             }
             break;
+        case 'dev-1':
+            hideSearchResultsPanel();
+            break;
     }
 }
 
@@ -21593,6 +21615,13 @@ function toggleLanguage() {
     if (typeof window.updateSearchUILanguage === 'function') {
         window.updateSearchUILanguage();
     }
+
+    // dev_1 视图在语言切换时需要刷新文案与筛选标签
+    try {
+        if (currentView === 'dev-1' && window.Dev1PageBridge && typeof window.Dev1PageBridge.render === 'function') {
+            window.Dev1PageBridge.render();
+        }
+    } catch (_) { }
 }
 
 // 更新依赖语言的UI元素（不重新渲染内容，避免图标重新加载）

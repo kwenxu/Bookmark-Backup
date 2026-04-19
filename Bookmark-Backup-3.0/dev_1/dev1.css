@@ -1,0 +1,237 @@
+.dev1-root {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 0 18px;
+}
+
+.dev1-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.dev1-card-title {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.dev1-card-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.dev1-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.dev1-status {
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.dev1-status.error {
+    color: #d32f2f;
+}
+
+.dev1-status.success {
+    color: #2e7d32;
+}
+
+.dev1-status.warning {
+    color: #b26a00;
+}
+
+.dev1-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.dev1-filter-box {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+}
+
+.dev1-filter-header {
+    padding: 10px 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dev1-filter-list {
+    padding: 8px 10px;
+    overflow: auto;
+    max-height: 230px;
+}
+
+.dev1-filter-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    line-height: 1.3;
+    margin-bottom: 8px;
+}
+
+.dev1-filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.dev1-filter-row input[type="checkbox"] {
+    margin: 0;
+}
+
+.dev1-format-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.dev1-format-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.dev1-kv {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.dev1-kv strong {
+    color: var(--text-primary);
+}
+
+.dev1-table-wrap {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: auto;
+    max-height: 360px;
+}
+
+.dev1-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-primary);
+}
+
+.dev1-table th,
+.dev1-table td {
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px 10px;
+    font-size: 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.dev1-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.dev1-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1.2;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.dev1-pill.success {
+    color: #2e7d32;
+    border-color: rgba(46, 125, 50, 0.28);
+    background: rgba(46, 125, 50, 0.1);
+}
+
+.dev1-pill.error {
+    color: #d32f2f;
+    border-color: rgba(211, 47, 47, 0.28);
+    background: rgba(211, 47, 47, 0.1);
+}
+
+.dev1-pill.warning {
+    color: #b26a00;
+    border-color: rgba(178, 106, 0, 0.28);
+    background: rgba(178, 106, 0, 0.12);
+}
+
+.dev1-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.dev1-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.dev1-health-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    gap: 8px 12px;
+}
+
+.dev1-health-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+}
+
+.dev1-health-row span {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.dev1-health-row strong {
+    font-size: 12px;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+@media (max-width: 980px) {
+    .dev1-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dev1-health-grid {
+        grid-template-columns: 1fr;
+    }
+}

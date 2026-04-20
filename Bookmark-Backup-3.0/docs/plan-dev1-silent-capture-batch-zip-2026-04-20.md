@@ -1,8 +1,25 @@
 # dev_1 静默抓取与批处理打包实施计划（2026-04-20）
 
+## 0. 圆桌并行执行状态（2026-04-20）
+
+本轮已通过多 agent 并行审计并落地如下结果：
+
+- 已完成：P1（dev_1 导出链路仅在下载终态 `complete` 计成功）。
+- 已完成：P2（`foreground/background` 抓取模式 + 后台最小化专用窗口抓取）。
+- 已完成：P2（新增“抓取当前页面”入口，runtime action 为 `dev1CaptureActiveTab`）。
+- 已补充：当前页抓取默认“严格当前活动页”，不再默认回退到最近其它标签。
+- 已确认：网页快照导出已固定为 MHTML-only，旧 HTML/MD DOM 提取与转换路线已下线。
+- 已完成：batch-zip 基础版（支持每 10/20 条 URL 输出一个 ZIP，路径走现有下载通道）。
+- 已完成：runState 扩展 `mode/batchSize/batches[]/artifacts[]`，并打通 batch-zip 恢复判定与批次元数据持久化。
+- 已移除：旧 HTML/MD 质量改造入口、配置与实时抓取分支，不再进入网页快照链路。
+
+需注意（本轮审计新增）：
+- `dev_1` 链路已做下载终态强校验；但项目其它历史下载路径仍存在“未 `complete` 即 success”风险，需单独治理，不属于本次 dev_1 实验最小闭环范围。
+- 旧 HTML/MD 方案仅作为历史背景，不再作为当前网页快照验收范围。
+
 ## 1. 目标与结论
 
-目标是让用户基本无感地批量抓取页面内容（HTML/MD/MHTML），并保证结果可恢复、可核对、可追踪。
+目标是让用户基本无感地批量抓取页面内容（MHTML），并保证结果可恢复、可核对、可追踪。
 
 关键结论：
 - 纯 Chrome 扩展无法做到“完全不可见地打开任意网页并抓取渲染结果”。
@@ -27,7 +44,8 @@
 - 新增：`当前活动页一键抓取`（即使该页不在 current-changes 中）。
 
 ### 3.2 导出格式
-- 继续支持：`HTML` / `MD` / `MHTML`。
+- 固定支持：`MHTML`。
+- `HTML` / `MD` 网页快照导出已下线，不再提供入口或抓取分支。
 - 新增导出模式：
   - `single-file`：每页独立文件（现状增强版）。
   - `batch-zip`：每批聚合为一个 zip（如每 20 条一包）。
@@ -48,21 +66,6 @@
 - 全局设置：默认模式 `background`。
 - 任务级设置：本次任务可临时切换为 `foreground`。
 - 结果记录：每条结果行写入 `captureMode` 字段，便于后续统计。
-
-### 3.5 前台/后台能力对照表（新增）
-
-| 能力项 | 前台抓取（foreground） | 后台抓取（background） | 备注 |
-|---|---|---|---|
-| 不打断用户当前操作 | 否 | 是 | 后台模式使用最小化专用窗口 |
-| 页面完整 HTML（`documentElement.outerHTML`） | 是 | 是 | 两者都能抓 |
-| Markdown 转换 | 是 | 是 | 两者都能抓 |
-| MHTML 导出（含资源快照） | 是 | 是 | 两者都依赖 `pageCapture` |
-| 图片资源保留（MHTML） | 是 | 是 | 依赖页面可访问资源 |
-| 依赖用户交互后才出现的内容（展开/点击） | 强 | 弱 | 后台模式默认不做复杂交互 |
-| 懒加载内容命中率 | 高 | 中 | 前台可滚动预热；后台需脚本补偿 |
-| 登录态页面抓取 | 高 | 中-高 | 取决于同会话 cookie 与页面策略 |
-| 批量效率（10/20 条） | 中 | 高 | 后台更适合连续批处理 |
-| 可见性（是否看到标签/窗口动作） | 高可见 | 低可见 | 后台是“准静默”不是“零可见” |
 
 ## 4. 核心技术改造
 
@@ -99,8 +102,8 @@
 问题：当前仅支持 `current-changes` 队列，无法一键抓当前活动页。
 
 改造：
-- 新增 runtime action：`dev1CaptureCurrentActiveTab`。
-- 新增 UI 按钮：`抓取当前页面`（支持 HTML/MD/MHTML + single-file/batch-zip）。
+- 新增 runtime action：`dev1CaptureActiveTab`。
+- 新增 UI 按钮：`抓取当前页面`（支持 MHTML + single-file/batch-zip）。
 - 当前页抓取可与批处理共用同一执行与结果状态模型。
 
 验收：
@@ -111,7 +114,7 @@
 方案：
 - 引入 ZIP 库（建议 JSZip），在 service worker 中聚合每页产物：
   - 文件命名保留现有 `index_host_title.ext` 规则。
-  - 包内目录建议：`/html`, `/md`, `/mhtml`。
+  - 包内目录建议：`/mhtml`。
 - 到达 `batchSize` 或队列结束时 `generateAsync({ type:'blob' })` 下载一个 zip。
 - 记录批次元信息（批次序号、含哪些 URL、失败项清单）到 runState。
 
@@ -125,7 +128,7 @@
 
 ## 5. 状态模型与恢复策略
 
-runState 新增字段建议：
+runState 已实现字段：
 - `mode`: `single-file | batch-zip`
 - `batchSize`
 - `captureWindowId`
@@ -136,7 +139,7 @@ runState 新增字段建议：
 - service worker 重启后将 `running` 标记为 `interrupted`（保留现状）。
 - `resume` 时：
   - single-file：仅重跑失败/未完成 URL。
-  - batch-zip：仅重建失败批次或未封口批次。
+  - batch-zip：基于 `batches[]` 与行状态重建失败批次/未封口批次，已完成批次不重复构建。
 
 ## 6. UI/交互改动
 
@@ -185,59 +188,17 @@ Phase D（验证与灰度）
 - MHTML 体积较大时，zip 生成耗时与内存占用上升，需要批次上限与大小阈值保护。
 - service worker 生命周期导致长任务中断风险，必须依赖 runState 恢复机制。
 
-## 10. 现成项目参考策略（新增）
+## 10. 当前抓取策略
 
-结论：应当参考，且优先参考 `obsidian-clipper` 的 MD 处理链，而不是引入 `markitdown` 到扩展主链路。
-
-### 10.1 推荐复用（Obsidian Clipper）
-
-优先级 A（直接收益最高）：
-- `Defuddle -> Markdown` 两段式思路：
-  - 先做正文提取，再做 HTML->MD 转换，减少导航/侧栏噪声。
-- Turndown 规则集设计方式：
-  - 不是单一“全量转换”，而是按场景加规则（表格、数学公式、代码块、脚注、隐藏元素）。
-- URL 规范化：
-  - 相对链接/图片在转换前统一绝对化，减少 MD 失链。
-
-优先级 B（后续增强）：
-- 模板变量体系（标题、URL、域名、发布时间、schema 等）用于文件名与 frontmatter。
-- 前言（frontmatter）写入策略与字段类型处理（字符串、数组、布尔）。
-
-对应参考位置：
-- `obsidian-clipper/src/content.ts`（Defuddle 入口与页面清洗）
-- `obsidian-clipper/src/utils/markdown-converter.ts`（Turndown 规则集）
-- `obsidian-clipper/src/utils/content-extractor.ts`（变量注入与内容初始化）
-- `obsidian-clipper/src/utils/obsidian-note-creator.ts`（frontmatter 组织）
-
-### 10.2 不建议直接引入（MarkItDown）
-
-原因：
-- 运行时依赖 Python，不适合直接并入 Chrome 扩展 service worker 主链路。
-- 更适合作为离线后处理/独立服务（例如批量补救转换），而不是在线抓取导出路径。
-
-建议定位：
-- 仅作为“后备转换器（fallback）”或离线清洗工具，不进入实时抓取路径。
-
-### 10.3 最小落地顺序（MD 质量改造）
-
-Step 1（1 天）：
-- 保持现有 `dev1ExtractPagePayloadInTab` 框架；
-- 增加 URL 绝对化；
-- 增加隐藏元素剔除；
-- 修复文本空白压缩导致的词粘连问题。
-
-Step 2（1-2 天）：
-- 引入“正文优先”模式（参考 Defuddle/Readability 思路）；
-- 新增 `mdMode: raw_dom | readable` 可切换配置。
-
-Step 3（2-3 天）：
-- 迁移/实现关键 Turndown 规则子集（表格、代码块、数学、脚注）；
-- 增加 frontmatter 可选输出。
+当前网页快照导出已固定为 MHTML-only：
+- 已移除旧 HTML/MD DOM 提取分支；
+- 不再提供旧文本导出配置；
+- MHTML 直接走 Chrome 官方 `pageCapture.saveAsMHTML` API。
 
 验收标准：
-- 同一 URL 输出 MD 与人工阅读结构一致性显著提升；
-- 复杂页面（含表格/代码）信息丢失率下降；
-- 相对链接在 Markdown 中可直接访问。
+- 导出格式只出现 MHTML；
+- single-file 与 batch-zip 都只生成 MHTML 产物；
+- 论坛、虚拟滚动、懒加载页面只保证保存抓取瞬间已加载的页面状态，未渲染区域可能空白或缺失。
 
 ## 11. 本计划对应现有 Review Findings
 

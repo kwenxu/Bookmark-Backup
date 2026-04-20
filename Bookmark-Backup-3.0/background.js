@@ -143,6 +143,16 @@ function getManualExportParentFolderByLang(lang) {
     return lang === 'zh_CN' ? '手动导出' : 'Manual Export';
 }
 
+function getWebSnapshotFolderByLang(lang) {
+    return lang === 'zh_CN' ? '网页快照' : 'Web Snapshot';
+}
+
+function getWebSnapshotExportFolderByLang(lang) {
+    const parent = getManualExportParentFolderByLang(lang);
+    const snapshot = getWebSnapshotFolderByLang(lang);
+    return `${parent}/${snapshot}`;
+}
+
 function getManualExportHistoryFolderByLang(lang) {
     const parent = getManualExportParentFolderByLang(lang);
     const leaf = lang === 'zh_CN' ? '备份历史' : 'Backup_History';
@@ -3995,6 +4005,68 @@ function resolveMergeImportTreeFromMessage(message = {}) {
 const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';
 const DEV1_CAPTURE_RUN_STATE_VERSION = 1;
 const DEV1_CAPTURE_MAX_RETRY_LIMIT = 2;
+const DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS = 120000;
+const DEV1_BATCH_SIZE_DEFAULT = 20;
+const DEV1_CAPTURE_PREWARM_TAB_LIMIT = 3;
+const DEV1_RUN_CONTROL_NONE = '';
+const DEV1_RUN_CONTROL_PAUSE = 'pause_requested';
+const DEV1_RUN_CONTROL_CANCEL = 'cancel_requested';
+const DEV1_MULTI_PART_SUFFIXES = new Set([
+    'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+    'co.uk', 'org.uk', 'gov.uk', 'ac.uk',
+    'co.jp',
+    'com.au', 'net.au', 'org.au',
+    'co.nz',
+    'com.hk', 'com.tw', 'com.sg'
+]);
+
+function dev1NormalizeCaptureMode(value = '') {
+    const mode = String(value || '').trim().toLowerCase();
+    if (mode === 'visible' || mode === 'foreground') return 'visible';
+    return 'background';
+}
+
+function dev1NormalizeExportMode(value = '') {
+    const mode = String(value || '').trim().toLowerCase();
+    return mode === 'batch-zip' ? 'batch-zip' : 'single-file';
+}
+
+function dev1NormalizeBatchSize(value) {
+    const size = Number(value);
+    if (!Number.isFinite(size)) return DEV1_BATCH_SIZE_DEFAULT;
+    const normalized = Math.floor(size);
+    if (normalized === 10) return 10;
+    if (normalized === 20) return 20;
+    return DEV1_BATCH_SIZE_DEFAULT;
+}
+
+function dev1NormalizeRunSource(value = '', fallback = 'capture_urls') {
+    const source = String(value || '').trim();
+    if (source) return source;
+    const fallbackSource = String(fallback || '').trim();
+    return fallbackSource || 'capture_urls';
+}
+
+function dev1NormalizeRunControlState(value = '') {
+    const state = String(value || '').trim().toLowerCase();
+    if (state === DEV1_RUN_CONTROL_PAUSE) return DEV1_RUN_CONTROL_PAUSE;
+    if (state === DEV1_RUN_CONTROL_CANCEL) return DEV1_RUN_CONTROL_CANCEL;
+    return DEV1_RUN_CONTROL_NONE;
+}
+
+function dev1NormalizeWindowId(value) {
+    const id = Number(value);
+    if (!Number.isFinite(id)) return null;
+    const normalized = Math.floor(id);
+    return normalized >= 0 ? normalized : null;
+}
+
+function dev1NormalizeTabId(value) {
+    const id = Number(value);
+    if (!Number.isFinite(id)) return null;
+    const normalized = Math.floor(id);
+    return normalized >= 0 ? normalized : null;
+}
 
 function dev1NowIso() {
     return new Date().toISOString();
@@ -4016,6 +4088,9 @@ function dev1NormalizeRunOptions(rawOptions = {}) {
     const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
     return {
         closeTabAfterCapture: options.closeTabAfterCapture !== false,
+        captureMode: dev1NormalizeCaptureMode(options.captureMode),
+        exportMode: dev1NormalizeExportMode(options.exportMode),
+        batchSize: dev1NormalizeBatchSize(options.batchSize),
         renderWaitMs: Number.isFinite(Number(options.renderWaitMs))
             ? Math.max(0, Math.min(10000, Math.floor(Number(options.renderWaitMs))))
             : 1200,
@@ -4030,6 +4105,9 @@ function dev1NormalizeRunOptions(rawOptions = {}) {
 
 function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
     const fallbackRow = fallback && typeof fallback === 'object' ? fallback : {};
+    const normalizedExistingTabId = dev1NormalizeTabId(rawRow?.existingTabId ?? fallbackRow?.existingTabId);
+    const rawBatchId = String(rawRow?.batchId || fallbackRow?.batchId || '').trim();
+    const rawBatchSequence = Number(rawRow?.batchSequence ?? fallbackRow?.batchSequence);
     const next = {
         index: Number.isFinite(Number(rawRow?.index)) ? Math.max(0, Math.floor(Number(rawRow.index))) : (Number.isFinite(Number(fallbackRow?.index)) ? Math.max(0, Math.floor(Number(fallbackRow.index))) : 0),
         url: String(rawRow?.url || fallbackRow?.url || '').trim(),
@@ -4038,6 +4116,10 @@ function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
         domain: String(rawRow?.domain || fallbackRow?.domain || '').trim(),
         subdomain: String(rawRow?.subdomain || fallbackRow?.subdomain || '').trim(),
         actionText: String(rawRow?.actionText || fallbackRow?.actionText || '').trim(),
+        existingTabId: normalizedExistingTabId,
+        useExistingTab: (rawRow?.useExistingTab === true || fallbackRow?.useExistingTab === true) && normalizedExistingTabId != null,
+        batchId: rawBatchId,
+        batchSequence: Number.isFinite(rawBatchSequence) ? Math.max(1, Math.floor(rawBatchSequence)) : null,
         status: String(rawRow?.status || fallbackRow?.status || 'pending').trim().toLowerCase(),
         files: Array.isArray(rawRow?.files)
             ? rawRow.files.map(v => String(v || '').trim()).filter(Boolean)
@@ -4081,28 +4163,112 @@ function dev1ComputeSummaryFromRows(rows = []) {
     return summary;
 }
 
+function dev1NormalizeBatchStatus(value = '') {
+    const status = String(value || '').trim().toLowerCase();
+    if (status === 'running') return 'running';
+    if (status === 'completed') return 'completed';
+    if (status === 'failed') return 'failed';
+    return 'pending';
+}
+
+function dev1NormalizeRunBatch(rawBatch = {}, fallback = {}) {
+    const next = rawBatch && typeof rawBatch === 'object' ? rawBatch : {};
+    const fb = fallback && typeof fallback === 'object' ? fallback : {};
+    const sequenceRaw = Number(next.sequence ?? fb.sequence);
+    const sequence = Number.isFinite(sequenceRaw) ? Math.max(1, Math.floor(sequenceRaw)) : 1;
+    const batchId = String(next.batchId || fb.batchId || '').trim() || `batch_${String(sequence).padStart(3, '0')}`;
+    const rowIndexes = Array.isArray(next.rowIndexes)
+        ? Array.from(new Set(next.rowIndexes.map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 0).map(v => Math.floor(v))))
+        : (Array.isArray(fb.rowIndexes)
+            ? Array.from(new Set(fb.rowIndexes.map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 0).map(v => Math.floor(v))))
+            : []);
+    return {
+        batchId,
+        sequence,
+        status: dev1NormalizeBatchStatus(next.status || fb.status || 'pending'),
+        rowIndexes,
+        entryCount: Number.isFinite(Number(next.entryCount)) ? Math.max(0, Math.floor(Number(next.entryCount))) : (Number.isFinite(Number(fb.entryCount)) ? Math.max(0, Math.floor(Number(fb.entryCount))) : 0),
+        filePath: String(next.filePath || fb.filePath || '').trim(),
+        artifactId: String(next.artifactId || fb.artifactId || '').trim(),
+        startedAt: String(next.startedAt || fb.startedAt || '').trim(),
+        finishedAt: String(next.finishedAt || fb.finishedAt || '').trim(),
+        error: String(next.error || fb.error || '').trim()
+    };
+}
+
+function dev1NormalizeRunArtifact(rawArtifact = {}, fallback = {}) {
+    const next = rawArtifact && typeof rawArtifact === 'object' ? rawArtifact : {};
+    const fb = fallback && typeof fallback === 'object' ? fallback : {};
+    const rowIndexRaw = Number(next.rowIndex ?? fb.rowIndex);
+    const downloadIdRaw = Number(next.downloadId ?? fb.downloadId);
+    return {
+        id: String(next.id || fb.id || '').trim(),
+        kind: String(next.kind || fb.kind || 'file').trim().toLowerCase() || 'file',
+        format: String(next.format || fb.format || '').trim().toLowerCase(),
+        entryName: String(next.entryName || fb.entryName || '').trim(),
+        filePath: String(next.filePath || fb.filePath || '').trim(),
+        batchId: String(next.batchId || fb.batchId || '').trim(),
+        rowIndex: Number.isFinite(rowIndexRaw) ? Math.max(0, Math.floor(rowIndexRaw)) : null,
+        downloadId: Number.isFinite(downloadIdRaw) ? Math.floor(downloadIdRaw) : null,
+        terminalState: String(next.terminalState || fb.terminalState || '').trim().toLowerCase(),
+        createdAt: String(next.createdAt || fb.createdAt || '').trim(),
+        error: String(next.error || fb.error || '').trim()
+    };
+}
+
+function dev1BuildBatchId(sequence = 1) {
+    return `batch_${String(Math.max(1, Math.floor(Number(sequence) || 1))).padStart(3, '0')}`;
+}
+
+function dev1BuildArtifactId(prefix = 'artifact') {
+    const head = String(prefix || 'artifact').trim() || 'artifact';
+    return `${head}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function dev1BuildPublicRunState(runState, options = {}) {
     if (!runState || typeof runState !== 'object') return null;
     const includeResults = options && options.includeResults === true;
     const rows = Array.isArray(runState.items)
         ? runState.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
         : [];
+    const batches = Array.isArray(runState.batches)
+        ? runState.batches.map((batch, index) => dev1NormalizeRunBatch(batch, { sequence: index + 1 }))
+        : [];
+    const artifacts = Array.isArray(runState.artifacts)
+        ? runState.artifacts.map((artifact, index) => {
+            const normalized = dev1NormalizeRunArtifact(artifact, {});
+            if (!normalized.id) normalized.id = dev1BuildArtifactId(`artifact_${index + 1}`);
+            return normalized;
+        })
+        : [];
+    const mode = dev1NormalizeExportMode(runState.mode || runState.options?.exportMode);
+    const batchSize = dev1NormalizeBatchSize(runState.batchSize ?? runState.options?.batchSize);
     const summary = dev1ComputeSummaryFromRows(rows);
     const status = String(runState.status || '').trim().toLowerCase() || 'unknown';
+    const interruptedReason = String(runState.interruptedReason || '').trim();
+    const pendingBatchCount = batches.filter((batch) => batch.status !== 'completed').length;
+    const isCancelledByUser = interruptedReason === 'cancelled_by_user';
     return {
         version: Number(runState.version) || DEV1_CAPTURE_RUN_STATE_VERSION,
         runId: String(runState.runId || '').trim(),
         status,
+        controlState: dev1NormalizeRunControlState(runState.controlState),
+        mode,
+        batchSize,
+        source: dev1NormalizeRunSource(runState.source, 'capture_urls'),
         targetFolder: String(runState.targetFolder || '').trim(),
         startedAt: String(runState.startedAt || '').trim(),
         updatedAt: String(runState.updatedAt || '').trim(),
         finishedAt: String(runState.finishedAt || '').trim(),
-        interruptedReason: String(runState.interruptedReason || '').trim(),
+        interruptedReason,
+        captureWindowId: dev1NormalizeWindowId(runState.captureWindowId),
         resumeCount: Number.isFinite(Number(runState.resumeCount)) ? Math.max(0, Math.floor(Number(runState.resumeCount))) : 0,
         formats: dev1NormalizeFormats(runState.formats || {}),
         options: dev1NormalizeRunOptions(runState.options || {}),
+        batches,
+        artifacts,
         summary,
-        resumable: summary.pendingCount > 0 || summary.failureCount > 0 || summary.partialCount > 0,
+        resumable: !isCancelledByUser && (summary.pendingCount > 0 || summary.failureCount > 0 || summary.partialCount > 0 || pendingBatchCount > 0),
         results: includeResults ? rows : undefined
     };
 }
@@ -4115,15 +4281,30 @@ async function dev1LoadCaptureRunState() {
         const items = Array.isArray(raw.items)
             ? raw.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
             : [];
+        const batches = Array.isArray(raw.batches)
+            ? raw.batches.map((batch, index) => dev1NormalizeRunBatch(batch, { sequence: index + 1 }))
+            : [];
+        const artifacts = Array.isArray(raw.artifacts)
+            ? raw.artifacts.map((artifact, index) => {
+                const normalized = dev1NormalizeRunArtifact(artifact, {});
+                if (!normalized.id) normalized.id = dev1BuildArtifactId(`artifact_${index + 1}`);
+                return normalized;
+            })
+            : [];
         return {
             version: Number(raw.version) || DEV1_CAPTURE_RUN_STATE_VERSION,
             runId: String(raw.runId || '').trim(),
             status: String(raw.status || '').trim().toLowerCase() || 'unknown',
+            controlState: dev1NormalizeRunControlState(raw.controlState),
+            mode: dev1NormalizeExportMode(raw.mode || raw.options?.exportMode),
+            batchSize: dev1NormalizeBatchSize(raw.batchSize ?? raw.options?.batchSize),
+            source: dev1NormalizeRunSource(raw.source, 'capture_urls'),
             targetFolder: String(raw.targetFolder || '').trim(),
             startedAt: String(raw.startedAt || '').trim(),
             updatedAt: String(raw.updatedAt || '').trim(),
             finishedAt: String(raw.finishedAt || '').trim(),
             interruptedReason: String(raw.interruptedReason || '').trim(),
+            captureWindowId: dev1NormalizeWindowId(raw.captureWindowId),
             resumeCount: Number.isFinite(Number(raw.resumeCount)) ? Math.max(0, Math.floor(Number(raw.resumeCount))) : 0,
             formats: dev1NormalizeFormats(raw.formats || {}),
             options: dev1NormalizeRunOptions(raw.options || {}),
@@ -4132,6 +4313,8 @@ async function dev1LoadCaptureRunState() {
                     .map(v => Number(v))
                     .filter(v => Number.isFinite(v))))
                 : [],
+            batches,
+            artifacts,
             items
         };
     } catch (_) {
@@ -4145,10 +4328,25 @@ async function dev1SaveCaptureRunState(runState) {
         ...runState,
         version: DEV1_CAPTURE_RUN_STATE_VERSION,
         updatedAt: dev1NowIso(),
+        mode: dev1NormalizeExportMode(runState.mode || runState.options?.exportMode),
+        batchSize: dev1NormalizeBatchSize(runState.batchSize ?? runState.options?.batchSize),
+        source: dev1NormalizeRunSource(runState.source, 'capture_urls'),
+        controlState: dev1NormalizeRunControlState(runState.controlState),
+        captureWindowId: dev1NormalizeWindowId(runState.captureWindowId),
         formats: dev1NormalizeFormats(runState.formats || {}),
         options: dev1NormalizeRunOptions(runState.options || {}),
         activeTabIds: Array.isArray(runState.activeTabIds)
             ? Array.from(new Set(runState.activeTabIds.map(v => Number(v)).filter(v => Number.isFinite(v))))
+            : [],
+        batches: Array.isArray(runState.batches)
+            ? runState.batches.map((batch, index) => dev1NormalizeRunBatch(batch, { sequence: index + 1 }))
+            : [],
+        artifacts: Array.isArray(runState.artifacts)
+            ? runState.artifacts.map((artifact, index) => {
+                const normalized = dev1NormalizeRunArtifact(artifact, {});
+                if (!normalized.id) normalized.id = dev1BuildArtifactId(`artifact_${index + 1}`);
+                return normalized;
+            })
             : [],
         items: Array.isArray(runState.items)
             ? runState.items.map((row, index) => dev1NormalizeResultRow(row, { index }))
@@ -4159,21 +4357,29 @@ async function dev1SaveCaptureRunState(runState) {
     });
 }
 
-function dev1BuildInitialRunState({ items = [], formats = {}, options = {}, targetFolder = '', runId = '' } = {}) {
+function dev1BuildInitialRunState({ items = [], formats = {}, options = {}, targetFolder = '', runId = '', source = '' } = {}) {
     const normalizedItems = Array.isArray(items) ? items : [];
+    const normalizedOptions = dev1NormalizeRunOptions(options);
     return {
         version: DEV1_CAPTURE_RUN_STATE_VERSION,
         runId: String(runId || dev1BuildRunId()).trim() || dev1BuildRunId(),
         status: 'running',
+        controlState: DEV1_RUN_CONTROL_NONE,
+        mode: dev1NormalizeExportMode(normalizedOptions.exportMode),
+        batchSize: dev1NormalizeBatchSize(normalizedOptions.batchSize),
+        source: dev1NormalizeRunSource(source, 'capture_urls'),
         targetFolder: String(targetFolder || '').trim(),
         startedAt: dev1NowIso(),
         updatedAt: dev1NowIso(),
         finishedAt: '',
         interruptedReason: '',
+        captureWindowId: null,
         resumeCount: 0,
         formats: dev1NormalizeFormats(formats),
-        options: dev1NormalizeRunOptions(options),
+        options: normalizedOptions,
         activeTabIds: [],
+        batches: [],
+        artifacts: [],
         items: normalizedItems.map((item, index) => dev1NormalizeResultRow({
             index,
             ...item,
@@ -4185,8 +4391,16 @@ function dev1BuildInitialRunState({ items = [], formats = {}, options = {}, targ
     };
 }
 
-function dev1ShouldResumeRow(row) {
+function dev1ShouldResumeRow(row, context = {}) {
     const status = String(row?.status || '').toLowerCase();
+    const mode = dev1NormalizeExportMode(context?.mode || context?.options?.exportMode);
+    if (mode === 'batch-zip') {
+        const batchId = String(row?.batchId || '').trim();
+        const incompleteBatchIds = context?.incompleteBatchIds instanceof Set ? context.incompleteBatchIds : null;
+        if (batchId && incompleteBatchIds && incompleteBatchIds.has(batchId)) {
+            return true;
+        }
+    }
     return status !== 'success';
 }
 
@@ -4197,6 +4411,8 @@ function dev1IsRetriableCaptureError(message = '') {
         text.includes('timeout')
         || text.includes('tab closed')
         || text.includes('no tab with id')
+        || text.includes('no window with id')
+        || text.includes('invalid window id')
         || text.includes('net::')
         || text.includes('err_')
         || text.includes('disconnected')
@@ -4215,6 +4431,687 @@ async function dev1TrackRunTabId(runState, tabId, add = true) {
     await dev1SaveCaptureRunState(runState);
 }
 
+async function dev1QueryTabs(queryInfo = {}) {
+    return await new Promise((resolve) => {
+        try {
+            browserAPI.tabs.query(queryInfo, (tabs) => {
+                resolve(Array.isArray(tabs) ? tabs : []);
+            });
+        } catch (_) {
+            resolve([]);
+        }
+    });
+}
+
+function dev1ParseDomainPartsFromUrl(urlText = '') {
+    try {
+        const parsed = new URL(String(urlText || '').trim());
+        const parts = dev1GetDomainPartsFromHostname(parsed.hostname);
+        return {
+            domain: parts.domain || '',
+            subdomain: parts.subdomainHost || ''
+        };
+    } catch (_) {
+        return { domain: '', subdomain: '' };
+    }
+}
+
+function dev1GetHostnameFromUrl(urlText = '') {
+    try {
+        const parsed = new URL(String(urlText || '').trim());
+        return dev1NormalizeDomainHost(parsed.hostname || '');
+    } catch (_) {
+        return '';
+    }
+}
+
+function dev1NormalizeDomainHost(hostname = '') {
+    return String(hostname || '').trim().toLowerCase().replace(/^www\./, '');
+}
+
+function dev1GetDomainPartsFromHostname(hostname = '') {
+    const host = dev1NormalizeDomainHost(hostname);
+    if (!host) {
+        return {
+            host: '',
+            domain: '',
+            subdomainHost: '',
+            hasSubdomain: false
+        };
+    }
+
+    const isIPv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+    const isIPv6 = host.includes(':');
+    if (isIPv4 || isIPv6 || host === 'localhost' || host.endsWith('.local')) {
+        return {
+            host,
+            domain: host,
+            subdomainHost: '',
+            hasSubdomain: false
+        };
+    }
+
+    const labels = host.split('.').filter(Boolean);
+    if (labels.length <= 2) {
+        return {
+            host,
+            domain: host,
+            subdomainHost: '',
+            hasSubdomain: false
+        };
+    }
+
+    const suffix2 = labels.slice(-2).join('.');
+    const useThreeLabels = labels.length >= 3 && DEV1_MULTI_PART_SUFFIXES.has(suffix2);
+    const domain = useThreeLabels
+        ? labels.slice(-3).join('.')
+        : labels.slice(-2).join('.');
+    const hasSubdomain = host !== domain;
+
+    return {
+        host,
+        domain,
+        subdomainHost: hasSubdomain ? host : '',
+        hasSubdomain
+    };
+}
+
+function dev1BuildBookmarkSourceItemsFromTree(tree) {
+    const rootNodes = Array.isArray(tree) ? tree : [];
+    const items = [];
+    const seenBookmarkIds = new Set();
+
+    function walk(nodes, parentPath = []) {
+        if (!Array.isArray(nodes)) return;
+
+        nodes.forEach((node) => {
+            if (!node || typeof node !== 'object') return;
+
+            const children = Array.isArray(node.children) ? node.children : [];
+            const title = String(node.title || '').trim();
+            const nextPath = title ? parentPath.concat([title]) : parentPath;
+
+            const rawUrl = String(node.url || '').trim();
+            if (rawUrl) {
+                let parsed = null;
+                try {
+                    parsed = new URL(rawUrl);
+                } catch (_) {
+                    parsed = null;
+                }
+
+                if (parsed && (parsed.protocol === 'http:' || parsed.protocol === 'https:')) {
+                    const bookmarkId = String(node.id || '').trim();
+                    const dedupeKey = bookmarkId || parsed.toString();
+                    if (!seenBookmarkIds.has(dedupeKey)) {
+                        seenBookmarkIds.add(dedupeKey);
+                        const folderPath = parentPath.join(' / ');
+                        const domainParts = dev1GetDomainPartsFromHostname(parsed.hostname);
+                        items.push({
+                            id: dedupeKey,
+                            url: parsed.toString(),
+                            title: title || parsed.toString(),
+                            folderPath,
+                            folderFilterKey: folderPath || '__root__',
+                            domain: domainParts.domain || domainParts.host || '',
+                            host: domainParts.host || '',
+                            subdomain: domainParts.hasSubdomain
+                                ? (domainParts.subdomainHost || domainParts.host || '')
+                                : '__root__',
+                            subdomainLabel: domainParts.hasSubdomain
+                                ? (domainParts.subdomainHost || domainParts.host || '')
+                                : '',
+                            actionText: 'bookmark_api'
+                        });
+                    }
+                }
+            }
+
+            if (children.length > 0) {
+                walk(children, nextPath);
+            }
+        });
+    }
+
+    walk(rootNodes, []);
+
+    items.sort((a, b) => {
+        const titleCompare = String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
+        if (titleCompare !== 0) return titleCompare;
+        const folderCompare = String(a.folderPath || '').localeCompare(String(b.folderPath || ''), undefined, { sensitivity: 'base' });
+        if (folderCompare !== 0) return folderCompare;
+        return String(a.url || '').localeCompare(String(b.url || ''));
+    });
+
+    return items;
+}
+
+function dev1BuildAllWindowTabsSourceItems(tabs = []) {
+    const rows = Array.isArray(tabs) ? tabs : [];
+    const items = [];
+    const seenTabIds = new Set();
+
+    rows.forEach((tab) => {
+        const tabId = dev1NormalizeTabId(tab?.id);
+        if (tabId == null || seenTabIds.has(tabId)) return;
+        seenTabIds.add(tabId);
+
+        const urlText = String(tab?.url || '').trim();
+        if (!urlText) return;
+
+        let parsed = null;
+        try {
+            parsed = new URL(urlText);
+        } catch (_) {
+            parsed = null;
+        }
+        if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return;
+
+        const windowId = dev1NormalizeWindowId(tab?.windowId);
+        const domainParts = dev1GetDomainPartsFromHostname(parsed.hostname);
+        const folderPath = windowId == null ? '' : `Window ${windowId}`;
+
+        items.push({
+            id: `tab_${tabId}`,
+            tabId,
+            windowId,
+            url: parsed.toString(),
+            title: String(tab?.title || parsed.toString()).trim() || parsed.toString(),
+            folderPath,
+            folderFilterKey: folderPath || '__root__',
+            domain: domainParts.domain || domainParts.host || '',
+            host: domainParts.host || '',
+            subdomain: domainParts.hasSubdomain
+                ? (domainParts.subdomainHost || domainParts.host || '')
+                : '__root__',
+            subdomainLabel: domainParts.hasSubdomain
+                ? (domainParts.subdomainHost || domainParts.host || '')
+                : '',
+            actionText: 'open_tab',
+            useExistingTab: true,
+            existingTabId: tabId,
+            reviewWindowActive: tab?.active === true,
+            reviewLastAccessed: Number.isFinite(Number(tab?.lastAccessed)) ? Math.floor(Number(tab.lastAccessed)) : 0
+        });
+    });
+
+    return items;
+}
+
+async function dev1OpenReviewWindowForItems(rawItems = []) {
+    const items = dev1NormalizeCaptureItems(rawItems);
+    if (!items.length) {
+        throw new Error('No valid URL items to open for review');
+    }
+
+    const firstItem = items[0];
+    const reviewWindow = await new Promise((resolve, reject) => {
+        try {
+            browserAPI.windows.create({
+                url: firstItem.url,
+                focused: true,
+                state: 'normal',
+                type: 'normal',
+                width: 1220,
+                height: 860
+            }, (windowInfo) => {
+                const lastError = browserAPI.runtime?.lastError;
+                if (lastError) {
+                    reject(new Error(lastError.message || 'Failed to open review window'));
+                    return;
+                }
+                resolve(windowInfo || null);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+
+    const reviewWindowId = dev1NormalizeWindowId(reviewWindow?.id);
+    if (reviewWindowId == null) {
+        throw new Error('Failed to create review window');
+    }
+
+    const firstTabId = dev1NormalizeTabId(reviewWindow?.tabs?.[0]?.id);
+    const preparedItems = [];
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        let tabId = null;
+
+        if (i === 0 && firstTabId != null) {
+            tabId = firstTabId;
+        } else {
+            const createdTab = await browserAPI.tabs.create({
+                windowId: reviewWindowId,
+                url: item.url,
+                active: false
+            });
+            tabId = dev1NormalizeTabId(createdTab?.id);
+        }
+
+        if (tabId == null) continue;
+        preparedItems.push({
+            ...item,
+            existingTabId: tabId,
+            useExistingTab: true,
+            reviewWindowId,
+            reviewWindowActive: i === 0,
+            reviewLastAccessed: Date.now()
+        });
+    }
+
+    if (!preparedItems.length) {
+        throw new Error('No review tab could be opened');
+    }
+
+    return {
+        success: true,
+        windowId: reviewWindowId,
+        total: preparedItems.length,
+        items: preparedItems
+    };
+}
+
+async function dev1CheckExistingTabsAlive(rawTabIds = []) {
+    const tabIds = Array.from(new Set(
+        (Array.isArray(rawTabIds) ? rawTabIds : [])
+            .map(id => dev1NormalizeTabId(id))
+            .filter(id => id != null)
+    ));
+
+    if (tabIds.length === 0) {
+        return {
+            success: true,
+            total: 0,
+            aliveTabIds: []
+        };
+    }
+
+    const aliveTabIds = [];
+    for (const tabId of tabIds) {
+        try {
+            const tab = await browserAPI.tabs.get(tabId);
+            const url = String(tab?.url || '').trim().toLowerCase();
+            if (url.startsWith('http://') || url.startsWith('https://')) {
+                aliveTabIds.push(tabId);
+            }
+        } catch (_) { }
+    }
+
+    return {
+        success: true,
+        total: tabIds.length,
+        aliveTabIds
+    };
+}
+
+async function dev1GetReviewWindowTabsSource(windowId) {
+    const reviewWindowId = dev1NormalizeWindowId(windowId);
+    if (reviewWindowId == null) {
+        throw new Error('Invalid review window id');
+    }
+
+    const reviewWindow = await dev1GetWindowById(reviewWindowId);
+    if (!reviewWindow) {
+        throw new Error('Review window is unavailable');
+    }
+
+    const tabs = await browserAPI.tabs.query({ windowId: reviewWindowId });
+    const items = dev1BuildAllWindowTabsSourceItems(tabs).map((item) => ({
+        ...item,
+        reviewWindowId
+    }));
+    return {
+        success: true,
+        windowId: reviewWindowId,
+        total: items.length,
+        items
+    };
+}
+
+async function dev1CloseReviewQueueTab(options = {}) {
+    const reviewWindowId = dev1NormalizeWindowId(options?.windowId);
+    const preferredTabId = dev1NormalizeTabId(options?.tabId);
+    const rawUrl = String(options?.url || '').trim();
+    const normalizedUrl = (() => {
+        if (!rawUrl) return '';
+        try {
+            const parsed = new URL(rawUrl);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            return parsed.toString();
+        } catch (_) {
+            return '';
+        }
+    })();
+
+    const removedTabIds = [];
+    if (preferredTabId != null) {
+        try {
+            await browserAPI.tabs.remove(preferredTabId);
+            removedTabIds.push(preferredTabId);
+            return {
+                success: true,
+                removedTabIds
+            };
+        } catch (_) { }
+    }
+
+    if (reviewWindowId == null) {
+        return {
+            success: true,
+            removedTabIds
+        };
+    }
+
+    const reviewWindow = await dev1GetWindowById(reviewWindowId);
+    if (!reviewWindow) {
+        return {
+            success: true,
+            removedTabIds
+        };
+    }
+
+    const tabs = await browserAPI.tabs.query({ windowId: reviewWindowId });
+    const matchedTab = (Array.isArray(tabs) ? tabs : []).find((tab) => {
+        const tabId = dev1NormalizeTabId(tab?.id);
+        if (tabId == null || tabId === preferredTabId) return false;
+        if (!normalizedUrl) return false;
+        try {
+            const tabUrl = new URL(String(tab?.url || '').trim());
+            if (tabUrl.protocol !== 'http:' && tabUrl.protocol !== 'https:') return false;
+            return tabUrl.toString() === normalizedUrl;
+        } catch (_) {
+            return false;
+        }
+    });
+
+    const matchedTabId = dev1NormalizeTabId(matchedTab?.id);
+    if (matchedTabId != null) {
+        try {
+            await browserAPI.tabs.remove(matchedTabId);
+            removedTabIds.push(matchedTabId);
+        } catch (_) { }
+    }
+
+    return {
+        success: true,
+        removedTabIds
+    };
+}
+
+async function dev1CloseReviewWindow(windowId) {
+    const reviewWindowId = dev1NormalizeWindowId(windowId);
+    if (reviewWindowId == null) {
+        return {
+            success: true,
+            removedWindowId: null
+        };
+    }
+
+    try {
+        await browserAPI.windows.remove(reviewWindowId);
+    } catch (_) { }
+
+    return {
+        success: true,
+        removedWindowId: reviewWindowId
+    };
+}
+
+function dev1NormalizeActiveTabCaptureOptions(options = {}) {
+    const raw = options && typeof options === 'object' ? options : {};
+    return {
+        allowAnyTabFallback: raw.allowAnyTabFallback === true
+    };
+}
+
+async function dev1ResolveActiveTabCaptureItem(sender = null, options = {}) {
+    const normalizedOptions = dev1NormalizeActiveTabCaptureOptions(options);
+    const candidates = [];
+    if (sender?.tab && typeof sender.tab === 'object') {
+        candidates.push(sender.tab);
+    }
+    const lastFocusedTabs = await dev1QueryTabs({ active: true, lastFocusedWindow: true });
+    const currentWindowTabs = await dev1QueryTabs({ active: true, currentWindow: true });
+    candidates.push(...lastFocusedTabs, ...currentWindowTabs);
+    if (normalizedOptions.allowAnyTabFallback) {
+        const allTabs = await dev1QueryTabs({});
+        const sortedAllTabs = allTabs
+            .slice()
+            .sort((a, b) => Number(b?.lastAccessed || 0) - Number(a?.lastAccessed || 0));
+        candidates.push(...sortedAllTabs);
+    }
+
+    let selected = null;
+    for (const tab of candidates) {
+        const urlText = String(tab?.url || '').trim();
+        if (!urlText) continue;
+        let parsed = null;
+        try {
+            parsed = new URL(urlText);
+        } catch (_) {
+            continue;
+        }
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            selected = {
+                ...tab,
+                url: parsed.toString()
+            };
+            break;
+        }
+    }
+
+    if (!selected) {
+        throw new Error(normalizedOptions.allowAnyTabFallback
+            ? 'No capturable active tab (http/https) found'
+            : 'Active tab is not capturable (requires http/https page)');
+    }
+
+    const normalizedUrl = String(selected.url || '').trim();
+    const { domain, subdomain } = dev1ParseDomainPartsFromUrl(normalizedUrl);
+    return {
+        url: normalizedUrl,
+        title: String(selected.title || normalizedUrl).trim(),
+        domain,
+        subdomain,
+        actionText: 'active_tab',
+        existingTabId: dev1NormalizeTabId(selected?.id),
+        useExistingTab: true
+    };
+}
+
+function dev1BuildCaptureWindowProfile(captureMode = 'background') {
+    const mode = dev1NormalizeCaptureMode(captureMode);
+    if (mode === 'visible') {
+        return {
+            createData: {
+                url: 'about:blank',
+                focused: true,
+                state: 'normal',
+                type: 'normal',
+                width: 1180,
+                height: 880
+            },
+            fallbackCreateData: {
+                url: 'about:blank',
+                focused: true,
+                type: 'popup',
+                width: 1180,
+                height: 880
+            },
+            updateData: {
+                focused: true,
+                state: 'normal'
+            }
+        };
+    }
+    return {
+        createData: {
+            url: 'about:blank',
+            focused: false,
+            state: 'minimized',
+            type: 'normal'
+        },
+        fallbackCreateData: {
+            url: 'about:blank',
+            focused: false,
+            type: 'popup',
+            width: 360,
+            height: 260
+        },
+        updateData: {
+            focused: false,
+            state: 'minimized'
+        }
+    };
+}
+
+async function dev1ApplyCaptureWindowMode(windowId, captureMode = 'background') {
+    const id = dev1NormalizeWindowId(windowId);
+    if (id == null) return;
+    if (!browserAPI?.windows?.update || typeof browserAPI.windows.update !== 'function') return;
+    const profile = dev1BuildCaptureWindowProfile(captureMode);
+    try {
+        await browserAPI.windows.update(id, profile.updateData);
+    } catch (_) { }
+}
+
+async function dev1CreateCaptureWindow(captureMode = 'background') {
+    const createWindow = async (createData = {}) => {
+        return await new Promise((resolve, reject) => {
+            try {
+                browserAPI.windows.create(createData, (createdWindow) => {
+                    if (browserAPI.runtime?.lastError) {
+                        reject(new Error(browserAPI.runtime.lastError.message || 'Failed to create capture window'));
+                        return;
+                    }
+                    resolve(createdWindow || null);
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    };
+
+    const profile = dev1BuildCaptureWindowProfile(captureMode);
+    let captureWindow = null;
+    try {
+        captureWindow = await createWindow(profile.createData);
+    } catch (_) {
+        captureWindow = await createWindow(profile.fallbackCreateData);
+    }
+
+    const captureWindowId = dev1NormalizeWindowId(captureWindow?.id);
+    if (captureWindowId == null) {
+        throw new Error('Failed to initialize capture window');
+    }
+
+    await dev1ApplyCaptureWindowMode(captureWindowId, captureMode);
+    return captureWindowId;
+}
+
+async function dev1GetWindowById(windowId) {
+    const id = dev1NormalizeWindowId(windowId);
+    if (id == null) return null;
+    return await new Promise((resolve) => {
+        try {
+            browserAPI.windows.get(id, (windowInfo) => {
+                if (browserAPI.runtime?.lastError) {
+                    resolve(null);
+                    return;
+                }
+                resolve(windowInfo || null);
+            });
+        } catch (_) {
+            resolve(null);
+        }
+    });
+}
+
+async function dev1EnsureCaptureWindowForRun(runState, runOptions = {}) {
+    if (!runState || typeof runState !== 'object') return null;
+    const normalizedMode = dev1NormalizeCaptureMode(runOptions?.captureMode);
+
+    const existingWindowId = dev1NormalizeWindowId(runState.captureWindowId);
+    if (existingWindowId != null) {
+        const existingWindow = await dev1GetWindowById(existingWindowId);
+        if (existingWindow) {
+            await dev1ApplyCaptureWindowMode(existingWindowId, normalizedMode);
+            return existingWindowId;
+        }
+    }
+
+    const captureWindowId = await dev1CreateCaptureWindow(normalizedMode);
+    runState.captureWindowId = captureWindowId;
+    await dev1SaveCaptureRunState(runState);
+    return captureWindowId;
+}
+
+async function dev1ActivateCaptureTab(tabId, captureWindowId, captureMode = 'background') {
+    const id = dev1NormalizeTabId(tabId);
+    if (id == null) throw new Error('Invalid capture tab id');
+
+    const windowId = dev1NormalizeWindowId(captureWindowId);
+    if (windowId != null) {
+        await dev1ApplyCaptureWindowMode(windowId, captureMode);
+    }
+
+    await new Promise((resolve, reject) => {
+        try {
+            browserAPI.tabs.update(id, { active: true }, (tab) => {
+                if (browserAPI.runtime?.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'Failed to activate capture tab'));
+                    return;
+                }
+                resolve(tab || null);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+async function dev1CreateCaptureTabInWindow(captureWindowId, url, { active = false } = {}) {
+    const windowId = dev1NormalizeWindowId(captureWindowId);
+    if (windowId == null) {
+        throw new Error('Invalid capture window');
+    }
+    const normalizedUrl = String(url || '').trim();
+    if (!normalizedUrl) {
+        throw new Error('Missing capture URL');
+    }
+
+    const createdTab = await browserAPI.tabs.create({
+        windowId,
+        url: normalizedUrl,
+        active: active === true
+    });
+    const tabId = dev1NormalizeTabId(createdTab?.id);
+    if (tabId == null) {
+        throw new Error('Failed to create capture tab');
+    }
+    return tabId;
+}
+
+async function dev1RemoveCaptureWindow(windowId) {
+    const id = dev1NormalizeWindowId(windowId);
+    if (id == null) return;
+    if (!browserAPI?.windows || typeof browserAPI.windows.remove !== 'function') return;
+    try {
+        await browserAPI.windows.remove(id);
+    } catch (_) { }
+}
+
+async function dev1CleanupCaptureWindowForRun(runState) {
+    if (!runState || typeof runState !== 'object') return;
+    const captureWindowId = dev1NormalizeWindowId(runState.captureWindowId);
+    runState.captureWindowId = null;
+    if (captureWindowId != null) {
+        await dev1RemoveCaptureWindow(captureWindowId);
+    }
+}
+
 function dev1BuildRunResponsePayload(runState) {
     const publicState = dev1BuildPublicRunState(runState, { includeResults: true }) || {};
     const summary = publicState.summary || {};
@@ -4222,8 +5119,13 @@ function dev1BuildRunResponsePayload(runState) {
         success: true,
         runId: String(publicState.runId || '').trim(),
         status: String(publicState.status || '').trim() || 'unknown',
+        controlState: dev1NormalizeRunControlState(publicState.controlState),
+        mode: dev1NormalizeExportMode(publicState.mode || ''),
+        batchSize: dev1NormalizeBatchSize(publicState.batchSize),
         targetFolder: String(publicState.targetFolder || '').trim(),
         interruptedReason: String(publicState.interruptedReason || '').trim(),
+        batches: Array.isArray(publicState.batches) ? publicState.batches : [],
+        artifacts: Array.isArray(publicState.artifacts) ? publicState.artifacts : [],
         summary: {
             total: Number(summary.total) || 0,
             successCount: Number(summary.successCount) || 0,
@@ -4235,16 +5137,43 @@ function dev1BuildRunResponsePayload(runState) {
     };
 }
 
+async function dev1RequestCaptureRunControl(controlState = DEV1_RUN_CONTROL_NONE) {
+    const normalizedControl = dev1NormalizeRunControlState(controlState);
+    if (!normalizedControl || normalizedControl === DEV1_RUN_CONTROL_NONE) {
+        throw new Error('Invalid capture control action');
+    }
+
+    const runState = await dev1LoadCaptureRunState();
+    if (!runState || runState.status !== 'running') {
+        throw new Error('No active capture task');
+    }
+
+    runState.controlState = normalizedControl;
+    await dev1SaveCaptureRunState(runState);
+    return {
+        success: true,
+        controlState: normalizedControl,
+        state: dev1BuildPublicRunState(runState, { includeResults: false })
+    };
+}
+
 async function dev1MarkRunningRunInterrupted(reason = 'runtime_restarted') {
     const runState = await dev1LoadCaptureRunState();
     if (!runState || runState.status !== 'running') return null;
     const activeTabIds = Array.isArray(runState.activeTabIds) ? runState.activeTabIds.slice() : [];
+    const captureWindowId = dev1NormalizeWindowId(runState.captureWindowId);
 
     runState.status = 'interrupted';
     runState.interruptedReason = String(reason || 'runtime_restarted');
     runState.finishedAt = dev1NowIso();
+    runState.controlState = DEV1_RUN_CONTROL_NONE;
     runState.activeTabIds = [];
+    runState.captureWindowId = null;
     await dev1SaveCaptureRunState(runState);
+
+    if (captureWindowId != null) {
+        await dev1RemoveCaptureWindow(captureWindowId);
+    }
 
     if (activeTabIds.length > 0) {
         await Promise.all(activeTabIds.map((id) => {
@@ -4304,7 +5233,9 @@ function dev1NormalizeCaptureItems(rawItems = []) {
             folderPath: String(raw?.folderPath || '').trim(),
             domain: String(raw?.domain || parsed.hostname || '').trim(),
             subdomain: String(raw?.subdomain || '').trim(),
-            actionText: String(raw?.actionText || '').trim()
+            actionText: String(raw?.actionText || '').trim(),
+            existingTabId: dev1NormalizeTabId(raw?.existingTabId),
+            useExistingTab: raw?.useExistingTab === true && dev1NormalizeTabId(raw?.existingTabId) != null
         });
     });
 
@@ -4314,8 +5245,6 @@ function dev1NormalizeCaptureItems(rawItems = []) {
 function dev1NormalizeFormats(rawFormats = {}) {
     const formats = rawFormats && typeof rawFormats === 'object' ? rawFormats : {};
     return {
-        html: formats.html === true,
-        md: formats.md === true,
         mhtml: formats.mhtml === true
     };
 }
@@ -4386,156 +5315,6 @@ async function dev1ExecuteScript(tabId, func, args = []) {
     });
 }
 
-function dev1ExtractPagePayloadInTab() {
-    const normalizeText = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-    const escapeMdInline = (value) => String(value == null ? '' : value).replace(/([*_`[\]])/g, '\\$1');
-
-    const inlineToMarkdown = (node) => {
-        if (!node) return '';
-        if (node.nodeType === Node.TEXT_NODE) {
-            return escapeMdInline(normalizeText(node.textContent || ''));
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) return '';
-
-        const el = node;
-        const tag = String(el.tagName || '').toLowerCase();
-
-        if (tag === 'br') return '  \n';
-        if (tag === 'code' && tag !== 'pre') return `\`${escapeMdInline(el.textContent || '')}\``;
-        if (tag === 'strong' || tag === 'b') return `**${Array.from(el.childNodes).map(inlineToMarkdown).join('')}**`;
-        if (tag === 'em' || tag === 'i') return `*${Array.from(el.childNodes).map(inlineToMarkdown).join('')}*`;
-        if (tag === 'a') {
-            const href = String(el.getAttribute('href') || '').trim();
-            const text = Array.from(el.childNodes).map(inlineToMarkdown).join('') || href;
-            return href ? `[${text}](${href})` : text;
-        }
-        if (tag === 'img') {
-            const src = String(el.getAttribute('src') || '').trim();
-            const alt = escapeMdInline(String(el.getAttribute('alt') || '').trim());
-            if (!src) return '';
-            return `![${alt}](${src})`;
-        }
-        return Array.from(el.childNodes).map(inlineToMarkdown).join('');
-    };
-
-    const blockToMarkdown = (node, depth = 0) => {
-        if (!node) return '';
-        if (node.nodeType === Node.TEXT_NODE) return '';
-        if (node.nodeType !== Node.ELEMENT_NODE) return '';
-
-        const el = node;
-        const tag = String(el.tagName || '').toLowerCase();
-
-        if (['script', 'style', 'noscript', 'template'].includes(tag)) return '';
-        if (tag === 'hr') return '\n---\n\n';
-
-        if (tag === 'pre') {
-            const code = String(el.textContent || '').trimEnd();
-            if (!code) return '';
-            return `\n\`\`\`\n${code}\n\`\`\`\n\n`;
-        }
-
-        if (/^h[1-6]$/.test(tag)) {
-            const level = Math.max(1, Math.min(6, Number(tag.slice(1))));
-            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
-            if (!text) return '';
-            return `${'#'.repeat(level)} ${text}\n\n`;
-        }
-
-        if (tag === 'p') {
-            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
-            return text ? `${text}\n\n` : '';
-        }
-
-        if (tag === 'blockquote') {
-            const content = Array.from(el.childNodes).map(child => blockToMarkdown(child, depth + 1)).join('').trim();
-            if (!content) return '';
-            return `${content.split('\n').map(line => line ? `> ${line}` : '>').join('\n')}\n\n`;
-        }
-
-        if (tag === 'ul' || tag === 'ol') {
-            const lines = [];
-            const items = Array.from(el.children).filter(child => String(child.tagName || '').toLowerCase() === 'li');
-            items.forEach((li, idx) => {
-                const prefix = tag === 'ol' ? `${idx + 1}. ` : '- ';
-                const text = normalizeText(Array.from(li.childNodes).map(inlineToMarkdown).join(''));
-                if (text) lines.push(`${'  '.repeat(depth)}${prefix}${text}`);
-
-                Array.from(li.children).forEach((child) => {
-                    const childTag = String(child.tagName || '').toLowerCase();
-                    if (childTag === 'ul' || childTag === 'ol') {
-                        const nested = blockToMarkdown(child, depth + 1).trimEnd();
-                        if (nested) lines.push(nested);
-                    }
-                });
-            });
-            return lines.length ? `${lines.join('\n')}\n\n` : '';
-        }
-
-        if (tag === 'table') {
-            const rows = Array.from(el.querySelectorAll('tr'));
-            if (!rows.length) return '';
-            const matrix = rows.map((tr) => {
-                return Array.from(tr.querySelectorAll('th,td')).map((cell) => {
-                    return normalizeText(Array.from(cell.childNodes).map(inlineToMarkdown).join('')).replace(/\|/g, '\\|');
-                });
-            }).filter((row) => row.length > 0);
-            if (!matrix.length) return '';
-
-            const header = matrix[0];
-            const separator = header.map(() => '---');
-            const body = matrix.slice(1);
-            const lines = [
-                `| ${header.join(' | ')} |`,
-                `| ${separator.join(' | ')} |`,
-                ...body.map(row => `| ${row.join(' | ')} |`)
-            ];
-            return `${lines.join('\n')}\n\n`;
-        }
-
-        if (tag === 'li') {
-            const text = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
-            return text ? `${'  '.repeat(depth)}- ${text}\n` : '';
-        }
-
-        const childBlocks = Array.from(el.childNodes).map(child => blockToMarkdown(child, depth)).join('');
-        if (childBlocks.trim()) return childBlocks;
-
-        const inline = normalizeText(Array.from(el.childNodes).map(inlineToMarkdown).join(''));
-        return inline ? `${inline}\n\n` : '';
-    };
-
-    const doc = document;
-    const htmlDoctype = (() => {
-        const d = doc.doctype;
-        if (!d) return '<!DOCTYPE html>';
-        const publicId = d.publicId ? ` PUBLIC "${d.publicId}"` : '';
-        const systemId = d.systemId ? ` "${d.systemId}"` : '';
-        return `<!DOCTYPE ${d.name}${publicId}${systemId}>`;
-    })();
-
-    const html = `${htmlDoctype}\n${doc.documentElement.outerHTML}`;
-
-    const bodyClone = doc.body ? doc.body.cloneNode(true) : null;
-    if (bodyClone) {
-        bodyClone.querySelectorAll('script,style,noscript,template').forEach(el => el.remove());
-    }
-    const markdownSource = bodyClone || doc.body || doc.documentElement;
-    const markdown = Array.from(markdownSource ? markdownSource.childNodes : [])
-        .map(node => blockToMarkdown(node, 0))
-        .join('')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-
-    return {
-        title: String(doc.title || '').trim(),
-        url: String(location.href || '').trim(),
-        html,
-        markdown,
-        capturedAt: new Date().toISOString()
-    };
-}
-
 async function dev1CaptureMhtmlBlob(tabId) {
     if (!browserAPI.pageCapture || typeof browserAPI.pageCapture.saveAsMHTML !== 'function') {
         throw new Error('pageCapture API unavailable');
@@ -4573,13 +5352,44 @@ async function dev1CaptureMhtmlBlob(tabId) {
     });
 }
 
+function dev1BuildDownloadTerminalError(state, filePath = '') {
+    const normalizedState = String(state || '').trim().toLowerCase();
+    const normalizedFilePath = String(filePath || '').trim();
+    let message = 'Download did not reach complete state';
+    if (normalizedState === 'interrupted') {
+        message = 'Download interrupted before completion';
+    } else if (normalizedState === 'timeout') {
+        message = 'Download terminal state timeout';
+    } else if (normalizedState) {
+        message = `Download ended in state "${normalizedState}"`;
+    }
+    if (normalizedFilePath) {
+        message = `${message}: ${normalizedFilePath}`;
+    }
+    const error = new Error(message);
+    error.dev1NoFallback = true;
+    error.downloadState = normalizedState || 'unknown';
+    return error;
+}
+
+async function dev1WaitForDownloadComplete(downloadId, timeoutMs = DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filePath = '') {
+    const id = Number(downloadId);
+    if (!Number.isFinite(id)) {
+        throw new Error('Download id missing');
+    }
+    const terminalState = await waitForDownloadTerminalState(id, timeoutMs);
+    if (terminalState !== 'complete') {
+        throw dev1BuildDownloadTerminalError(terminalState, filePath);
+    }
+    return id;
+}
+
 async function dev1DownloadBlobDataUrl(filePath, blob, mimeType = 'application/octet-stream') {
     const safeMime = String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
     const base64 = await blobToBase64(blob);
     if (!base64) throw new Error('Blob to base64 failed');
     const dataUrl = `data:${safeMime};base64,${base64}`;
-
-    return await new Promise((resolve, reject) => {
+    const downloadId = await new Promise((resolve, reject) => {
         browserAPI.downloads.download({
             url: dataUrl,
             filename: String(filePath || '').trim(),
@@ -4593,6 +5403,8 @@ async function dev1DownloadBlobDataUrl(filePath, blob, mimeType = 'application/o
             }
         });
     });
+    await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filePath);
+    return downloadId;
 }
 
 async function dev1DownloadBlobViaTab(tabId, filePath, blob, mimeType = 'application/octet-stream') {
@@ -4654,7 +5466,9 @@ async function dev1DownloadBlobViaTab(tabId, filePath, blob, mimeType = 'applica
     if (!response || response.success !== true) {
         throw new Error(response?.error || 'Blob download via tab failed');
     }
-    return response.downloadId || null;
+    const downloadId = response.downloadId;
+    await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, safeFilePath);
+    return Number(downloadId);
 }
 
 async function dev1DownloadBlobToLocal(filePath, blob, mimeType = 'application/octet-stream', options = {}) {
@@ -4665,24 +5479,15 @@ async function dev1DownloadBlobToLocal(filePath, blob, mimeType = 'application/o
     if (preferTabDownload && Number.isFinite(tabId)) {
         try {
             return await dev1DownloadBlobViaTab(tabId, filePath, blob, mimeType);
-        } catch (_) {
+        } catch (error) {
+            if (error?.dev1NoFallback === true) {
+                throw error;
+            }
             // Fallback to data URL when tab-blob download is unavailable.
         }
     }
 
     return await dev1DownloadBlobDataUrl(filePath, blob, mimeType);
-}
-
-async function dev1DownloadTextToLocal(filePath, text, mimeType, options = {}) {
-    const blob = new Blob([String(text == null ? '' : text)], {
-        type: String(mimeType || 'text/plain;charset=utf-8')
-    });
-    return await dev1DownloadBlobToLocal(
-        filePath,
-        blob,
-        String(mimeType || 'text/plain;charset=utf-8'),
-        options
-    );
 }
 
 function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
@@ -4696,6 +5501,64 @@ function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
     return `${String(index + 1).padStart(3, '0')}_${hostPart}_${titlePart}`;
 }
 
+async function dev1BlobToZipBytes(blob) {
+    if (!(blob instanceof Blob)) return new Uint8Array();
+    const buffer = await blob.arrayBuffer();
+    return new Uint8Array(buffer);
+}
+
+function dev1BuildBatchZipFilePath(targetFolder = '', batchNumber = 1) {
+    const safeFolder = String(targetFolder || '').trim();
+    const seq = String(Math.max(1, Math.floor(Number(batchNumber) || 1))).padStart(3, '0');
+    return `${safeFolder}/dev1_batch_${seq}.zip`;
+}
+
+function dev1EnsureRunCollections(runState) {
+    if (!runState || typeof runState !== 'object') return;
+    runState.mode = dev1NormalizeExportMode(runState.mode || runState.options?.exportMode);
+    runState.batchSize = dev1NormalizeBatchSize(runState.batchSize ?? runState.options?.batchSize);
+    runState.batches = Array.isArray(runState.batches)
+        ? runState.batches.map((batch, index) => dev1NormalizeRunBatch(batch, { sequence: index + 1 }))
+        : [];
+    runState.artifacts = Array.isArray(runState.artifacts)
+        ? runState.artifacts.map((artifact, index) => {
+            const normalized = dev1NormalizeRunArtifact(artifact, {});
+            if (!normalized.id) normalized.id = dev1BuildArtifactId(`artifact_${index + 1}`);
+            return normalized;
+        })
+        : [];
+}
+
+function dev1GetMaxBatchSequence(runState) {
+    if (!runState || !Array.isArray(runState.batches)) return 0;
+    return runState.batches.reduce((max, batch) => {
+        const sequence = Number(batch?.sequence);
+        if (!Number.isFinite(sequence)) return max;
+        return Math.max(max, Math.max(1, Math.floor(sequence)));
+    }, 0);
+}
+
+function dev1GetIncompleteBatchIds(runState) {
+    if (!runState || !Array.isArray(runState.batches)) return new Set();
+    return new Set(
+        runState.batches
+            .map((batch) => dev1NormalizeRunBatch(batch, {}).batchId)
+            .filter((batchId, index) => {
+                const batch = dev1NormalizeRunBatch(runState.batches[index], {});
+                return batchId && batch.status !== 'completed';
+            })
+    );
+}
+
+function dev1AppendRunArtifact(runState, rawArtifact = {}) {
+    if (!runState || typeof runState !== 'object') return null;
+    dev1EnsureRunCollections(runState);
+    const normalized = dev1NormalizeRunArtifact(rawArtifact, {});
+    if (!normalized.id) normalized.id = dev1BuildArtifactId('artifact');
+    runState.artifacts.push(normalized);
+    return normalized;
+}
+
 async function runDev1CaptureAndExport(message = {}) {
     const resumeFromLast = message.resumeFromLast === true;
     let runState = null;
@@ -4707,14 +5570,18 @@ async function runDev1CaptureAndExport(message = {}) {
 
         const requestedFormats = dev1NormalizeFormats(message.formats);
         const normalizedMessageOptions = message.options && typeof message.options === 'object' ? message.options : {};
+        const rawMessageSource = String(message?.source || '').trim();
+        const normalizedMessageSource = rawMessageSource
+            ? dev1NormalizeRunSource(rawMessageSource, 'capture_urls')
+            : '';
         const lang = message.lang === 'en' || message.lang === 'zh_CN'
             ? message.lang
             : await getCurrentLang();
         const exportRootFolder = getExportRootFolderByLang(lang);
-        const manualFolder = getManualExportParentFolderByLang(lang);
+        const snapshotFolder = getWebSnapshotExportFolderByLang(lang);
         const buildTargetFolder = () => {
             const runToken = formatSyncTimeForFileName(new Date().toISOString());
-            return `${exportRootFolder}/${manualFolder}/dev_1/${runToken}`;
+            return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
         };
 
         const runQueue = [];
@@ -4725,11 +5592,9 @@ async function runDev1CaptureAndExport(message = {}) {
             }
 
             const mergedFormats = dev1NormalizeFormats({
-                html: requestedFormats.html || previousState.formats?.html === true,
-                md: requestedFormats.md || previousState.formats?.md === true,
                 mhtml: requestedFormats.mhtml || previousState.formats?.mhtml === true
             });
-            if (!mergedFormats.html && !mergedFormats.md && !mergedFormats.mhtml) {
+            if (!mergedFormats.mhtml) {
                 throw new Error('No export format enabled');
             }
 
@@ -4737,24 +5602,40 @@ async function runDev1CaptureAndExport(message = {}) {
                 ...(previousState.options || {}),
                 ...normalizedMessageOptions
             });
+            const mergedMode = dev1NormalizeExportMode(mergedOptions.exportMode);
+            const mergedBatchSize = dev1NormalizeBatchSize(mergedOptions.batchSize);
 
             runState = {
                 ...previousState,
                 status: 'running',
+                controlState: DEV1_RUN_CONTROL_NONE,
                 interruptedReason: '',
                 finishedAt: '',
                 resumeCount: (Number(previousState.resumeCount) || 0) + 1,
                 formats: mergedFormats,
                 options: mergedOptions,
+                mode: mergedMode,
+                batchSize: mergedBatchSize,
+                source: dev1NormalizeRunSource(normalizedMessageSource || previousState.source, 'capture_urls'),
                 targetFolder: String(previousState.targetFolder || '').trim() || buildTargetFolder(),
-                activeTabIds: []
+                captureWindowId: null,
+                activeTabIds: [],
+                batches: Array.isArray(previousState.batches) ? previousState.batches.slice() : [],
+                artifacts: Array.isArray(previousState.artifacts) ? previousState.artifacts.slice() : []
             };
+            dev1EnsureRunCollections(runState);
+            const incompleteBatchIds = mergedMode === 'batch-zip'
+                ? dev1GetIncompleteBatchIds(runState)
+                : new Set();
 
             const rows = Array.isArray(runState.items) ? runState.items : [];
             rows.forEach((row, rowIndex) => {
                 const normalizedRow = dev1NormalizeResultRow(row, { index: rowIndex });
                 runState.items[rowIndex] = normalizedRow;
-                if (dev1ShouldResumeRow(normalizedRow) && normalizedRow.url) {
+                if (dev1ShouldResumeRow(normalizedRow, {
+                    mode: mergedMode,
+                    incompleteBatchIds
+                }) && normalizedRow.url) {
                     runQueue.push({
                         rowIndex,
                         item: {
@@ -4764,7 +5645,9 @@ async function runDev1CaptureAndExport(message = {}) {
                             folderPath: normalizedRow.folderPath,
                             domain: normalizedRow.domain,
                             subdomain: normalizedRow.subdomain,
-                            actionText: normalizedRow.actionText
+                            actionText: normalizedRow.actionText,
+                            existingTabId: normalizedRow.existingTabId,
+                            useExistingTab: normalizedRow.useExistingTab === true
                         }
                     });
                 }
@@ -4781,7 +5664,7 @@ async function runDev1CaptureAndExport(message = {}) {
                 throw new Error('No valid URL items to capture');
             }
 
-            if (!requestedFormats.html && !requestedFormats.md && !requestedFormats.mhtml) {
+            if (!requestedFormats.mhtml) {
                 throw new Error('No export format enabled');
             }
 
@@ -4791,8 +5674,10 @@ async function runDev1CaptureAndExport(message = {}) {
                 formats: requestedFormats,
                 options: normalizedOptions,
                 targetFolder: buildTargetFolder(),
-                runId: dev1BuildRunId()
+                runId: dev1BuildRunId(),
+                source: dev1NormalizeRunSource(normalizedMessageSource, 'capture_urls')
             });
+            dev1EnsureRunCollections(runState);
             await dev1SaveCaptureRunState(runState);
 
             runState.items.forEach((row, rowIndex) => {
@@ -4805,7 +5690,9 @@ async function runDev1CaptureAndExport(message = {}) {
                         folderPath: row.folderPath,
                         domain: row.domain,
                         subdomain: row.subdomain,
-                        actionText: row.actionText
+                        actionText: row.actionText,
+                        existingTabId: row.existingTabId,
+                        useExistingTab: row.useExistingTab === true
                     }
                 });
             });
@@ -4813,8 +5700,207 @@ async function runDev1CaptureAndExport(message = {}) {
 
         const formats = dev1NormalizeFormats(runState.formats || {});
         const options = dev1NormalizeRunOptions(runState.options || {});
+        const batchZipEnabled = options.exportMode === 'batch-zip';
+        const batchSize = dev1NormalizeBatchSize(options.batchSize);
+        runState.mode = dev1NormalizeExportMode(options.exportMode);
+        runState.batchSize = batchSize;
+        dev1EnsureRunCollections(runState);
+        runState.controlState = DEV1_RUN_CONTROL_NONE;
+        await dev1SaveCaptureRunState(runState);
+        let batchSlotCount = 0;
+        let batchSequence = dev1GetMaxBatchSequence(runState);
+        let batchEntries = [];
+        let batchRowRefs = [];
+        let requestedRunControl = DEV1_RUN_CONTROL_NONE;
+
+        const flushBatchZip = async (force = false) => {
+            if (!batchZipEnabled) return;
+            if (!force && batchSlotCount < batchSize) return;
+
+            const pendingEntries = Array.isArray(batchEntries) ? batchEntries.slice() : [];
+            const pendingRefs = Array.isArray(batchRowRefs) ? batchRowRefs.slice() : [];
+            batchEntries = [];
+            batchRowRefs = [];
+            batchSlotCount = 0;
+
+            if (pendingEntries.length === 0 || pendingRefs.length === 0) {
+                return;
+            }
+
+            batchSequence += 1;
+            const batchId = dev1BuildBatchId(batchSequence);
+            const zipFilePath = dev1BuildBatchZipFilePath(runState.targetFolder, batchSequence);
+            const rowIndexes = Array.from(new Set(
+                pendingRefs
+                    .map((ref) => Number(ref?.rowIndex))
+                    .filter((rowIndex) => Number.isFinite(rowIndex) && rowIndex >= 0)
+                    .map((rowIndex) => Math.floor(rowIndex))
+            ));
+            const batchRecord = dev1NormalizeRunBatch({
+                batchId,
+                sequence: batchSequence,
+                status: 'running',
+                rowIndexes,
+                entryCount: pendingEntries.length,
+                startedAt: dev1NowIso(),
+                finishedAt: '',
+                filePath: '',
+                artifactId: '',
+                error: ''
+            }, { sequence: batchSequence });
+            runState.batches.push(batchRecord);
+            try {
+                const zipBlob = __zipStore(pendingEntries);
+                const zipDownloadId = await dev1DownloadBlobToLocal(zipFilePath, zipBlob, 'application/zip', {
+                    preferTabDownload: false
+                });
+                const finishedAt = dev1NowIso();
+                const zipArtifact = dev1AppendRunArtifact(runState, {
+                    id: dev1BuildArtifactId(`zip_${batchId}`),
+                    kind: 'zip',
+                    format: 'zip',
+                    filePath: zipFilePath,
+                    batchId,
+                    rowIndex: null,
+                    downloadId: zipDownloadId,
+                    terminalState: 'complete',
+                    createdAt: finishedAt
+                });
+                batchRecord.status = 'completed';
+                batchRecord.filePath = zipFilePath;
+                batchRecord.artifactId = String(zipArtifact?.id || '').trim();
+                batchRecord.finishedAt = finishedAt;
+                batchRecord.error = '';
+                pendingRefs.forEach((ref) => {
+                    const rowIndex = Number(ref?.rowIndex);
+                    if (!Number.isFinite(rowIndex) || rowIndex < 0) return;
+                    const row = dev1NormalizeResultRow(runState.items[rowIndex], { index: rowIndex });
+                    row.files = Array.from(new Set([...(Array.isArray(row.files) ? row.files : []), zipFilePath]
+                        .map(v => String(v || '').trim())
+                        .filter(Boolean)));
+                    row.batchId = batchId;
+                    row.batchSequence = batchSequence;
+                    row.status = row.errors.length > 0 ? 'partial' : 'success';
+                    row.finishedAt = finishedAt;
+                    runState.items[rowIndex] = row;
+                    const refArtifacts = Array.isArray(ref?.artifacts) ? ref.artifacts : [];
+                    refArtifacts.forEach((itemArtifact) => {
+                        if (!itemArtifact || typeof itemArtifact !== 'object') return;
+                        const pendingArtifactId = String(itemArtifact.id || '').trim();
+                        if (!pendingArtifactId) return;
+                        const target = runState.artifacts.find((artifact) => String(artifact?.id || '').trim() === pendingArtifactId);
+                        if (!target) return;
+                        target.batchId = batchId;
+                        target.filePath = zipFilePath;
+                        target.terminalState = 'complete';
+                        target.error = '';
+                    });
+                });
+            } catch (error) {
+                const messageText = error?.message || 'batch zip export failed';
+                const finishedAt = dev1NowIso();
+                batchRecord.status = 'failed';
+                batchRecord.filePath = zipFilePath;
+                batchRecord.finishedAt = finishedAt;
+                batchRecord.error = messageText;
+                pendingRefs.forEach((ref) => {
+                    const rowIndex = Number(ref?.rowIndex);
+                    if (!Number.isFinite(rowIndex) || rowIndex < 0) return;
+                    const row = dev1NormalizeResultRow(runState.items[rowIndex], { index: rowIndex });
+                    row.errors = [...(Array.isArray(row.errors) ? row.errors : []), `ZIP: ${messageText}`];
+                    row.batchId = batchId;
+                    row.batchSequence = batchSequence;
+                    row.status = 'error';
+                    row.finishedAt = finishedAt;
+                    runState.items[rowIndex] = row;
+                    const refArtifacts = Array.isArray(ref?.artifacts) ? ref.artifacts : [];
+                    refArtifacts.forEach((itemArtifact) => {
+                        if (!itemArtifact || typeof itemArtifact !== 'object') return;
+                        const pendingArtifactId = String(itemArtifact.id || '').trim();
+                        if (!pendingArtifactId) return;
+                        const target = runState.artifacts.find((artifact) => String(artifact?.id || '').trim() === pendingArtifactId);
+                        if (!target) return;
+                        target.batchId = batchId;
+                        target.filePath = zipFilePath;
+                        target.terminalState = 'failed';
+                        target.error = messageText;
+                    });
+                });
+            }
+
+            await dev1SaveCaptureRunState(runState);
+        };
+
+        const hasVirtualTabWork = runQueue.some((entry) => {
+            const candidate = entry?.item && typeof entry.item === 'object' ? entry.item : {};
+            return !(candidate.useExistingTab === true && dev1NormalizeTabId(candidate.existingTabId) != null);
+        });
+        let captureWindowId = null;
+        const prewarmedTabsByRowIndex = new Map();
+        let prewarmCursor = 0;
+
+        if (hasVirtualTabWork) {
+            captureWindowId = await dev1EnsureCaptureWindowForRun(runState, options);
+        } else {
+            runState.captureWindowId = null;
+            await dev1SaveCaptureRunState(runState);
+        }
+
+        const extractVirtualCaptureMeta = (entry) => {
+            const item = entry?.item && typeof entry.item === 'object' ? entry.item : {};
+            const preferredTabId = dev1NormalizeTabId(item.existingTabId);
+            const shouldUseExistingTab = item.useExistingTab === true && preferredTabId != null;
+            const url = String(item.url || '').trim();
+            return { shouldUseExistingTab, preferredTabId, url };
+        };
+
+        const fillPrewarmedCaptureTabs = async (processedRowIndex = -1) => {
+            if (captureWindowId == null) return;
+            while (
+                prewarmedTabsByRowIndex.size < DEV1_CAPTURE_PREWARM_TAB_LIMIT
+                && prewarmCursor < runQueue.length
+            ) {
+                const candidateEntry = runQueue[prewarmCursor];
+                prewarmCursor += 1;
+                const candidateRowIndex = Number(candidateEntry?.rowIndex);
+                if (!Number.isFinite(candidateRowIndex) || candidateRowIndex < 0) continue;
+                if (candidateRowIndex <= processedRowIndex) continue;
+                if (prewarmedTabsByRowIndex.has(candidateRowIndex)) continue;
+
+                const meta = extractVirtualCaptureMeta(candidateEntry);
+                if (meta.shouldUseExistingTab) continue;
+                if (!meta.url) continue;
+
+                const makeActive = prewarmedTabsByRowIndex.size === 0 && processedRowIndex < 0;
+                const tabId = await dev1CreateCaptureTabInWindow(captureWindowId, meta.url, {
+                    active: makeActive
+                });
+                prewarmedTabsByRowIndex.set(candidateRowIndex, {
+                    tabId,
+                    url: meta.url
+                });
+                await dev1TrackRunTabId(runState, tabId, true);
+            }
+        };
+
+        const pullRequestedRunControl = async () => {
+            const latestState = await dev1LoadCaptureRunState();
+            if (!latestState || String(latestState.runId || '').trim() !== String(runState.runId || '').trim()) {
+                return DEV1_RUN_CONTROL_NONE;
+            }
+            return dev1NormalizeRunControlState(latestState.controlState);
+        };
+
+        if (captureWindowId != null) {
+            await fillPrewarmedCaptureTabs(-1);
+        }
 
         for (let i = 0; i < runQueue.length; i++) {
+            requestedRunControl = await pullRequestedRunControl();
+            if (requestedRunControl) {
+                break;
+            }
+
             const queueEntry = runQueue[i];
             const rowIndex = Number(queueEntry?.rowIndex);
             if (!Number.isFinite(rowIndex) || rowIndex < 0) continue;
@@ -4830,94 +5916,143 @@ async function runDev1CaptureAndExport(message = {}) {
                 baseRow.finishedAt = dev1NowIso();
                 runState.items[rowIndex] = baseRow;
                 await dev1SaveCaptureRunState(runState);
+                if (captureWindowId != null) {
+                    await fillPrewarmedCaptureTabs(i);
+                }
+                if (batchZipEnabled) {
+                    batchSlotCount += 1;
+                    await flushBatchZip(i === runQueue.length - 1);
+                }
                 continue;
             }
 
             baseRow.status = 'pending';
             baseRow.startedAt = dev1NowIso();
             baseRow.finishedAt = '';
+            baseRow.batchId = '';
+            baseRow.batchSequence = null;
             baseRow.errors = [];
             baseRow.attempts = 0;
             if (!Array.isArray(baseRow.files)) baseRow.files = [];
             runState.items[rowIndex] = baseRow;
             await dev1SaveCaptureRunState(runState);
 
+            let pendingBatchArtifacts = [];
             for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
                 let tabId = null;
-                let pagePayload = null;
+                let usedExistingTab = false;
                 baseRow.attempts = attempt + 1;
                 try {
-                    const createdTab = await browserAPI.tabs.create({
-                        url: baseRow.url,
-                        active: false
-                    });
-                    tabId = createdTab && createdTab.id;
-                    if (!Number.isFinite(Number(tabId))) {
-                        throw new Error('Failed to create capture tab');
+                    const preferredTabId = dev1NormalizeTabId(baseRow.existingTabId);
+                    const shouldUseExistingTab = baseRow.useExistingTab === true && preferredTabId != null;
+                    if (shouldUseExistingTab) {
+                        const existingTab = await browserAPI.tabs.get(preferredTabId).catch(() => null);
+                        if (!existingTab || !existingTab.url) {
+                            throw new Error('Existing active tab is unavailable');
+                        }
+                        tabId = preferredTabId;
+                        usedExistingTab = true;
+                    } else {
+                        const ensuredCaptureWindowId = await dev1EnsureCaptureWindowForRun(runState, options);
+                        if (captureWindowId == null || captureWindowId !== ensuredCaptureWindowId) {
+                            captureWindowId = ensuredCaptureWindowId;
+                            prewarmedTabsByRowIndex.clear();
+                            prewarmCursor = i;
+                        }
+                        if (captureWindowId == null) {
+                            throw new Error('Failed to initialize capture window');
+                        }
+
+                        const prewarmed = prewarmedTabsByRowIndex.get(rowIndex);
+                        if (prewarmed && Number.isFinite(Number(prewarmed.tabId))) {
+                            tabId = Number(prewarmed.tabId);
+                            prewarmedTabsByRowIndex.delete(rowIndex);
+                            const existingPrewarmedTab = await browserAPI.tabs.get(tabId).catch(() => null);
+                            if (!existingPrewarmedTab || !existingPrewarmedTab.url) {
+                                throw new Error('Prewarmed tab is unavailable');
+                            }
+                            await dev1ActivateCaptureTab(tabId, captureWindowId, options.captureMode);
+                        } else {
+                            tabId = await dev1CreateCaptureTabInWindow(captureWindowId, baseRow.url, {
+                                active: true
+                            });
+                            await dev1TrackRunTabId(runState, tabId, true);
+                        }
                     }
 
-                    await dev1TrackRunTabId(runState, tabId, true);
                     await dev1WaitForTabComplete(tabId, options.loadTimeoutMs);
                     if (options.renderWaitMs > 0) {
                         await dev1Sleep(options.renderWaitMs);
                     }
 
-                    if (formats.html || formats.md) {
-                        pagePayload = await dev1ExecuteScript(tabId, dev1ExtractPagePayloadInTab, []);
-                        if (!pagePayload || typeof pagePayload !== 'object') {
-                            throw new Error('Failed to extract page payload');
-                        }
-                    }
-
-                    const effectiveUrl = String(pagePayload?.url || baseRow.url || '').trim();
-                    const effectiveTitle = String(pagePayload?.title || baseRow.title || '').trim();
+                    const effectiveUrl = String(baseRow.url || '').trim();
+                    const effectiveTitle = String(baseRow.title || '').trim();
                     baseRow.url = effectiveUrl || baseRow.url;
                     baseRow.title = effectiveTitle || baseRow.title;
 
+                    const requestedHost = dev1GetHostnameFromUrl(item.url || baseRow.url || '');
+                    const finalHost = dev1GetHostnameFromUrl(effectiveUrl || baseRow.url || '');
+                    if (requestedHost && finalHost && requestedHost !== finalHost) {
+                        baseRow.errors.push(`Review: final host changed (${requestedHost} -> ${finalHost})`);
+                    }
+
                     const leafBase = dev1BuildCaptureLeafName(rowIndex, baseRow, effectiveUrl, effectiveTitle);
-
-                    if (formats.html) {
-                        try {
-                            const htmlPath = `${runState.targetFolder}/${leafBase}.html`;
-                            await dev1DownloadTextToLocal(htmlPath, pagePayload?.html || '', 'text/html;charset=utf-8', {
-                                tabId: Number(tabId),
-                                preferTabDownload: true
-                            });
-                            baseRow.files.push(htmlPath);
-                        } catch (error) {
-                            baseRow.errors.push(`HTML: ${error?.message || 'failed'}`);
-                        }
-                    }
-
-                    if (formats.md) {
-                        try {
-                            const mdPath = `${runState.targetFolder}/${leafBase}.md`;
-                            await dev1DownloadTextToLocal(mdPath, pagePayload?.markdown || '', 'text/markdown;charset=utf-8', {
-                                tabId: Number(tabId),
-                                preferTabDownload: true
-                            });
-                            baseRow.files.push(mdPath);
-                        } catch (error) {
-                            baseRow.errors.push(`MD: ${error?.message || 'failed'}`);
-                        }
-                    }
+                    const rowBatchArtifacts = [];
 
                     if (formats.mhtml) {
                         try {
-                            const mhtmlPath = `${runState.targetFolder}/${leafBase}.mhtml`;
                             const mhtmlBlob = await dev1CaptureMhtmlBlob(tabId);
-                            await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
-                                tabId: Number(tabId),
-                                preferTabDownload: true
-                            });
-                            baseRow.files.push(mhtmlPath);
+                            if (batchZipEnabled) {
+                                const queuedArtifact = dev1AppendRunArtifact(runState, {
+                                    id: dev1BuildArtifactId(`mhtml_r${rowIndex + 1}`),
+                                    kind: 'entry',
+                                    format: 'mhtml',
+                                    entryName: `mhtml/${leafBase}.mhtml`,
+                                    rowIndex,
+                                    terminalState: 'queued',
+                                    createdAt: dev1NowIso()
+                                });
+                                rowBatchArtifacts.push({
+                                    name: `mhtml/${leafBase}.mhtml`,
+                                    data: await dev1BlobToZipBytes(mhtmlBlob),
+                                    artifactId: String(queuedArtifact?.id || '').trim(),
+                                    format: 'mhtml'
+                                });
+                            } else {
+                                const mhtmlPath = `${runState.targetFolder}/${leafBase}.mhtml`;
+                                const mhtmlDownloadId = await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
+                                    tabId: Number(tabId),
+                                    preferTabDownload: true
+                                });
+                                baseRow.files.push(mhtmlPath);
+                                dev1AppendRunArtifact(runState, {
+                                    id: dev1BuildArtifactId(`mhtml_r${rowIndex + 1}`),
+                                    kind: 'file',
+                                    format: 'mhtml',
+                                    filePath: mhtmlPath,
+                                    rowIndex,
+                                    downloadId: mhtmlDownloadId,
+                                    terminalState: 'complete',
+                                    createdAt: dev1NowIso()
+                                });
+                            }
                         } catch (error) {
                             baseRow.errors.push(`MHTML: ${error?.message || 'failed'}`);
                         }
                     }
 
                     baseRow.files = Array.from(new Set(baseRow.files.map(v => String(v || '').trim()).filter(Boolean)));
-                    if (baseRow.files.length === 0 || baseRow.errors.length > 0) {
+                    if (batchZipEnabled) {
+                        pendingBatchArtifacts = Array.isArray(rowBatchArtifacts) ? rowBatchArtifacts.slice() : [];
+                        if (pendingBatchArtifacts.length === 0) {
+                            if (baseRow.errors.length === 0) {
+                                baseRow.errors.push('No export artifact generated');
+                            }
+                            baseRow.status = 'error';
+                        } else {
+                            baseRow.status = 'pending';
+                        }
+                    } else if (baseRow.files.length === 0 || baseRow.errors.length > 0) {
                         baseRow.status = baseRow.files.length > 0 ? 'partial' : 'error';
                     } else {
                         baseRow.status = 'success';
@@ -4935,18 +6070,47 @@ async function runDev1CaptureAndExport(message = {}) {
                     baseRow.errors.push(messageText);
                     break;
                 } finally {
-                    if (options.closeTabAfterCapture && Number.isFinite(Number(tabId))) {
+                    if (!usedExistingTab && options.closeTabAfterCapture && Number.isFinite(Number(tabId))) {
                         try {
                             await browserAPI.tabs.remove(Number(tabId));
                         } catch (_) { }
                     }
-                    if (Number.isFinite(Number(tabId))) {
+                    if (!usedExistingTab && Number.isFinite(Number(tabId))) {
                         await dev1TrackRunTabId(runState, tabId, false);
                     }
                 }
             }
 
             baseRow.files = Array.from(new Set(baseRow.files.map(v => String(v || '').trim()).filter(Boolean)));
+            if (batchZipEnabled) {
+                if (pendingBatchArtifacts.length > 0) {
+                    batchEntries.push(...pendingBatchArtifacts);
+                    batchRowRefs.push({
+                        rowIndex,
+                        artifacts: pendingBatchArtifacts.map((entry) => ({
+                            id: String(entry?.artifactId || '').trim(),
+                            format: String(entry?.format || '').trim().toLowerCase()
+                        }))
+                    });
+                    baseRow.status = 'pending';
+                    baseRow.finishedAt = '';
+                } else {
+                    if (!baseRow.status || baseRow.status === 'pending') {
+                        baseRow.status = 'error';
+                    }
+                    baseRow.finishedAt = dev1NowIso();
+                }
+                runState.items[rowIndex] = baseRow;
+                await dev1SaveCaptureRunState(runState);
+                if (captureWindowId != null) {
+                    await fillPrewarmedCaptureTabs(i);
+                }
+
+                batchSlotCount += 1;
+                await flushBatchZip(i === runQueue.length - 1);
+                continue;
+            }
+
             if (!baseRow.status || baseRow.status === 'pending') {
                 baseRow.status = baseRow.files.length > 0
                     ? (baseRow.errors.length > 0 ? 'partial' : 'success')
@@ -4955,19 +6119,40 @@ async function runDev1CaptureAndExport(message = {}) {
             baseRow.finishedAt = dev1NowIso();
             runState.items[rowIndex] = baseRow;
             await dev1SaveCaptureRunState(runState);
+            if (captureWindowId != null) {
+                await fillPrewarmedCaptureTabs(i);
+            }
         }
 
+        if (requestedRunControl === DEV1_RUN_CONTROL_PAUSE || requestedRunControl === DEV1_RUN_CONTROL_CANCEL) {
+            await flushBatchZip(true);
+            await dev1CleanupCaptureWindowForRun(runState);
+            runState.status = 'interrupted';
+            runState.finishedAt = dev1NowIso();
+            runState.interruptedReason = requestedRunControl === DEV1_RUN_CONTROL_PAUSE
+                ? 'paused_by_user'
+                : 'cancelled_by_user';
+            runState.controlState = DEV1_RUN_CONTROL_NONE;
+            runState.activeTabIds = [];
+            await dev1SaveCaptureRunState(runState);
+            return dev1BuildRunResponsePayload(runState);
+        }
+
+        await dev1CleanupCaptureWindowForRun(runState);
         runState.status = 'completed';
         runState.finishedAt = dev1NowIso();
         runState.interruptedReason = '';
+        runState.controlState = DEV1_RUN_CONTROL_NONE;
         runState.activeTabIds = [];
         await dev1SaveCaptureRunState(runState);
         return dev1BuildRunResponsePayload(runState);
     } catch (error) {
         if (runState && typeof runState === 'object') {
+            await dev1CleanupCaptureWindowForRun(runState);
             runState.status = 'failed';
             runState.finishedAt = dev1NowIso();
             runState.interruptedReason = String(error?.message || 'run_failed');
+            runState.controlState = DEV1_RUN_CONTROL_NONE;
             runState.activeTabIds = [];
             await dev1SaveCaptureRunState(runState);
         }
@@ -7052,10 +8237,19 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'buildCurrentChangesManualExport') {
             (async () => {
                 try {
-                    const requestedMode = String(message.mode || '').toLowerCase();
-                    const mode = requestedMode === 'detailed'
+                    const requestedMode = String(message.mode || '').toLowerCase().trim();
+                    let mode = requestedMode === 'detailed'
                         ? 'detailed'
-                        : (requestedMode === 'collection' ? 'collection' : 'simple');
+                        : (requestedMode === 'collection'
+                            ? 'collection'
+                            : ((requestedMode === 'simple' || requestedMode === 'compact') ? 'simple' : ''));
+                    if (!mode) {
+                        const modeStore = await browserAPI.storage.local.get(['currentChangesViewMode']);
+                        const previewMode = normalizeCurrentChangesPreviewModeForExport(modeStore?.currentChangesViewMode);
+                        mode = previewMode === 'detailed'
+                            ? 'detailed'
+                            : (previewMode === 'collection' ? 'collection' : 'simple');
+                    }
                     const format = String(message.format || '').toLowerCase() === 'json' ? 'json' : 'html';
                     const lang = message.lang === 'zh_CN' || message.lang === 'en'
                         ? message.lang
@@ -7105,6 +8299,131 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             })();
             return true; // 保持消息通道开放
+        } else if (message.action === 'dev1GetBookmarkCaptureSource') {
+            (async () => {
+                try {
+                    if (!browserAPI?.bookmarks?.getTree) {
+                        throw new Error('Bookmark API unavailable');
+                    }
+
+                    const tree = await new Promise((resolve, reject) => {
+                        try {
+                            browserAPI.bookmarks.getTree((nodes) => {
+                                const lastError = browserAPI.runtime?.lastError;
+                                if (lastError) {
+                                    reject(new Error(lastError.message || 'Failed to read bookmark tree'));
+                                    return;
+                                }
+                                resolve(Array.isArray(nodes) ? nodes : []);
+                            });
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+
+                    const items = dev1BuildBookmarkSourceItemsFromTree(tree);
+                    sendResponse({
+                        success: true,
+                        source: 'bookmarks_api',
+                        total: items.length,
+                        items
+                    });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 source query failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1GetAllWindowTabsSource') {
+            (async () => {
+                try {
+                    const tabs = await browserAPI.tabs.query({});
+                    const items = dev1BuildAllWindowTabsSourceItems(tabs);
+                    sendResponse({
+                        success: true,
+                        source: 'all_window_tabs',
+                        total: items.length,
+                        items
+                    });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 all tabs source query failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1OpenReviewWindowForItems') {
+            (async () => {
+                try {
+                    const result = await dev1OpenReviewWindowForItems(message?.items);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 open review window failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1GetReviewWindowTabsSource') {
+            (async () => {
+                try {
+                    const result = await dev1GetReviewWindowTabsSource(message?.windowId);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 review window sync failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CloseReviewQueueTab') {
+            (async () => {
+                try {
+                    const result = await dev1CloseReviewQueueTab({
+                        windowId: message?.windowId,
+                        tabId: message?.tabId,
+                        url: message?.url
+                    });
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 close review tab failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CloseReviewWindow') {
+            (async () => {
+                try {
+                    const result = await dev1CloseReviewWindow(message?.windowId);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 close review window failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CheckExistingTabsAlive') {
+            (async () => {
+                try {
+                    const result = await dev1CheckExistingTabsAlive(message?.tabIds);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 check existing tabs failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
         } else if (message.action === 'dev1GetCaptureRunState') {
             (async () => {
                 try {
@@ -7118,6 +8437,32 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 capture state query failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1PauseCaptureRun') {
+            (async () => {
+                try {
+                    const result = await dev1RequestCaptureRunControl(DEV1_RUN_CONTROL_PAUSE);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 pause failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CancelCaptureRun') {
+            (async () => {
+                try {
+                    const result = await dev1RequestCaptureRunControl(DEV1_RUN_CONTROL_CANCEL);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 cancel failed'
                     });
                 }
             })();
@@ -7147,6 +8492,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 capture failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1CaptureActiveTab') {
+            (async () => {
+                try {
+                    const activeItem = await dev1ResolveActiveTabCaptureItem(sender, {
+                        allowAnyTabFallback: message?.allowAnyTabFallback === true
+                    });
+                    const result = await runDev1CaptureAndExport({
+                        ...(message || {}),
+                        source: 'active_tab',
+                        resumeFromLast: false,
+                        items: [activeItem]
+                    });
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 active tab capture failed'
                     });
                 }
             })();

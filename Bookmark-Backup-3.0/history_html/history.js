@@ -2485,8 +2485,8 @@ const i18n = {
         'en': 'Backup History'
     },
     navDev1: {
-        'zh_CN': '第一维 / dev_1',
-        'en': 'Dimension-1 / dev_1'
+        'zh_CN': '网页快照',
+        'en': 'Web Snapshot'
     },
     currentChangesViewTitle: {
         'zh_CN': '当前变化',
@@ -2497,8 +2497,8 @@ const i18n = {
         'en': 'Backup History'
     },
     dev1ViewTitle: {
-        'zh_CN': '第一维 / dev_1 实验区',
-        'en': 'Dimension-1 / dev_1 Lab'
+        'zh_CN': '网页快照',
+        'en': 'Web Snapshot'
     },
     clearBackupHistoryTooltip: {
         'zh_CN': '清除记录',
@@ -3251,6 +3251,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             view.classList.remove('active');
         }
     });
+
+    updateTopSearchVisibilityForView(currentView);
 
     localStorage.setItem('lastActiveView', currentView);
     
@@ -6382,6 +6384,43 @@ function initSidebarToggle() {
     });
 }
 
+function updateTopSearchVisibilityForView(view) {
+    const normalizedView = String(view || '').trim().toLowerCase();
+    const shouldHide = normalizedView === 'dev-1';
+    const searchContainer = document.querySelector('.history-header .search-container') || document.querySelector('.search-container');
+    if (!searchContainer) return;
+
+    searchContainer.style.display = shouldHide ? 'none' : '';
+    searchContainer.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.disabled = shouldHide;
+        if (shouldHide) searchInput.blur();
+    }
+
+    const searchModeMenu = document.getElementById('searchModeMenu');
+    if (searchModeMenu && shouldHide) {
+        searchModeMenu.hidden = true;
+    }
+
+    const searchModeTrigger = document.getElementById('searchModeTrigger');
+    if (searchModeTrigger && shouldHide) {
+        searchModeTrigger.classList.remove('active');
+    }
+
+    const searchResultsPanel = document.getElementById('searchResultsPanel');
+    if (searchResultsPanel) {
+        if (shouldHide) {
+            searchResultsPanel.classList.remove('show');
+            searchResultsPanel.innerHTML = '';
+            searchResultsPanel.style.display = 'none';
+        } else {
+            searchResultsPanel.style.display = '';
+        }
+    }
+}
+
 // =============================================================================
 // 视图切换
 // =============================================================================
@@ -6461,6 +6500,8 @@ function switchView(view) {
             v.classList.remove('active');
         }
     });
+
+    updateTopSearchVisibilityForView(view);
 
 
     // 保存到 localStorage
@@ -6798,7 +6839,14 @@ function __getChangesPreviewMode() {
     try {
         const root = document.getElementById('changesTreePreviewInline');
         if (root && root.classList && root.classList.contains('collection-mode')) return 'collection';
-        return root && root.classList && root.classList.contains('compact-mode') ? 'compact' : 'detailed';
+        if (root && root.classList) {
+            return root.classList.contains('compact-mode') ? 'compact' : 'detailed';
+        }
+        const rememberedModeRaw = String(window.__currentChangesPreviewMode || '').trim();
+        if (rememberedModeRaw) {
+            return normalizeCurrentChangesPreviewMode(rememberedModeRaw, 'detailed');
+        }
+        return 'detailed';
     } catch (_) {
         return 'detailed';
     }
@@ -6819,6 +6867,7 @@ function applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, 
     if (!treePreviewContainer) return;
     const normalized = normalizeCurrentChangesPreviewMode(mode);
     const toggleRoot = modeToggleRoot || document.getElementById('currentChangesModeToggle');
+    try { window.__currentChangesPreviewMode = normalized; } catch (_) { }
 
     treePreviewContainer.classList.remove('compact-mode', 'collection-mode');
     if (normalized === 'compact') {
@@ -25538,6 +25587,111 @@ function normalizeCurrentChangesExportModeManual(mode) {
     if (text === 'collection') return 'collection';
     return 'simple';
 }
+
+function normalizeCurrentChangesVisualModeForDev1(mode, fallback = 'collection') {
+    const text = String(mode || '').trim().toLowerCase();
+    if (text === 'collection') return 'collection';
+    if (text === 'detailed') return 'detailed';
+    if (text === 'compact' || text === 'simple') return 'simple';
+
+    const fallbackText = String(fallback || '').trim().toLowerCase();
+    if (fallbackText === 'collection') return 'collection';
+    if (fallbackText === 'detailed') return 'detailed';
+    if (fallbackText === 'simple' || fallbackText === 'compact') return 'simple';
+    return 'collection';
+}
+
+async function resolveCurrentChangesVisualModeForDev1() {
+    let mode = '';
+    let hasPreviewRoot = false;
+
+    try {
+        const previewRoot = document.getElementById('changesTreePreviewInline');
+        hasPreviewRoot = !!previewRoot;
+    } catch (_) {
+        hasPreviewRoot = false;
+    }
+
+    try {
+        if (hasPreviewRoot && typeof __getChangesPreviewMode === 'function') {
+            mode = String(__getChangesPreviewMode() || '').trim().toLowerCase();
+        }
+    } catch (_) { }
+
+    if (!mode) {
+        try {
+            mode = String(window.__currentChangesPreviewMode || '').trim().toLowerCase();
+        } catch (_) { }
+    }
+
+    if (!mode) {
+        try {
+            mode = await new Promise((resolve) => {
+                if (!browserAPI || !browserAPI.storage || !browserAPI.storage.local) {
+                    resolve('');
+                    return;
+                }
+                browserAPI.storage.local.get(['currentChangesViewMode'], (result) => {
+                    resolve(String(result?.currentChangesViewMode || '').trim().toLowerCase());
+                });
+            });
+        } catch (_) {
+            mode = '';
+        }
+    }
+
+    return normalizeCurrentChangesVisualModeForDev1(mode, 'collection');
+}
+
+window.__buildCurrentChangesVisualPayloadForDev1 = async function (options = {}) {
+    const forceRefresh = options && options.forceRefresh === true;
+    const mode = await resolveCurrentChangesVisualModeForDev1();
+
+    const buildEmptyPayload = () => {
+        const isZh = currentLang === 'zh_CN';
+        return {
+            title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+            children: [],
+            _exportInfo: {
+                exportDate: new Date().toISOString(),
+                exportMode: mode,
+                source: 'bookmark-backup-changes',
+                empty: true
+            }
+        };
+    };
+
+    let changeData = null;
+    if (!forceRefresh && latestCurrentChangesData && typeof latestCurrentChangesData === 'object') {
+        changeData = latestCurrentChangesData;
+    } else {
+        try {
+            changeData = await getDetailedChanges(forceRefresh);
+        } catch (error) {
+            if (forceRefresh) throw error;
+            changeData = latestCurrentChangesData;
+        }
+    }
+
+    if (!changeData || changeData.hasChanges !== true) {
+        return {
+            success: true,
+            mode,
+            payload: buildEmptyPayload(),
+            source: 'history-current-changes-visual',
+            hasChanges: false
+        };
+    }
+
+    const payload = await buildCurrentChangesExportPayloadManual(changeData || {}, mode);
+    return {
+        success: true,
+        mode,
+        payload,
+        source: 'history-current-changes-visual',
+        hasChanges: true
+    };
+};
 
 function normalizeCurrentChangesExportStatsManual(changeData) {
     const stats = changeData?.stats || {};

@@ -15041,7 +15041,14 @@ function showRestoreModal(versions, source) {
     modal.style.display = 'flex';
     setRestoreModalScrollTopButtonsHidden(true);
 
+    const clearRestoreModalSessionCaches = () => {
+        try { localPayloadCache.clear(); } catch (_) { }
+        try { localRestoreFileMap.clear(); } catch (_) { }
+        lastLocalRestoreSelectionMeta = null;
+    };
+
     const closeModal = () => {
+        clearRestoreModalSessionCaches();
         modal.style.display = 'none';
         setRestoreModalScrollTopButtonsHidden(false);
     };
@@ -16603,6 +16610,11 @@ function showRestoreModal(versions, source) {
 
         return await new Promise((resolve) => {
             const cleanup = () => {
+                overwritePreviewCache = null;
+                mergePreviewCache = null;
+                importTargetTreeCache.clear();
+                importTargetTreeLoading.clear();
+                importTargetPathCache.clear();
                 confirmModal.style.display = 'none';
                 showMainView();
             };

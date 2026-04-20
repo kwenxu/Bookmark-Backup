@@ -2454,7 +2454,8 @@ option {
 
 #restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon {
     color: var(--text-secondary) !important;
-    transform: translateY(1px);
+    line-height: 1;
+    transform: translateY(2px);
 }
 
 #revertModal #revertPreviewView {
@@ -3278,6 +3279,13 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
     color: var(--text-secondary);
 }
 
+/* Folder glyph optical alignment: Font Awesome folder sits slightly high vs label baseline. */
+.tree-item[data-node-type="folder"] > i.tree-icon.fas.fa-folder,
+.tree-item[data-node-type="folder"] > i.tree-icon.fas.fa-folder-open {
+    line-height: 1;
+    transform: translateY(2px);
+}
+
 .tree-label {
     flex: 1;
     font-size: 14px;
@@ -3523,7 +3531,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .history-tree-container[data-collection-view="true"] .tree-item[data-node-type="folder"] > .tree-icon {
-    transform: translateY(1px);
+    transform: translateY(2px);
 }
 
 /* 集合视图：图标/折叠箭头跟随变化类型着色，和文字保持一致 */
@@ -5376,6 +5384,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 .change-tree-folder i {
     color: var(--text-secondary);
+    line-height: 1;
+    transform: translateY(1px);
 }
 
 .change-tree-folder-name {

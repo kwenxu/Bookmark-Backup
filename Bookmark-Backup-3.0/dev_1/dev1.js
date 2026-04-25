@@ -8,6 +8,9 @@
     const DEV1_QUEUE_STORAGE_KEY = 'dev1_experiment_queue_v1';
     const DEV1_REVIEW_STORAGE_KEY = 'dev1_experiment_review_v1';
     const DEV1_WHITELIST_STORAGE_KEY = 'dev1_experiment_whitelist_v1';
+    const DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY = 'dev1_experiment_queue_batch_size_v2';
+    const DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY = 'dev1_experiment_review_auto_review_ms_v1';
+    const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
 
     const runtimeApi = (typeof chrome !== 'undefined' && chrome.runtime)
         ? chrome
@@ -21,8 +24,12 @@
     const SCOPE_UI_KIND_KEYS = ['folder', 'domain', 'subdomain', 'bookmark', 'whitelist'];
     const CHANGES_VIEW_MODE_KEYS = ['simple', 'detailed', 'collection'];
     const SCOPE_TREE_CHILD_BATCH = 120;
-    const REVIEW_SYNC_INTERVAL_MS = 1000;
-    const REVIEW_AUTO_REVIEW_MS = 2500;
+    const REVIEW_AUTO_REVIEW_DEFAULT_MS = 2500;
+    const REVIEW_AUTO_REVIEW_MIN_MS = 100;
+    const REVIEW_AUTO_REVIEW_MAX_MS = 60000;
+    const QUEUE_BATCH_SIZE_DEFAULT = 10;
+    const QUEUE_BATCH_SIZE_MIN = 1;
+    const QUEUE_BATCH_SIZE_MAX = 50;
 
     function createEmptyFilterOptions() {
         return {
@@ -104,7 +111,9 @@
             submitted: false,
             submittedAt: '',
             lastSyncedAt: '',
-            queueSignature: ''
+            queueSignature: '',
+            batchKeys: [],
+            initialBatchKeys: []
         };
     }
 
@@ -164,7 +173,6 @@
         },
         scopePanelOpen: false,
         scopeUi: createScopeUiState(),
-        lastRunResult: null,
         captureRunState: null,
         lockedQueueItems: [],
         whitelistKeys: new Set(),
@@ -173,12 +181,19 @@
         reviewSession: createEmptyReviewSession(),
         reviewActiveKey: '',
         reviewActiveSinceMs: 0,
+        reviewAutoReviewMs: REVIEW_AUTO_REVIEW_DEFAULT_MS,
+        reviewSettingsOpen: false,
+        queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
+        queueBatchIndex: 0,
+        reviewSyncEventTimerId: null,
+        reviewAutoReviewTimerId: null,
+        reviewWindowClosePreserveId: null,
+        reviewWindowEventAt: 0,
         workflowSteps: {
             openDone: false,
             submitDone: false,
             runDone: false
         },
-        reviewSyncTimerId: null,
         reviewSyncInFlight: false,
         running: false,
         initialized: false
@@ -198,6 +213,17 @@
         }
         if (!['openDone', 'submitDone', 'runDone'].includes(String(stepKey || ''))) return;
         state.workflowSteps[stepKey] = done === true;
+    }
+
+    function isReviewOpenStepSatisfied(queueItems = getCurrentQueueBatchItems()) {
+        return getReviewWindowId() != null
+            && isQueuePreparedWithExistingTabs(queueItems);
+    }
+
+    function isReviewSubmitStepSatisfied(queueItems = getCurrentQueueBatchItems()) {
+        return shouldBypassReviewForQueue(queueItems)
+            || (getReviewWindowId() != null && isReviewSatisfiedForQueue(queueItems))
+            || state.workflowSteps?.submitDone === true;
     }
 
     const i18n = {
@@ -233,9 +259,6 @@
             runPauseFailed: '暂停失败',
             runCancelFailed: '撤销失败',
             runControlNoActive: '当前没有正在执行的抓取任务。',
-            totalItems: '书签 URL 总数',
-            selectedItems: '筛选后待抓取',
-            lastRunSummary: '最近执行摘要',
             dimBookmark: '书签',
             dimFolder: '书签树',
             dimCurrentChanges: '当前变化',
@@ -252,13 +275,28 @@
             exportFormats: '导出格式',
             exportTypesLabel: '导出类型',
             mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API。它只能保存抓取瞬间浏览器已经加载出来的页面状态；论坛、长列表等虚拟滚动或懒加载内容支持可能不好，未渲染区域可能空白或缺失，当前无法在本地补齐这些未加载内容。',
-            exportHelp: '导出配置：固定导出 MHTML。如需批量打包，切换为批次 ZIP 并设置每批 URL 数。',
-            exportModeLabel: '导出方式',
+            exportHelp: '导出配置：固定导出 MHTML；复核与打包批次由队列批大小控制。',
             exportModeSingleFile: '单文件下载',
-            exportModeBatchZip: '批次 ZIP（推荐）',
-            batchSizeLabel: '每批 URL 数',
+            exportModeBatchZip: '批次 ZIP',
+            queueBatchSizeLabel: '每批',
+            queueBatchSizeTip: '控制每个队列列表最多打开和导出的 URL 数，默认 10。',
+            queueBatchSizeUpdated: '队列批大小已更新。',
+            queueBatchTitle: '列表',
+            queueBatchPrevious: '上一批',
+            queueBatchNext: '下一批',
             queueTitle: '网页快照抓取队列',
-            queueHelp: '先点“选取范围”确定本次抓取队列；复核窗口会跟踪标签页，停留约 2.5 秒自动记为已复核，关闭标签会移出队列。提交复核或开始抓取后会锁定当前队列并停止跟踪。',
+            queueHelp: '复核设置',
+            reviewSettingsIntro: '队列按批大小分成多个列表，复核窗口每次只打开当前列表；自动复核时间只影响停留标记，点击“提交复核”仍会批量确认当前列表。',
+            queueHelpAutoWarning: '页面停留达到设置时间后，会自动记为已复核。',
+            queueHelpSubmitWarning: '点击“提交复核”就是对当前列表做最终手动批量确认，未逐个停留的条目也会标为已复核。',
+            queueHelpWarning: '关闭页面是双向同步：清空队列或在队列里删除条目会关闭对应页面；关闭复核窗口里的页面也会移出对应队列项。',
+            reviewSettingsTitle: '复核设置',
+            reviewSettingsOpen: '复核设置',
+            reviewAutoReviewMsLabel: '自动复核停留时间',
+            reviewAutoReviewMsHint: '单位：毫秒；最小 100。设置为 100 毫秒时，基本就是点击页面后立即复核。',
+            reviewSettingsCancel: '取消',
+            reviewSettingsSave: '保存',
+            reviewSettingsSaved: '复核停留时间已更新。',
             queueClear: '清空',
             queueCleared: '抓取队列已清空。',
             queueClearConfirm: '确认清空当前抓取队列与复核状态，并关闭复核窗口吗？',
@@ -266,13 +304,9 @@
             queueSelectScopeFirst: '请先在“选取范围”里勾选至少一项并点击“完成”。',
             queueOps: '操作',
             queueOpDelete: '删除',
-            queueOpSkip: '不提交',
-            queueOpResume: '恢复提交',
             queueOpWhitelistAdd: '进白名单',
             queueOpWhitelistRemove: '移出白名单',
             queueRowDeleted: '已删除队列项。',
-            queueRowSkipOn: '该条目标记为不提交。',
-            queueRowSkipOff: '该条目已恢复提交。',
             queueRowWhitelistOn: '已加入白名单。',
             queueRowWhitelistOff: '已移出白名单。',
             colWhitelist: '白名单',
@@ -283,7 +317,7 @@
             reviewSyncNow: '刷新',
             reviewOpenWindow: '在新窗口打开',
             reviewSubmit: '提交复核',
-            reviewNeedSubmit: '请先完成复核：每个页面停留约 2.5 秒，或点击“提交复核”手动确认。',
+            reviewNeedSubmit: '请先完成复核：页面停留达到设置时间后会自动确认，或点击“提交复核”手动批量确认。',
             reviewSubmittedReady: '已提交复核，可执行抓取。',
             reviewItemPending: '待复核',
             reviewItemActive: '复核中',
@@ -298,6 +332,7 @@
             reviewQueueChanged: '复核窗口队列发生变化，请重新勾选并提交。',
             reviewQueueReady: '抓取队列已更新，请点击“在新窗口打开”进行复核。',
             reviewSyncFailed: '刷新复核队列失败',
+            reviewWindowClosedBatchRemoved: '复核窗口已关闭，当前批次已从队列移除。',
             tipReviewSyncNow: '手动从复核窗口拉取当前已打开页面，并同步到待抓取队列。',
             tipReviewOpenWindow: '按当前抓取队列在新窗口打开复核页面。',
             tipReviewSubmit: '提交本次复核结果，提交后才允许执行抓取。',
@@ -309,8 +344,6 @@
             reviewReviewedSummary: '复核',
             reviewCountBookmarks: '书签',
             reviewCountFolders: '文件夹',
-            resultTitle: '最近一次执行结果',
-            resultEmpty: '暂无执行记录',
             scopeTitle: '网页快照·选取范围',
             scopeSearchPlaceholder: '搜索当前维度...',
             scopeSameDataHint: '同一批书签数据，切换不同选择视角（树 / 域名 / 子域名）',
@@ -355,8 +388,6 @@
             colSubdomain: '子域名',
             colAction: '来源',
             colStatus: '状态',
-            colFiles: '导出文件',
-            colMessage: '消息',
             statusOk: '成功',
             statusPartial: '部分成功',
             statusFail: '失败',
@@ -423,9 +454,6 @@
             runPauseFailed: 'Pause failed',
             runCancelFailed: 'Cancel failed',
             runControlNoActive: 'No capture task is currently running.',
-            totalItems: 'Total Bookmark URLs',
-            selectedItems: 'Filtered Queue Size',
-            lastRunSummary: 'Last Run Summary',
             dimBookmark: 'Bookmark',
             dimFolder: 'Bookmark Tree',
             dimCurrentChanges: 'Current Changes',
@@ -442,13 +470,28 @@
             exportFormats: 'Export Formats',
             exportTypesLabel: 'Format Types',
             mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API. It can only save the page state already loaded in the browser at capture time; forums, long lists, virtual scrolling, and lazy-loaded content may be incomplete or blank, and this local capture flow cannot reconstruct content that was never loaded.',
-            exportHelp: 'Export setup: MHTML only. Switch to Batch ZIP and set URLs per batch if needed.',
-            exportModeLabel: 'Export Mode',
+            exportHelp: 'Export setup: MHTML only. Review and ZIP batching follow the queue batch size.',
             exportModeSingleFile: 'Single Files',
             exportModeBatchZip: 'Batch ZIP',
-            batchSizeLabel: 'URLs per Batch',
+            queueBatchSizeLabel: 'Batch',
+            queueBatchSizeTip: 'Controls the maximum URLs opened and exported per queue list. Default is 10.',
+            queueBatchSizeUpdated: 'Queue batch size updated.',
+            queueBatchTitle: 'List',
+            queueBatchPrevious: 'Previous batch',
+            queueBatchNext: 'Next batch',
             queueTitle: 'Web Snapshot Capture Queue',
-            queueHelp: 'Pick scope first to build the queue. The review window tracks tabs: staying on a tab for about 2.5s marks it reviewed, and closing a tab removes it from the queue. Submitting review or starting capture locks the queue and stops tracking.',
+            queueHelp: 'Review settings',
+            reviewSettingsIntro: 'The queue is split into lists by batch size, and the review window opens only the current list. Auto-review time only affects dwell marking; "Submit Review" still batch-confirms the current list.',
+            queueHelpAutoWarning: 'A page is marked reviewed automatically after staying open for the configured time.',
+            queueHelpSubmitWarning: '"Submit Review" is the final manual batch confirmation for the current list, so items not visited one by one are also marked reviewed.',
+            queueHelpWarning: 'Page closing is bidirectional: clearing the queue or deleting a queue row closes the matching page; closing a review-window page removes the matching queue row.',
+            reviewSettingsTitle: 'Review Settings',
+            reviewSettingsOpen: 'Review Settings',
+            reviewAutoReviewMsLabel: 'Auto-review dwell time',
+            reviewAutoReviewMsHint: 'Unit: milliseconds; minimum 100. At 100 ms, clicking a page is effectively enough to review it.',
+            reviewSettingsCancel: 'Cancel',
+            reviewSettingsSave: 'Save',
+            reviewSettingsSaved: 'Review dwell time updated.',
             queueClear: 'Clear',
             queueCleared: 'Capture queue cleared.',
             queueClearConfirm: 'Clear current capture queue and review state, and close the review window?',
@@ -456,13 +499,9 @@
             queueSelectScopeFirst: 'Pick at least one item in Scope Picker and click Done.',
             queueOps: 'Actions',
             queueOpDelete: 'Delete',
-            queueOpSkip: 'Skip Submit',
-            queueOpResume: 'Resume Submit',
             queueOpWhitelistAdd: 'Whitelist',
             queueOpWhitelistRemove: 'Unwhitelist',
             queueRowDeleted: 'Queue item deleted.',
-            queueRowSkipOn: 'This row is now skipped for submission.',
-            queueRowSkipOff: 'This row is restored for submission.',
             queueRowWhitelistOn: 'Added to whitelist.',
             queueRowWhitelistOff: 'Removed from whitelist.',
             colWhitelist: 'Whitelist',
@@ -473,7 +512,7 @@
             reviewSyncNow: 'Refresh',
             reviewOpenWindow: 'Open in New Window',
             reviewSubmit: 'Submit Review',
-            reviewNeedSubmit: 'Complete review first: stay on each page for about 2.5s, or click "Submit Review" to confirm manually.',
+            reviewNeedSubmit: 'Complete review first: stay on each page for the configured time, or click "Submit Review" to batch-confirm manually.',
             reviewSubmittedReady: 'Review submitted. Ready to run capture.',
             reviewItemPending: 'Pending Review',
             reviewItemActive: 'Reviewing',
@@ -488,6 +527,7 @@
             reviewQueueChanged: 'Review queue changed. Please re-check and submit again.',
             reviewQueueReady: 'Queue updated. Click "Open in New Window" to start review.',
             reviewSyncFailed: 'Failed to refresh review queue',
+            reviewWindowClosedBatchRemoved: 'Review window closed. Current batch was removed from the queue.',
             tipReviewSyncNow: 'Manually pull currently open pages from the review window and sync them to the queue.',
             tipReviewOpenWindow: 'Open review pages in a new window for the current queue.',
             tipReviewSubmit: 'Submit review result. Capture is blocked before submission.',
@@ -499,8 +539,6 @@
             reviewReviewedSummary: 'Reviewed',
             reviewCountBookmarks: 'Bookmarks',
             reviewCountFolders: 'Folders',
-            resultTitle: 'Last Run Result',
-            resultEmpty: 'No run yet',
             scopeTitle: 'Web Snapshot Scope Picker',
             scopeSearchPlaceholder: 'Search in current dimension...',
             scopeSameDataHint: 'Same bookmark dataset, different selection views (Tree / Domain / Subdomain)',
@@ -545,8 +583,6 @@
             colSubdomain: 'Subdomain',
             colAction: 'Source',
             colStatus: 'Status',
-            colFiles: 'Export Files',
-            colMessage: 'Message',
             statusOk: 'Success',
             statusPartial: 'Partial',
             statusFail: 'Failed',
@@ -711,6 +747,13 @@
         }
     }
 
+    function normalizeQueueMetadataIndex(value) {
+        if (value == null || String(value).trim() === '') return null;
+        const number = Number(value);
+        if (!Number.isFinite(number) || number < 0) return null;
+        return Math.floor(number);
+    }
+
     function normalizeQueueItem(rawItem) {
         const url = String(rawItem?.url || '').trim();
         if (!url) return null;
@@ -728,8 +771,13 @@
 
         const existingTabIdRaw = Number(rawItem?.existingTabId);
         const existingTabId = Number.isFinite(existingTabIdRaw) ? Math.floor(existingTabIdRaw) : null;
+        const reviewWindowIdRaw = Number(rawItem?.reviewWindowId);
+        const reviewWindowId = Number.isFinite(reviewWindowIdRaw) ? Math.floor(reviewWindowIdRaw) : null;
         const rawLastAccessed = Number(rawItem?.reviewLastAccessed ?? rawItem?.lastAccessed);
         const reviewLastAccessed = Number.isFinite(rawLastAccessed) ? Math.floor(rawLastAccessed) : 0;
+        const queueBatchIndex = normalizeQueueMetadataIndex(rawItem?.queueBatchIndex);
+        const queueBatchPosition = normalizeQueueMetadataIndex(rawItem?.queueBatchPosition);
+        const queueDisplayIndex = normalizeQueueMetadataIndex(rawItem?.queueDisplayIndex);
         return {
             title: String(rawItem?.title || '').trim() || url,
             url,
@@ -740,13 +788,16 @@
             actionText: String(rawItem?.actionText || '').trim(),
             host,
             sourceLabel: String(rawItem?.sourceLabel || '').trim(),
+            reviewWindowId,
             existingTabId,
             useExistingTab: existingTabId != null && rawItem?.useExistingTab === true,
-            skipSubmit: rawItem?.skipSubmit === true,
             reviewed: rawItem?.reviewed === true,
             reviewedAt: String(rawItem?.reviewedAt || '').trim(),
             reviewWindowActive: rawItem?.reviewWindowActive === true || rawItem?.active === true,
-            reviewLastAccessed
+            reviewLastAccessed,
+            queueBatchIndex,
+            queueBatchPosition,
+            queueDisplayIndex
         };
     }
 
@@ -967,7 +1018,6 @@
         if (!Array.isArray(items) || items.length === 0) return 0;
         let count = 0;
         items.forEach((item) => {
-            if (isQueueItemSkipped(item)) return;
             if (!isQueueItemWhitelisted(item)) {
                 count += 1;
             }
@@ -1018,14 +1068,96 @@
     function normalizeReviewSession(raw) {
         const rawWindowId = Number(raw?.windowId);
         const windowId = Number.isFinite(rawWindowId) ? Math.floor(rawWindowId) : null;
+        const batchKeys = Array.isArray(raw?.batchKeys)
+            ? Array.from(new Set(raw.batchKeys.map(v => String(v || '').trim()).filter(Boolean)))
+            : [];
+        const initialBatchKeys = Array.isArray(raw?.initialBatchKeys)
+            ? Array.from(new Set(raw.initialBatchKeys.map(v => String(v || '').trim()).filter(Boolean)))
+            : [];
         return {
             windowId: windowId != null ? windowId : null,
             acknowledged: raw?.acknowledged === true,
             submitted: raw?.submitted === true,
             submittedAt: String(raw?.submittedAt || '').trim(),
             lastSyncedAt: String(raw?.lastSyncedAt || '').trim(),
-            queueSignature: String(raw?.queueSignature || '').trim()
+            queueSignature: String(raw?.queueSignature || '').trim(),
+            batchKeys,
+            initialBatchKeys
         };
+    }
+
+    function normalizeQueueBatchSize(value) {
+        if (value == null || String(value).trim() === '') return QUEUE_BATCH_SIZE_DEFAULT;
+        const size = Number(value);
+        if (!Number.isFinite(size)) return QUEUE_BATCH_SIZE_DEFAULT;
+        return Math.max(QUEUE_BATCH_SIZE_MIN, Math.min(QUEUE_BATCH_SIZE_MAX, Math.floor(size)));
+    }
+
+    function normalizeReviewAutoReviewMs(value) {
+        if (value == null || String(value).trim() === '') return REVIEW_AUTO_REVIEW_DEFAULT_MS;
+        const duration = Number(value);
+        if (!Number.isFinite(duration)) return REVIEW_AUTO_REVIEW_DEFAULT_MS;
+        return Math.max(REVIEW_AUTO_REVIEW_MIN_MS, Math.min(REVIEW_AUTO_REVIEW_MAX_MS, Math.floor(duration)));
+    }
+
+    function getReviewAutoReviewMs() {
+        state.reviewAutoReviewMs = normalizeReviewAutoReviewMs(state.reviewAutoReviewMs);
+        return state.reviewAutoReviewMs;
+    }
+
+    function getReviewAutoReviewHelpText() {
+        return getLangKey() === 'en'
+            ? 'A page is marked reviewed automatically after staying open for X ms.'
+            : '页面停留达到 X 毫秒后，会自动记为已复核。';
+    }
+
+    function loadSavedReviewAutoReviewMs() {
+        try {
+            const raw = localStorage.getItem(DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY);
+            state.reviewAutoReviewMs = normalizeReviewAutoReviewMs(raw);
+        } catch (_) {
+            state.reviewAutoReviewMs = REVIEW_AUTO_REVIEW_DEFAULT_MS;
+        }
+    }
+
+    function persistReviewAutoReviewMs() {
+        try {
+            localStorage.setItem(DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY, String(getReviewAutoReviewMs()));
+        } catch (_) { }
+    }
+
+    function setReviewAutoReviewMs(value) {
+        const nextDuration = normalizeReviewAutoReviewMs(value);
+        state.reviewAutoReviewMs = nextDuration;
+        persistReviewAutoReviewMs();
+        return nextDuration;
+    }
+
+    function loadSavedQueueBatchSize() {
+        try {
+            const raw = localStorage.getItem(DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY);
+            state.queueBatchSize = normalizeQueueBatchSize(raw);
+        } catch (_) {
+            state.queueBatchSize = QUEUE_BATCH_SIZE_DEFAULT;
+        }
+    }
+
+    function persistQueueBatchSize() {
+        try {
+            localStorage.setItem(DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY, String(normalizeQueueBatchSize(state.queueBatchSize)));
+        } catch (_) { }
+    }
+
+    function setQueueBatchSize(value) {
+        const nextSize = normalizeQueueBatchSize(value);
+        if (state.queueBatchSize === nextSize) return;
+        state.queueBatchSize = nextSize;
+        state.queueBatchIndex = 0;
+        if (Array.isArray(state.lockedQueueItems) && state.lockedQueueItems.length > 0) {
+            state.lockedQueueItems = assignQueueBatchMetadata(state.lockedQueueItems, nextSize, { force: true });
+            persistQueueSnapshot();
+        }
+        persistQueueBatchSize();
     }
 
     function loadSavedReviewSession() {
@@ -1065,8 +1197,9 @@
     function clearReviewSession() {
         state.reviewSession = createEmptyReviewSession();
         persistReviewSession();
-        stopReviewSyncLoop();
+        cancelReviewSyncTimers();
         clearReviewTrackingState();
+        state.reviewWindowClosePreserveId = null;
         markWorkflowStep('openDone', false);
         markWorkflowStep('submitDone', false);
     }
@@ -1080,31 +1213,86 @@
         return state.reviewSession?.submitted === true;
     }
 
-    function stopReviewSyncLoop() {
-        if (Number.isFinite(Number(state.reviewSyncTimerId))) {
-            clearInterval(Number(state.reviewSyncTimerId));
+    function clearReviewAutoReviewTimer() {
+        if (state.reviewAutoReviewTimerId != null) {
+            clearTimeout(state.reviewAutoReviewTimerId);
         }
-        state.reviewSyncTimerId = null;
+        state.reviewAutoReviewTimerId = null;
     }
 
-    function ensureReviewSyncLoop() {
+    function cancelReviewSyncTimers() {
+        if (state.reviewSyncEventTimerId != null) {
+            clearTimeout(state.reviewSyncEventTimerId);
+        }
+        state.reviewSyncEventTimerId = null;
+        clearReviewAutoReviewTimer();
+    }
+
+    function ensureReviewEventSyncState() {
         if (getCurrentViewSafe() !== DEV1_VIEW_KEY) {
-            stopReviewSyncLoop();
+            cancelReviewSyncTimers();
             return;
         }
         if (getReviewWindowId() == null) {
-            stopReviewSyncLoop();
+            cancelReviewSyncTimers();
             return;
         }
-        if (Number.isFinite(Number(state.reviewSyncTimerId))) return;
-        state.reviewSyncTimerId = setInterval(() => {
-            if (state.running) return;
-            if (getCurrentViewSafe() !== DEV1_VIEW_KEY) {
-                stopReviewSyncLoop();
+        scheduleReviewAutoReviewCheck(getReviewWindowId());
+    }
+
+    function queueReviewWindowEventSync(windowId, event = {}) {
+        const reviewWindowId = Number(windowId);
+        if (!Number.isFinite(reviewWindowId) || Math.floor(reviewWindowId) !== getReviewWindowId()) return;
+        if (state.running) return;
+
+        const reason = String(event?.reason || 'changed').trim() || 'changed';
+        const isWindowClosing = event?.isWindowClosing === true || reason === 'window-removed';
+        if (isWindowClosing) {
+            if (Math.floor(reviewWindowId) === Number(state.reviewWindowClosePreserveId)) {
+                cancelReviewSyncTimers();
                 return;
             }
-            syncReviewWindowQueue({ silentStatus: true, fromInterval: true }).catch(() => { });
-        }, REVIEW_SYNC_INTERVAL_MS);
+            removeCurrentReviewBatchFromQueue(state.lockedQueueItems, { useInitialBatchKeys: true, reviewWindowId });
+            clearReviewSession();
+            rerenderAllDataPanels();
+            setStatus(t('reviewWindowClosedBatchRemoved'), 'success');
+            return;
+        }
+
+        const removeBatchOnMissing = event?.removeBatchOnMissing === true
+            || reason === 'tab-removed'
+            || reason === 'window-removed';
+        const pruneMissingItems = event?.pruneMissingItems === true || reason === 'tab-removed';
+        if (reason !== 'auto-review-timer') {
+            clearReviewAutoReviewTimer();
+        }
+
+        if (state.reviewSyncEventTimerId != null) {
+            clearTimeout(state.reviewSyncEventTimerId);
+        }
+        state.reviewSyncEventTimerId = setTimeout(() => {
+            state.reviewSyncEventTimerId = null;
+            if (getCurrentViewSafe() !== DEV1_VIEW_KEY || getReviewWindowId() !== Math.floor(reviewWindowId)) return;
+            if (state.reviewSyncInFlight) {
+                queueReviewWindowEventSync(reviewWindowId, event);
+                return;
+            }
+            syncReviewWindowQueue({ silentStatus: true, fromEvent: true, removeBatchOnMissing, pruneMissingItems }).then((synced) => {
+                if (synced && reason !== 'tab-removed' && reason !== 'window-removed') {
+                    scheduleReviewAutoReviewCheck(reviewWindowId);
+                }
+            }).catch(() => { });
+        }, 80);
+    }
+
+    function handleReviewWindowChangedEvent(message) {
+        if (!message || message.action !== 'dev1ReviewWindowChanged') return;
+        const eventAt = Number(message.at);
+        if (Number.isFinite(eventAt)) {
+            if (eventAt < Number(state.reviewWindowEventAt || 0)) return;
+            state.reviewWindowEventAt = eventAt;
+        }
+        queueReviewWindowEventSync(message.windowId, message);
     }
 
     function loadSavedQueueSnapshot() {
@@ -1115,7 +1303,8 @@
                 return;
             }
             const parsed = JSON.parse(raw);
-            state.lockedQueueItems = cloneQueueItems(parsed);
+            state.lockedQueueItems = assignQueueBatchMetadata(parsed);
+            persistQueueSnapshot();
         } catch (_) {
             state.lockedQueueItems = [];
         }
@@ -1133,7 +1322,7 @@
     }
 
     function setLockedQueueItems(items) {
-        state.lockedQueueItems = cloneQueueItems(items);
+        state.lockedQueueItems = assignQueueBatchMetadata(items);
         persistQueueSnapshot();
     }
 
@@ -1145,25 +1334,306 @@
 
     function getExecutionQueueItems() {
         if (getReviewWindowId() != null) {
-            return Array.isArray(state.lockedQueueItems) ? state.lockedQueueItems : [];
+            if (!Array.isArray(state.lockedQueueItems)) return [];
+            if (!hasValidQueueBatchMetadataSet(state.lockedQueueItems)) {
+                state.lockedQueueItems = assignQueueBatchMetadata(state.lockedQueueItems, getQueueBatchSize(), { force: true });
+                persistQueueSnapshot();
+            }
+            return state.lockedQueueItems;
         }
         if (Array.isArray(state.lockedQueueItems) && state.lockedQueueItems.length > 0) {
+            if (!hasValidQueueBatchMetadataSet(state.lockedQueueItems)) {
+                state.lockedQueueItems = assignQueueBatchMetadata(state.lockedQueueItems, getQueueBatchSize(), { force: true });
+                persistQueueSnapshot();
+            }
             return state.lockedQueueItems;
         }
         return Array.isArray(state.filteredItems) ? state.filteredItems : [];
     }
 
-    function isQueueItemSkipped(item) {
-        return item?.skipSubmit === true;
+    function getQueueItemStableKey(item) {
+        return normalizeWhitelistKey(item?.url || '');
+    }
+
+    function getQueueBatchSize() {
+        return normalizeQueueBatchSize(state.queueBatchSize);
+    }
+
+    function hasQueueBatchMetadata(item) {
+        return normalizeQueueMetadataIndex(item?.queueBatchIndex) != null
+            && normalizeQueueMetadataIndex(item?.queueBatchPosition) != null
+            && normalizeQueueMetadataIndex(item?.queueDisplayIndex) != null;
+    }
+
+    function hasValidQueueBatchMetadataSet(items = [], batchSize = getQueueBatchSize()) {
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length || !list.every(hasQueueBatchMetadata)) return false;
+
+        const normalizedBatchSize = normalizeQueueBatchSize(batchSize);
+        const seenPositions = new Set();
+        const seenDisplayIndexes = new Set();
+        for (const item of list) {
+            const batchIndex = normalizeQueueMetadataIndex(item?.queueBatchIndex);
+            const batchPosition = normalizeQueueMetadataIndex(item?.queueBatchPosition);
+            const displayIndex = normalizeQueueMetadataIndex(item?.queueDisplayIndex);
+            if (batchIndex == null || batchPosition == null || displayIndex == null) return false;
+            if (batchPosition >= normalizedBatchSize) return false;
+
+            const positionKey = `${batchIndex}:${batchPosition}`;
+            if (seenPositions.has(positionKey) || seenDisplayIndexes.has(displayIndex)) return false;
+            seenPositions.add(positionKey);
+            seenDisplayIndexes.add(displayIndex);
+        }
+        return true;
+    }
+
+    function assignQueueBatchMetadata(items = [], batchSize = getQueueBatchSize(), { force = false } = {}) {
+        const list = cloneQueueItems(items);
+        const normalizedBatchSize = normalizeQueueBatchSize(batchSize);
+        if (!force && hasValidQueueBatchMetadataSet(list, normalizedBatchSize)) {
+            return list;
+        }
+        return list.map((item, index) => ({
+            ...item,
+            queueBatchIndex: Math.floor(index / normalizedBatchSize),
+            queueBatchPosition: index % normalizedBatchSize,
+            queueDisplayIndex: index
+        }));
+    }
+
+    function getQueueItemDisplayIndex(item, fallbackIndex = 0) {
+        const raw = normalizeQueueMetadataIndex(item?.queueDisplayIndex);
+        return raw != null
+            ? raw
+            : Math.max(0, Math.floor(Number(fallbackIndex) || 0));
+    }
+
+    function getQueueBatches(items = getExecutionQueueItems()) {
+        const list = assignQueueBatchMetadata(items);
+        const batchSize = getQueueBatchSize();
+        const grouped = new Map();
+        list.forEach((item, index) => {
+            const rawBatchIndex = normalizeQueueMetadataIndex(item?.queueBatchIndex);
+            const batchId = rawBatchIndex != null ? rawBatchIndex : Math.floor(index / batchSize);
+            if (!grouped.has(batchId)) {
+                grouped.set(batchId, {
+                    batchId,
+                    items: []
+                });
+            }
+            grouped.get(batchId).items.push(item);
+        });
+
+        return Array.from(grouped.values())
+            .sort((a, b) => a.batchId - b.batchId)
+            .map((batch, index) => {
+                const sortedItems = batch.items.slice().sort((a, b) => {
+                    const positionA = normalizeQueueMetadataIndex(a?.queueBatchPosition);
+                    const positionB = normalizeQueueMetadataIndex(b?.queueBatchPosition);
+                    if (positionA != null && positionB != null && positionA !== positionB) {
+                        return positionA - positionB;
+                    }
+                    return getQueueItemDisplayIndex(a) - getQueueItemDisplayIndex(b);
+                });
+                const displayIndexes = sortedItems.map((item, localIndex) => getQueueItemDisplayIndex(item, index * batchSize + localIndex));
+                const start = displayIndexes.length ? Math.min(...displayIndexes) : index * batchSize;
+                const end = displayIndexes.length ? Math.max(...displayIndexes) + 1 : start;
+                return {
+                    index,
+                    batchId: batch.batchId,
+                    start,
+                    end,
+                    items: sortedItems
+                };
+            });
+    }
+
+    function clampQueueBatchIndex(items = getExecutionQueueItems()) {
+        const batches = getQueueBatches(items);
+        const maxIndex = Math.max(0, batches.length - 1);
+        const current = Number(state.queueBatchIndex);
+        state.queueBatchIndex = Number.isFinite(current)
+            ? Math.max(0, Math.min(maxIndex, Math.floor(current)))
+            : 0;
+        return state.queueBatchIndex;
+    }
+
+    function getCurrentQueueBatch(items = getExecutionQueueItems()) {
+        const batches = getQueueBatches(items);
+        if (!batches.length) return { index: 0, start: 0, end: 0, items: [] };
+        const batchIndex = clampQueueBatchIndex(items);
+        return batches[batchIndex] || batches[0];
+    }
+
+    function getCurrentQueueBatchItems(items = getExecutionQueueItems()) {
+        return getCurrentQueueBatch(items).items;
+    }
+
+    async function selectQueueBatchIndex(rawIndex, { rerender = true } = {}) {
+        const queueItems = getExecutionQueueItems();
+        const batches = getQueueBatches(queueItems);
+        if (!batches.length) return false;
+
+        const maxIndex = batches.length - 1;
+        const nextIndex = Math.max(0, Math.min(maxIndex, Math.floor(Number(rawIndex) || 0)));
+        const currentIndex = clampQueueBatchIndex(queueItems);
+        if (nextIndex === currentIndex) return false;
+
+        if (getReviewWindowId() != null) {
+            try {
+                await closeReviewWindowForCurrentSession();
+            } catch (_) { }
+        }
+        state.queueBatchIndex = nextIndex;
+        clearReviewSession();
+        if (rerender) {
+            rerenderAllDataPanels();
+        }
+        return true;
+    }
+
+    function getReviewBatchKeySet({ useInitialBatchKeys = false } = {}) {
+        const keys = useInitialBatchKeys && Array.isArray(state.reviewSession?.initialBatchKeys) && state.reviewSession.initialBatchKeys.length > 0
+            ? state.reviewSession.initialBatchKeys
+            : (Array.isArray(state.reviewSession?.batchKeys) ? state.reviewSession.batchKeys : []);
+        return new Set(
+            keys.map(v => String(v || '').trim()).filter(Boolean)
+        );
+    }
+
+    function buildReviewBatchKeys(items = []) {
+        return Array.from(new Set(
+            cloneQueueItems(items)
+                .map(item => getQueueItemStableKey(item))
+                .filter(Boolean)
+        ));
+    }
+
+    function getQueueItemSlotKey(item) {
+        const batchIndex = normalizeQueueMetadataIndex(item?.queueBatchIndex);
+        const batchPosition = normalizeQueueMetadataIndex(item?.queueBatchPosition);
+        if (batchIndex != null && batchPosition != null) {
+            return `batch:${batchIndex}:${batchPosition}`;
+        }
+        const displayIndex = normalizeQueueMetadataIndex(item?.queueDisplayIndex);
+        return displayIndex != null ? `display:${displayIndex}` : '';
+    }
+
+    function mergeReviewItemsForBatch(batchItems = [], reviewItems = [], { pruneMissingItems = true } = {}) {
+        const normalizedBatchItems = cloneQueueItems(batchItems);
+        const batchItemByKey = new Map();
+        normalizedBatchItems.forEach((item) => {
+            const key = getQueueItemStableKey(item);
+            if (key && !batchItemByKey.has(key)) {
+                batchItemByKey.set(key, item);
+            }
+        });
+
+        const normalizedReviewItems = cloneQueueItems(reviewItems).map((item, index) => {
+            const itemSlotKey = getQueueItemSlotKey(item);
+            const previous = batchItemByKey.get(getQueueItemStableKey(item))
+                || (itemSlotKey ? null : normalizedBatchItems[index])
+                || null;
+            if (!previous) return item;
+            return {
+                ...item,
+                queueBatchIndex: previous.queueBatchIndex,
+                queueBatchPosition: previous.queueBatchPosition,
+                queueDisplayIndex: previous.queueDisplayIndex
+            };
+        });
+
+        if (pruneMissingItems) return normalizedReviewItems;
+
+        const reviewItemBySlot = new Map();
+        normalizedReviewItems.forEach((item) => {
+            const slotKey = getQueueItemSlotKey(item);
+            if (slotKey && !reviewItemBySlot.has(slotKey)) {
+                reviewItemBySlot.set(slotKey, item);
+            }
+        });
+
+        const mergedItems = normalizedBatchItems.map((item) => {
+            const slotKey = getQueueItemSlotKey(item);
+            return (slotKey && reviewItemBySlot.get(slotKey)) || item;
+        });
+        const knownSlots = new Set(mergedItems.map(item => getQueueItemSlotKey(item)).filter(Boolean));
+        normalizedReviewItems.forEach((item) => {
+            const slotKey = getQueueItemSlotKey(item);
+            if (slotKey && knownSlots.has(slotKey)) return;
+            mergedItems.push(item);
+        });
+        return mergedItems;
+    }
+
+    function getCurrentReviewBatchKeySet(items = getExecutionQueueItems(), options = {}) {
+        const sessionKeys = getReviewBatchKeySet(options);
+        if (sessionKeys.size > 0) return sessionKeys;
+        return new Set(buildReviewBatchKeys(getCurrentQueueBatchItems(items)));
+    }
+
+    function mergeReviewBatchIntoLockedQueue(batchItems = [], reviewItems = [], { pruneMissingItems = true } = {}) {
+        const normalizedBatchItems = cloneQueueItems(batchItems);
+        const batchKeys = new Set(buildReviewBatchKeys(normalizedBatchItems));
+        const mergedBatchItems = mergeReviewItemsForBatch(normalizedBatchItems, reviewItems, { pruneMissingItems });
+        const currentQueue = cloneQueueItems(
+            Array.isArray(state.lockedQueueItems) && state.lockedQueueItems.length > 0
+                ? state.lockedQueueItems
+                : getExecutionQueueItems()
+        );
+
+        if (!currentQueue.length || batchKeys.size === 0) {
+            setLockedQueueItems(mergedBatchItems);
+            return mergedBatchItems;
+        }
+
+        const firstBatchIndex = currentQueue.findIndex(item => batchKeys.has(getQueueItemStableKey(item)));
+        const keptQueue = currentQueue.filter(item => !batchKeys.has(getQueueItemStableKey(item)));
+        const fallbackInsertIndex = Math.min(
+            Math.max(0, Math.floor(Number(state.queueBatchIndex) || 0)) * getQueueBatchSize(),
+            keptQueue.length
+        );
+        const insertIndex = firstBatchIndex >= 0 ? Math.min(firstBatchIndex, keptQueue.length) : fallbackInsertIndex;
+        const nextQueue = [
+            ...keptQueue.slice(0, insertIndex),
+            ...mergedBatchItems,
+            ...keptQueue.slice(insertIndex)
+        ];
+        setLockedQueueItems(nextQueue);
+        return nextQueue;
+    }
+
+    function removeCurrentReviewBatchFromQueue(previousItems = state.lockedQueueItems, options = {}) {
+        const previousQueue = cloneQueueItems(previousItems);
+        const batchKeySet = getCurrentReviewBatchKeySet(previousQueue, options);
+        const rawReviewWindowId = Number(options?.reviewWindowId);
+        const reviewWindowId = Number.isFinite(rawReviewWindowId) ? Math.floor(rawReviewWindowId) : null;
+        const remainingQueue = previousQueue.filter((item) => {
+            const itemWindowId = getQueueItemReviewWindowId(item);
+            if (reviewWindowId != null && itemWindowId === reviewWindowId) return false;
+            if (batchKeySet.size > 0 && batchKeySet.has(getQueueItemStableKey(item))) return false;
+            return true;
+        });
+        setLockedQueueItems(remainingQueue);
+        clampQueueBatchIndex(remainingQueue);
+        if (remainingQueue.length <= 0) {
+            clearAllScopeSelections();
+            applyAllFilters();
+        }
+        return remainingQueue;
     }
 
     function getActiveQueueItems(items = getExecutionQueueItems()) {
-        const list = Array.isArray(items) ? items : [];
-        return list.filter(item => !isQueueItemSkipped(item));
+        return Array.isArray(items) ? items : [];
     }
 
     function getQueueItemTabId(item) {
         const raw = Number(item?.existingTabId);
+        return Number.isFinite(raw) ? Math.floor(raw) : null;
+    }
+
+    function getQueueItemReviewWindowId(item) {
+        const raw = Number(item?.reviewWindowId);
         return Number.isFinite(raw) ? Math.floor(raw) : null;
     }
 
@@ -1174,7 +1644,40 @@
         return url ? `url:${url}` : '';
     }
 
+    function getActiveReviewQueueItem(items = getCurrentQueueBatchItems()) {
+        return cloneQueueItems(items).find(item => item?.reviewWindowActive === true) || null;
+    }
+
+    function shouldScheduleReviewAutoReviewCheck() {
+        if (isReviewSubmitted()) return false;
+        const activeKey = String(state.reviewActiveKey || '');
+        const activeSince = Number(state.reviewActiveSinceMs);
+        if (!activeKey || !Number.isFinite(activeSince) || activeSince <= 0) return false;
+        const activeItem = getActiveReviewQueueItem();
+        if (!activeItem || activeItem?.reviewed === true) return false;
+        return getReviewQueueItemKey(activeItem) === activeKey;
+    }
+
+    function scheduleReviewAutoReviewCheck(windowId = getReviewWindowId()) {
+        clearReviewAutoReviewTimer();
+        const reviewWindowId = Number(windowId);
+        if (!Number.isFinite(reviewWindowId) || Math.floor(reviewWindowId) !== getReviewWindowId()) return;
+        if (state.running || getCurrentViewSafe() !== DEV1_VIEW_KEY) return;
+        if (!shouldScheduleReviewAutoReviewCheck()) return;
+
+        const activeSince = Number(state.reviewActiveSinceMs) || Date.now();
+        const delayMs = Math.max(20, getReviewAutoReviewMs() - (Date.now() - activeSince) + 20);
+        state.reviewAutoReviewTimerId = setTimeout(() => {
+            state.reviewAutoReviewTimerId = null;
+            if (state.running || getCurrentViewSafe() !== DEV1_VIEW_KEY) return;
+            if (getReviewWindowId() !== Math.floor(reviewWindowId)) return;
+            if (!shouldScheduleReviewAutoReviewCheck()) return;
+            queueReviewWindowEventSync(reviewWindowId, { reason: 'auto-review-timer' });
+        }, delayMs);
+    }
+
     function clearReviewTrackingState() {
+        clearReviewAutoReviewTimer();
         state.reviewActiveKey = '';
         state.reviewActiveSinceMs = 0;
     }
@@ -1199,7 +1702,7 @@
             return queue;
         }
 
-        const activeItem = queue.find(item => item?.reviewWindowActive === true && !isQueueItemSkipped(item));
+        const activeItem = queue.find(item => item?.reviewWindowActive === true);
         const activeKey = getReviewQueueItemKey(activeItem);
         if (!activeItem || !activeKey) {
             clearReviewTrackingState();
@@ -1213,7 +1716,7 @@
         }
 
         const activeSince = Number(state.reviewActiveSinceMs) || nowMs;
-        if (nowMs - activeSince < REVIEW_AUTO_REVIEW_MS) return queue;
+        if (nowMs - activeSince < getReviewAutoReviewMs()) return queue;
 
         const reviewedAt = new Date(nowMs).toISOString();
         return queue.map((item) => {
@@ -1259,9 +1762,17 @@
         return nextQueue;
     }
 
-    async function closeReviewWindowForCurrentSession() {
+    async function closeReviewWindowForCurrentSession({ preserveQueue = true } = {}) {
         const reviewWindowId = getReviewWindowId();
         if (reviewWindowId == null) return true;
+        if (preserveQueue) {
+            state.reviewWindowClosePreserveId = reviewWindowId;
+            setTimeout(() => {
+                if (Number(state.reviewWindowClosePreserveId) === reviewWindowId) {
+                    state.reviewWindowClosePreserveId = null;
+                }
+            }, 5000);
+        }
 
         const response = await sendRuntimeMessage({
             action: 'dev1CloseReviewWindow',
@@ -1598,11 +2109,11 @@
         updateRunPrimaryButton(runIsActive);
     }
 
-    async function refreshCaptureRunState({ includeResults = true, silent = false } = {}) {
+    async function refreshCaptureRunState({ silent = false } = {}) {
         try {
             const response = await sendRuntimeMessage({
                 action: 'dev1GetCaptureRunState',
-                includeResults: includeResults === true
+                includeResults: false
             }, 20000);
 
             if (!response || response.success !== true) {
@@ -1613,15 +2124,7 @@
                 ? response.state
                 : null;
 
-            if (state.captureRunState && Array.isArray(state.captureRunState.results) && state.captureRunState.results.length > 0) {
-                state.lastRunResult = {
-                    summary: state.captureRunState.summary || {},
-                    results: state.captureRunState.results
-                };
-            }
-
             renderCaptureRunStatePanel();
-            updateCounters();
 
             if (!silent && String(state.captureRunState?.status || '').toLowerCase() === 'running') {
                 setStatus(t('recoveryStatusRunning'), 'warning');
@@ -3837,16 +4340,16 @@
             return;
         }
 
-        const rows = queueItems.map((item, index) => {
+        const currentBatch = getCurrentQueueBatch(queueItems);
+        const rows = currentBatch.items.map((item, localIndex) => {
+            const index = getQueueItemDisplayIndex(item, currentBatch.start + localIndex);
             const whitelistByUrl = state.whitelistKeys instanceof Set
                 && state.whitelistKeys.has(normalizeWhitelistKey(item?.url || ''));
             const whitelistEnabled = isQueueItemWhitelisted(item);
-            const isSkipped = isQueueItemSkipped(item);
             const subdomainText = String(item.subdomainLabel || item.subdomain || '').trim() || t('rootSubdomainLabel');
             const titleText = String(item.title || '').trim() || t('unknown');
             const nameIconHtml = renderQueueItemNameIconHtml(item);
             const deleteTip = t('queueOpDelete');
-            const skipTip = isSkipped ? t('queueOpResume') : t('queueOpSkip');
             const whitelistTip = whitelistByUrl ? t('queueOpWhitelistRemove') : t('queueOpWhitelistAdd');
             const reviewStateClass = item?.reviewed === true
                 ? 'success'
@@ -3855,20 +4358,18 @@
                 ? t('reviewItemReviewed')
                 : (item?.reviewWindowActive === true ? t('reviewItemActive') : t('reviewItemPending'));
             return `
-                <tr class="${isSkipped ? 'dev1-row-skip-submit' : ''}">
+                <tr>
                     <td class="dev1-col-ops">
                         <div class="dev1-queue-ops">
                             <button type="button" class="dev1-queue-op-btn danger" data-op="delete" data-url="${escapeHtml(item.url || '')}" data-tip="${escapeHtml(deleteTip)}" aria-label="${escapeHtml(deleteTip)}">
                                 <i class="fas fa-trash-alt"></i>
-                            </button>
-                            <button type="button" class="dev1-queue-op-btn ${isSkipped ? 'active' : ''}" data-op="skip" data-url="${escapeHtml(item.url || '')}" data-tip="${escapeHtml(skipTip)}" aria-label="${escapeHtml(skipTip)}">
-                                <i class="fas ${escapeHtml(isSkipped ? 'fa-undo' : 'fa-minus-circle')}"></i>
                             </button>
                             <button type="button" class="dev1-queue-op-btn ${whitelistEnabled ? 'active' : ''}" data-op="whitelist" data-url="${escapeHtml(item.url || '')}" data-tip="${escapeHtml(whitelistTip)}" aria-label="${escapeHtml(whitelistTip)}">
                                 <i class="fas fa-shield-alt"></i>
                             </button>
                         </div>
                     </td>
+                    <td class="dev1-col-status"><span class="dev1-pill ${escapeHtml(reviewStateClass)}">${escapeHtml(reviewStateText)}</span></td>
                     <td class="dev1-col-index">${index + 1}</td>
                     <td class="dev1-col-title">
                         <div class="dev1-queue-name-wrap" title="${escapeHtml(titleText)}">
@@ -3881,7 +4382,6 @@
                     </td>
                     <td class="dev1-col-domain">${escapeHtml(item.domain || '-')}</td>
                     <td class="dev1-col-subdomain"><div class="dev1-cell-title" title="${escapeHtml(subdomainText)}">${escapeHtml(subdomainText)}</div></td>
-                    <td class="dev1-col-status"><span class="dev1-pill ${escapeHtml(reviewStateClass)}">${escapeHtml(reviewStateText)}</span></td>
                     <td class="dev1-col-action"><div class="dev1-cell-title" title="${escapeHtml(item.actionText || '-')}">${escapeHtml(item.actionText || '-')}</div></td>
                 </tr>
             `;
@@ -3892,12 +4392,12 @@
                 <thead>
                     <tr>
                         <th>${escapeHtml(t('colOps'))}</th>
+                        <th>${escapeHtml(t('colStatus'))}</th>
                         <th>${escapeHtml(t('colIndex'))}</th>
                         <th>${escapeHtml(t('colTitle'))}</th>
                         <th>${escapeHtml(t('colUrl'))}</th>
                         <th>${escapeHtml(t('colDomain'))}</th>
                         <th>${escapeHtml(t('colSubdomain'))}</th>
-                        <th>${escapeHtml(t('colStatus'))}</th>
                         <th>${escapeHtml(t('colAction'))}</th>
                     </tr>
                 </thead>
@@ -3912,44 +4412,71 @@
         const openReviewBtn = document.getElementById('dev1OpenReviewBtn');
         const submitBtn = document.getElementById('dev1ReviewSubmitBtn');
         const syncBtn = document.getElementById('dev1ReviewSyncBtn');
+        const batchSizeInput = document.getElementById('dev1QueueBatchSizeInput');
+        const batchPrevBtn = document.getElementById('dev1QueueBatchPrevBtn');
+        const batchNextBtn = document.getElementById('dev1QueueBatchNextBtn');
+        const batchPageLabel = document.getElementById('dev1QueueBatchPageLabel');
         if (!selectedSummaryEl || !statusEl || !submitBtn || !syncBtn) return;
 
         const windowId = getReviewWindowId();
-        const queueItems = getExecutionQueueItems();
+        const allQueueItems = getExecutionQueueItems();
+        const batches = getQueueBatches(allQueueItems);
+        const currentBatch = getCurrentQueueBatch(allQueueItems);
+        const queueItems = currentBatch.items;
         const activeQueueItems = getActiveQueueItems(queueItems);
         const queueCount = Array.isArray(activeQueueItems) ? activeQueueItems.length : 0;
         const bypassReview = shouldBypassReviewForQueue(activeQueueItems);
         const reviewSatisfied = isReviewSatisfiedForQueue(activeQueueItems);
+        const openStepSatisfied = isReviewOpenStepSatisfied(activeQueueItems);
+        const submitStepSatisfied = isReviewSubmitStepSatisfied(activeQueueItems);
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
         const selectedCounts = getBookmarkFolderCounts(activeQueueItems);
         const reviewedItems = windowId != null
-            ? getReviewedQueueItems(Array.isArray(state.lockedQueueItems) ? state.lockedQueueItems : [])
+            ? getReviewedQueueItems(queueItems)
             : [];
         const reviewedCounts = getBookmarkFolderCounts(reviewedItems);
         const bypassDisplayCounts = bypassReview ? selectedCounts : reviewedCounts;
         const isEn = getLangKey() === 'en';
+        const currentBatchNumber = Math.max(1, (normalizeQueueMetadataIndex(currentBatch.batchId) ?? currentBatch.index) + 1);
+        const maxBatchNumber = Math.max(1, ...batches.map(batch => (normalizeQueueMetadataIndex(batch.batchId) ?? batch.index) + 1));
+        const batchPrefix = `${t('queueBatchTitle')} ${currentBatchNumber}`;
 
         if (openReviewBtn) {
             const openTextEl = openReviewBtn.querySelector('span');
             if (openTextEl) openTextEl.textContent = `1. ${t('reviewOpenWindow')}`;
-            openReviewBtn.classList.toggle('dev1-step-done', state.workflowSteps?.openDone === true);
+            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || state.workflowSteps?.openDone === true);
             openReviewBtn.disabled = state.running || queueCount <= 0;
         }
         if (submitBtn) {
             const submitTextEl = submitBtn.querySelector('span');
             if (submitTextEl) submitTextEl.textContent = `2. ${t('reviewSubmit')}`;
             submitBtn.hidden = false;
-            submitBtn.classList.toggle('dev1-step-done', bypassReview || reviewSatisfied || state.workflowSteps?.submitDone === true);
+            submitBtn.classList.toggle('dev1-step-done', submitStepSatisfied);
         }
         updateRunPrimaryButton(runIsActive);
 
         if (syncBtn) {
             syncBtn.disabled = state.running || windowId == null;
         }
+        if (batchSizeInput instanceof HTMLInputElement) {
+            if (document.activeElement !== batchSizeInput) {
+                batchSizeInput.value = String(getQueueBatchSize());
+            }
+            batchSizeInput.disabled = state.running;
+        }
+        if (batchPageLabel) {
+            batchPageLabel.textContent = `${t('queueBatchTitle')} ${currentBatchNumber} / ${maxBatchNumber}`;
+        }
+        if (batchPrevBtn instanceof HTMLButtonElement) {
+            batchPrevBtn.disabled = state.running || batches.length <= 1 || currentBatch.index <= 0;
+        }
+        if (batchNextBtn instanceof HTMLButtonElement) {
+            batchNextBtn.disabled = state.running || batches.length <= 1 || currentBatch.index >= batches.length - 1;
+        }
 
         selectedSummaryEl.textContent = isEn
-            ? `${t('reviewSelectedSummary')}: ${t('reviewCountBookmarks')} ${selectedCounts.bookmarkCount} · ${t('reviewCountFolders')} ${selectedCounts.folderCount}`
-            : `${t('reviewSelectedSummary')}：${t('reviewCountBookmarks')} ${selectedCounts.bookmarkCount} · ${t('reviewCountFolders')} ${selectedCounts.folderCount}`;
+            ? `${batchPrefix} · ${t('reviewSelectedSummary')}: ${t('reviewCountBookmarks')} ${selectedCounts.bookmarkCount} · ${t('reviewCountFolders')} ${selectedCounts.folderCount}`
+            : `${batchPrefix} · ${t('reviewSelectedSummary')}：${t('reviewCountBookmarks')} ${selectedCounts.bookmarkCount} · ${t('reviewCountFolders')} ${selectedCounts.folderCount}`;
 
         if (bypassReview) {
             statusEl.textContent = isEn
@@ -3974,81 +4501,11 @@
             || queueCount <= 0;
     }
 
-    function renderLastRunResult() {
-        const wrap = document.getElementById('dev1ResultWrap');
-        if (!wrap) return;
-
-        const result = state.lastRunResult;
-        if (!result || !Array.isArray(result.results) || result.results.length === 0) {
-            wrap.innerHTML = `<div class="dev1-empty">${escapeHtml(t('resultEmpty'))}</div>`;
-            return;
-        }
-
-        const rows = result.results.map((item, index) => {
-            const status = String(item.status || '').toLowerCase();
-            const files = Array.isArray(item.files) ? item.files : [];
-            const errors = Array.isArray(item.errors) ? item.errors : [];
-            const filesText = files.length ? files.join('\n') : '-';
-            const message = errors.length ? errors.join(' | ') : '-';
-            const pillClass = status === 'success'
-                ? 'success'
-                : (status === 'partial' ? 'warning' : 'error');
-            const pillLabel = status === 'success'
-                ? t('statusOk')
-                : (status === 'partial' ? t('statusPartial') : t('statusFail'));
-            return `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${escapeHtml(item.title || item.url || '')}</td>
-                    <td>${escapeHtml(item.url || '')}</td>
-                    <td><span class="dev1-pill ${pillClass}">${escapeHtml(pillLabel)}</span></td>
-                    <td style="white-space: pre-wrap;">${escapeHtml(filesText)}</td>
-                    <td>${escapeHtml(message)}</td>
-                </tr>
-            `;
-        }).join('');
-
-        wrap.innerHTML = `
-            <table class="dev1-table">
-                <thead>
-                    <tr>
-                        <th>${escapeHtml(t('colIndex'))}</th>
-                        <th>${escapeHtml(t('colTitle'))}</th>
-                        <th>${escapeHtml(t('colUrl'))}</th>
-                        <th>${escapeHtml(t('colStatus'))}</th>
-                        <th>${escapeHtml(t('colFiles'))}</th>
-                        <th>${escapeHtml(t('colMessage'))}</th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>
-        `;
-    }
-
-    function updateCounters() {
-        const totalEl = document.getElementById('dev1TotalValue');
-        if (totalEl) totalEl.textContent = String(state.sourceItems.length);
-        const selectedEl = document.getElementById('dev1SelectedValue');
-        if (selectedEl) selectedEl.textContent = String(getActiveQueueItems(getExecutionQueueItems()).length);
-
-        const summaryEl = document.getElementById('dev1LastRunSummary');
-        if (summaryEl) {
-            if (!state.lastRunResult) {
-                summaryEl.textContent = '-';
-            } else {
-                const summary = state.lastRunResult.summary || {};
-                summaryEl.textContent = `${t('statusOk')}: ${summary.successCount || 0}, ${t('statusPartial')}: ${summary.partialCount || 0}, ${t('statusFail')}: ${summary.failureCount || 0}`;
-            }
-        }
-    }
-
     function rerenderAllDataPanels() {
         renderScopeSelector();
         renderCaptureRunStatePanel();
         renderQueueTable();
         renderReviewWorkflowPanel();
-        renderLastRunResult();
-        updateCounters();
     }
 
     function renderScopePanelVisibility() {
@@ -4062,6 +4519,55 @@
             scopeBtn.classList.toggle('active', state.scopePanelOpen === true);
             scopeBtn.setAttribute('aria-expanded', state.scopePanelOpen === true ? 'true' : 'false');
         }
+    }
+
+    function renderReviewSettingsVisibility() {
+        const modal = document.getElementById('dev1ReviewSettingsModal');
+        if (modal) {
+            modal.classList.toggle('show', state.reviewSettingsOpen === true);
+            modal.setAttribute('aria-hidden', state.reviewSettingsOpen === true ? 'false' : 'true');
+        }
+        const settingsBtn = document.getElementById('dev1ReviewSettingsBtn');
+        if (settingsBtn) {
+            settingsBtn.classList.toggle('active', state.reviewSettingsOpen === true);
+            settingsBtn.setAttribute('aria-expanded', state.reviewSettingsOpen === true ? 'true' : 'false');
+        }
+        const input = document.getElementById('dev1ReviewAutoReviewMsInput');
+        if (input instanceof HTMLInputElement && document.activeElement !== input) {
+            input.value = String(getReviewAutoReviewMs());
+        }
+        const autoHelp = document.getElementById('dev1ReviewAutoReviewHelpText');
+        if (autoHelp) {
+            autoHelp.textContent = getReviewAutoReviewHelpText();
+        }
+    }
+
+    function openReviewSettingsModal() {
+        state.reviewSettingsOpen = true;
+        renderReviewSettingsVisibility();
+        const input = document.getElementById('dev1ReviewAutoReviewMsInput');
+        if (input instanceof HTMLInputElement) {
+            input.value = String(getReviewAutoReviewMs());
+            input.focus();
+            input.select();
+        }
+    }
+
+    function closeReviewSettingsModal() {
+        state.reviewSettingsOpen = false;
+        renderReviewSettingsVisibility();
+    }
+
+    function commitReviewSettingsModal() {
+        const input = document.getElementById('dev1ReviewAutoReviewMsInput');
+        const nextDuration = setReviewAutoReviewMs(input instanceof HTMLInputElement ? input.value : state.reviewAutoReviewMs);
+        if (input instanceof HTMLInputElement) input.value = String(nextDuration);
+        closeReviewSettingsModal();
+        if (getReviewWindowId() != null) {
+            scheduleReviewAutoReviewCheck(getReviewWindowId());
+        }
+        rerenderAllDataPanels();
+        setStatus(t('reviewSettingsSaved'), 'success');
     }
 
     function toggleScopeOptionCheckboxFromContainer(container) {
@@ -4099,7 +4605,11 @@
         const reviewSyncBtn = root.querySelector('#dev1ReviewSyncBtn');
         if (reviewSyncBtn) {
             reviewSyncBtn.addEventListener('click', () => {
-                syncReviewWindowQueue({ silentStatus: false, fromInterval: false }).catch((error) => {
+                syncReviewWindowQueue({ silentStatus: false, removeBatchOnMissing: true }).then((synced) => {
+                    if (synced) {
+                        scheduleReviewAutoReviewCheck(getReviewWindowId());
+                    }
+                }).catch((error) => {
                     setStatus(`${t('reviewSyncFailed')}: ${error?.message || ''}`, 'error');
                 });
             });
@@ -4116,10 +4626,51 @@
             });
         }
 
+        const reviewSettingsBtn = root.querySelector('#dev1ReviewSettingsBtn');
+        if (reviewSettingsBtn) {
+            reviewSettingsBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                openReviewSettingsModal();
+            });
+        }
+
+        const reviewSettingsCloseBtn = root.querySelector('#dev1ReviewSettingsModalClose');
+        if (reviewSettingsCloseBtn) {
+            reviewSettingsCloseBtn.addEventListener('click', closeReviewSettingsModal);
+        }
+        const reviewSettingsCancelBtn = root.querySelector('#dev1ReviewSettingsCancelBtn');
+        if (reviewSettingsCancelBtn) {
+            reviewSettingsCancelBtn.addEventListener('click', closeReviewSettingsModal);
+        }
+        const reviewSettingsSaveBtn = root.querySelector('#dev1ReviewSettingsSaveBtn');
+        if (reviewSettingsSaveBtn) {
+            reviewSettingsSaveBtn.addEventListener('click', commitReviewSettingsModal);
+        }
+        const reviewSettingsInput = root.querySelector('#dev1ReviewAutoReviewMsInput');
+        if (reviewSettingsInput instanceof HTMLInputElement) {
+            reviewSettingsInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    commitReviewSettingsModal();
+                }
+            });
+            reviewSettingsInput.addEventListener('blur', () => {
+                reviewSettingsInput.value = String(normalizeReviewAutoReviewMs(reviewSettingsInput.value));
+            });
+        }
+        const reviewSettingsModal = root.querySelector('#dev1ReviewSettingsModal');
+        if (reviewSettingsModal) {
+            reviewSettingsModal.addEventListener('click', (event) => {
+                if (event.target === reviewSettingsModal) {
+                    closeReviewSettingsModal();
+                }
+            });
+        }
+
         const openReviewBtn = root.querySelector('#dev1OpenReviewBtn');
         if (openReviewBtn) {
             openReviewBtn.addEventListener('click', async () => {
-                const queueItems = getActiveQueueItems(getExecutionQueueItems());
+                const queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
                 if (!Array.isArray(queueItems) || queueItems.length === 0) {
                     setStatus(hasAnyScopeSelection() ? t('runBlockedNoQueue') : t('queueSelectScopeFirst'), 'warning');
                     return;
@@ -4168,7 +4719,7 @@
                 resetScopePanelSessionState({ clearSelections: true, keepChangesMode: true });
                 renderScopePanelVisibility();
                 rerenderAllDataPanels();
-                const queueItems = getExecutionQueueItems();
+                const queueItems = getCurrentQueueBatchItems();
                 if (!Array.isArray(queueItems) || queueItems.length === 0) {
                     setStatus(t('queueSelectScopeFirst'), 'warning');
                     return;
@@ -4194,10 +4745,47 @@
             });
         }
 
-        const exportModeSelect = root.querySelector('#dev1ExportModeSelect');
-        if (exportModeSelect) {
-            exportModeSelect.addEventListener('change', () => {
-                updateBatchSizeControlState();
+        const queueBatchSizeInput = root.querySelector('#dev1QueueBatchSizeInput');
+        if (queueBatchSizeInput instanceof HTMLInputElement) {
+            const applyQueueBatchSizeChange = async () => {
+                const previousSize = getQueueBatchSize();
+                const nextSize = normalizeQueueBatchSize(queueBatchSizeInput.value);
+                queueBatchSizeInput.value = String(nextSize);
+                if (state.running) return;
+                if (nextSize === previousSize) return;
+
+                try {
+                    if (getReviewWindowId() != null) {
+                        await closeReviewWindowForCurrentSession();
+                    }
+                } catch (_) { }
+                clearReviewSession();
+                setQueueBatchSize(nextSize);
+                clampQueueBatchIndex();
+                rerenderAllDataPanels();
+                setStatus(t('queueBatchSizeUpdated'), 'success');
+            };
+            queueBatchSizeInput.addEventListener('change', () => {
+                applyQueueBatchSizeChange().catch((error) => {
+                    queueBatchSizeInput.value = String(getQueueBatchSize());
+                    setStatus(error?.message || t('runFailed'), 'error');
+                });
+            });
+        }
+        const batchPrevBtn = root.querySelector('#dev1QueueBatchPrevBtn');
+        if (batchPrevBtn) {
+            batchPrevBtn.addEventListener('click', () => {
+                selectQueueBatchIndex(state.queueBatchIndex - 1).catch((error) => {
+                    setStatus(error?.message || t('runFailed'), 'error');
+                });
+            });
+        }
+        const batchNextBtn = root.querySelector('#dev1QueueBatchNextBtn');
+        if (batchNextBtn) {
+            batchNextBtn.addEventListener('click', () => {
+                selectQueueBatchIndex(state.queueBatchIndex + 1).catch((error) => {
+                    setStatus(error?.message || t('runFailed'), 'error');
+                });
             });
         }
         const clearBtn = root.querySelector('#dev1ClearFiltersBtn');
@@ -4403,10 +4991,6 @@
                     });
                     return;
                 }
-                if (op === 'skip') {
-                    handleQueueSkipToggleAction(rawUrl);
-                    return;
-                }
                 if (op === 'whitelist') {
                     handleQueueWhitelistToggleAction(rawUrl);
                 }
@@ -4448,7 +5032,7 @@
         const refreshRunStateBtn = root.querySelector('#dev1RefreshRunStateBtn');
         if (refreshRunStateBtn) {
             refreshRunStateBtn.addEventListener('click', () => {
-                refreshCaptureRunState({ includeResults: true }).catch((error) => {
+                refreshCaptureRunState().catch((error) => {
                     setStatus(error?.message || t('runFailed'), 'error');
                 });
             });
@@ -4517,15 +5101,11 @@
     }
 
     function getSelectedExportMode() {
-        const modeEl = document.getElementById('dev1ExportModeSelect');
-        const mode = String(modeEl?.value || '').trim().toLowerCase();
-        return mode === 'batch-zip' ? 'batch-zip' : 'single-file';
+        return 'batch-zip';
     }
 
     function getSelectedBatchSize() {
-        const sizeEl = document.getElementById('dev1BatchSizeSelect');
-        const raw = Number(sizeEl?.value);
-        return raw === 10 ? 10 : 20;
+        return getQueueBatchSize();
     }
 
     function isQueuePreparedWithExistingTabs(queueItems) {
@@ -4568,7 +5148,7 @@
         });
     }
 
-    async function syncReviewWindowQueue({ silentStatus = true, fromInterval = false } = {}) {
+    async function syncReviewWindowQueue({ silentStatus = true, fromEvent = false, removeBatchOnMissing = false, pruneMissingItems = removeBatchOnMissing } = {}) {
         const reviewWindowId = getReviewWindowId();
         if (reviewWindowId == null) return false;
         if (state.reviewSyncInFlight) return false;
@@ -4600,7 +5180,8 @@
 
             const currentSignature = buildQueueSignature(previousQueue);
             const currentReviewStateSignature = buildQueueReviewStateSignature(previousQueue);
-            let nextQueue = cloneQueueItems(response.items).map((item) => {
+            const batchKeySet = getCurrentReviewBatchKeySet(previousQueue);
+            let nextBatchQueue = cloneQueueItems(response.items).map((item) => {
                 const tabId = getQueueItemTabId(item);
                 const key = normalizeWhitelistKey(item?.url || '');
                 const previous = (tabId != null ? previousQueueByTabId.get(tabId) : null)
@@ -4615,6 +5196,7 @@
                     host: item?.host || previous?.host || '',
                     subdomain: item?.subdomain || previous?.subdomain || '',
                     subdomainLabel: item?.subdomainLabel || previous?.subdomainLabel || '',
+                    reviewWindowId: item?.reviewWindowId || previous?.reviewWindowId || null,
                     existingTabId: item?.existingTabId,
                     useExistingTab: item?.useExistingTab === true,
                     reviewWindowActive: item?.reviewWindowActive === true,
@@ -4622,35 +5204,46 @@
                 } : item;
                 return {
                     ...mergedItem,
-                    skipSubmit: previous?.skipSubmit === true,
                     reviewed: sameReviewedUrl && previous?.reviewed === true,
                     reviewedAt: sameReviewedUrl ? String(previous?.reviewedAt || '').trim() : ''
                 };
             });
-            nextQueue = applyAutoReviewTracking(nextQueue);
+            nextBatchQueue = applyAutoReviewTracking(nextBatchQueue);
 
-            if (nextQueue.length <= 0) {
-                await clearQueueAndReviewState({ closeReviewWindow: false, clearScope: true });
-                rerenderAllDataPanels();
-                if (!silentStatus) {
-                    setStatus(t('queueCleared'), 'success');
+            if (nextBatchQueue.length <= 0) {
+                if (removeBatchOnMissing) {
+                    const remainingQueue = removeCurrentReviewBatchFromQueue(previousQueue, { useInitialBatchKeys: true, reviewWindowId });
+                    clearReviewSession();
+                    if (!silentStatus) {
+                        setStatus(remainingQueue.length <= 0 ? t('queueCleared') : t('reviewWindowClosedBatchRemoved'), 'success');
+                    }
+                    rerenderAllDataPanels();
+                } else {
+                    renderReviewWorkflowPanel();
                 }
                 return false;
             }
 
+            const batchItems = previousQueue.filter(item => batchKeySet.has(getQueueItemStableKey(item)));
+            const sourceBatchItems = batchItems.length > 0 ? batchItems : getCurrentQueueBatchItems(previousQueue);
+            const nextSessionBatchItems = mergeReviewItemsForBatch(sourceBatchItems, nextBatchQueue, { pruneMissingItems });
+            const nextQueue = mergeReviewBatchIntoLockedQueue(
+                sourceBatchItems,
+                nextBatchQueue,
+                { pruneMissingItems }
+            );
             const nextSignature = buildQueueSignature(nextQueue);
             const nextReviewStateSignature = buildQueueReviewStateSignature(nextQueue);
             const queueChanged = currentSignature !== nextSignature;
             const reviewStateChanged = currentReviewStateSignature !== nextReviewStateSignature;
             const wasAcknowledged = state.reviewSession?.acknowledged === true;
 
-            setLockedQueueItems(nextQueue);
-
             const wasSubmitted = isReviewSubmitted();
             const nextSession = {
                 windowId: reviewWindowId,
                 lastSyncedAt: new Date().toISOString(),
-                queueSignature: nextSignature
+                queueSignature: nextSignature,
+                batchKeys: buildReviewBatchKeys(nextSessionBatchItems)
             };
             if (queueChanged && wasAcknowledged) {
                 nextSession.acknowledged = false;
@@ -4666,25 +5259,31 @@
                 setStatus(t('reviewQueueChanged'), 'warning');
             } else if (queueChanged && wasAcknowledged) {
                 setStatus(t('reviewQueueChanged'), 'warning');
-            } else if (!silentStatus && !fromInterval) {
-                setStatus(`${t('reviewSyncNow')} (${nextQueue.length})`, 'success');
+            } else if (!silentStatus && !fromEvent) {
+                setStatus(`${t('reviewSyncNow')} (${nextBatchQueue.length})`, 'success');
             }
 
-            if (queueChanged || reviewStateChanged || !fromInterval) {
+            if (queueChanged || reviewStateChanged || !fromEvent) {
                 rerenderAllDataPanels();
             } else {
                 renderReviewWorkflowPanel();
-                updateCounters();
             }
             return true;
         } catch (error) {
             const message = normalizeRuntimeErrorMessage(error, t('reviewSyncFailed'));
             const shouldClear = /window|tab|invalid|not found|no window|closed/i.test(String(message).toLowerCase());
             if (shouldClear) {
-                await clearQueueAndReviewState({ closeReviewWindow: false, clearScope: true });
+                const remainingQueue = removeBatchOnMissing
+                    ? removeCurrentReviewBatchFromQueue(state.lockedQueueItems, { useInitialBatchKeys: true, reviewWindowId })
+                    : null;
+                clearReviewSession();
                 rerenderAllDataPanels();
                 if (!silentStatus) {
-                    setStatus(t('queueCleared'), 'warning');
+                    if (removeBatchOnMissing) {
+                        setStatus((remainingQueue && remainingQueue.length <= 0) ? t('queueCleared') : t('reviewWindowClosedBatchRemoved'), 'success');
+                    } else {
+                        setStatus(t('reviewWindowMissing'), 'warning');
+                    }
                 }
                 return false;
             }
@@ -4703,8 +5302,9 @@
         }
 
         setStatus(t('reviewPreparing'));
-        const items = queueItems.map((item, index) => ({
-            index,
+        const batchItems = cloneQueueItems(queueItems).slice(0, getQueueBatchSize());
+        const items = batchItems.map((item, index) => ({
+            index: getQueueItemDisplayIndex(item, index),
             title: item.title,
             url: item.url,
             folderPath: item.folderPath,
@@ -4712,13 +5312,17 @@
             subdomain: item.subdomain,
             actionText: item.actionText,
             existingTabId: item.existingTabId,
-            useExistingTab: item.useExistingTab === true
+            useExistingTab: item.useExistingTab === true,
+            queueBatchIndex: item.queueBatchIndex,
+            queueBatchPosition: item.queueBatchPosition,
+            queueDisplayIndex: item.queueDisplayIndex
         }));
 
         const response = await sendRuntimeMessage({
             action: 'dev1OpenReviewWindowForItems',
             lang: getLangKey(),
-            items
+            items,
+            maxTabs: getQueueBatchSize()
         }, 120000);
 
         if (!response || response.success !== true || !Array.isArray(response.items) || response.items.length === 0) {
@@ -4726,20 +5330,23 @@
         }
 
         clearReviewSession();
-        setLockedQueueItems(response.items);
+        mergeReviewBatchIntoLockedQueue(batchItems, response.items);
         setReviewSession({
             windowId: Number.isFinite(Number(response.windowId)) ? Math.floor(Number(response.windowId)) : null,
             acknowledged: false,
             submitted: false,
             submittedAt: '',
             lastSyncedAt: new Date().toISOString(),
-            queueSignature: buildQueueSignature(response.items)
+            queueSignature: buildQueueSignature(response.items),
+            batchKeys: buildReviewBatchKeys(response.items),
+            initialBatchKeys: buildReviewBatchKeys(batchItems)
         });
         markWorkflowStep('openDone', true);
         markWorkflowStep('submitDone', false);
         markWorkflowStep('runDone', false);
-        ensureReviewSyncLoop();
+        ensureReviewEventSyncState();
         rerenderAllDataPanels();
+        queueReviewWindowEventSync(response.windowId, { reason: 'review-opened' });
         setStatus(`${t('reviewReady')} (${response.total || response.items.length})`, 'success');
         return response.items;
     }
@@ -4750,19 +5357,33 @@
             throw new Error(t('reviewWindowMissing'));
         }
 
-        const synced = await syncReviewWindowQueue({ silentStatus: true, fromInterval: false });
+        const synced = await syncReviewWindowQueue({ silentStatus: true });
         if (!synced) {
             throw new Error(t('reviewWindowMissing'));
         }
 
-        let queueItems = getActiveQueueItems(getExecutionQueueItems());
+        let queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
         if (!Array.isArray(queueItems) || queueItems.length === 0) {
             throw new Error(t('runBlockedNoQueue'));
         }
+        const batchKeySet = getCurrentReviewBatchKeySet();
+        const submittedBatchKeySet = new Set([
+            ...Array.from(batchKeySet),
+            ...buildReviewBatchKeys(queueItems)
+        ]);
+        const submittedBatchSlotSet = new Set(
+            queueItems
+                .map(item => getQueueItemSlotKey(item))
+                .filter(Boolean)
+        );
 
         const reviewedAt = new Date().toISOString();
         const reviewedQueue = cloneQueueItems(getExecutionQueueItems()).map((item) => {
-            if (isQueueItemSkipped(item)) return item;
+            const slotKey = getQueueItemSlotKey(item);
+            const inSubmittedBatch = submittedBatchSlotSet.size > 0
+                ? (slotKey && submittedBatchSlotSet.has(slotKey))
+                : submittedBatchKeySet.has(getQueueItemStableKey(item));
+            if (!inSubmittedBatch) return item;
             return {
                 ...item,
                 reviewed: true,
@@ -4770,19 +5391,20 @@
             };
         });
         setLockedQueueItems(reviewedQueue);
-        queueItems = getActiveQueueItems(reviewedQueue);
+        queueItems = getActiveQueueItems(getCurrentQueueBatchItems(reviewedQueue));
 
         setReviewSession({
             acknowledged: true,
             submitted: true,
             submittedAt: new Date().toISOString(),
-            queueSignature: buildQueueSignature(queueItems)
+            queueSignature: buildQueueSignature(queueItems),
+            batchKeys: Array.from(submittedBatchKeySet)
         });
-        stopReviewSyncLoop();
+        cancelReviewSyncTimers();
         clearReviewTrackingState();
         markWorkflowStep('submitDone', true);
         markWorkflowStep('runDone', false);
-        renderReviewWorkflowPanel();
+        rerenderAllDataPanels();
         setStatus(t('reviewSubmittedReady'), 'success');
     }
 
@@ -4824,28 +5446,6 @@
         setStatus(t('queueRowDeleted'), 'success');
     }
 
-    function handleQueueSkipToggleAction(rawUrl) {
-        const key = normalizeWhitelistKey(rawUrl);
-        if (!key) return;
-
-        const currentQueue = cloneQueueItems(getExecutionQueueItems());
-        const targetIndex = findQueueItemIndexByUrl(currentQueue, key);
-        if (targetIndex < 0) return;
-
-        const nextQueue = currentQueue.map((item, idx) => {
-            if (idx !== targetIndex) return item;
-            return {
-                ...item,
-                skipSubmit: item?.skipSubmit !== true
-            };
-        });
-
-        const changedItem = nextQueue[targetIndex];
-        updateLockedQueueAfterManualEdit(nextQueue, { clearReviewWhenEmpty: false });
-        rerenderAllDataPanels();
-        setStatus(changedItem?.skipSubmit === true ? t('queueRowSkipOn') : t('queueRowSkipOff'), 'success');
-    }
-
     function handleQueueWhitelistToggleAction(rawUrl) {
         const key = normalizeWhitelistKey(rawUrl);
         if (!key) return;
@@ -4855,20 +5455,18 @@
         setStatus(!wasWhitelisted ? t('queueRowWhitelistOn') : t('queueRowWhitelistOff'), 'success');
     }
 
-    function updateBatchSizeControlState() {
-        const exportMode = getSelectedExportMode();
+    function updateQueueBatchSizeControlState() {
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
-        const batchSizeRow = document.getElementById('dev1BatchSizeRow');
         const mhtmlHintRow = document.getElementById('dev1MhtmlHintRow');
-        const sizeEl = document.getElementById('dev1BatchSizeSelect');
-        if (batchSizeRow) {
-            batchSizeRow.hidden = exportMode !== 'batch-zip';
-        }
+        const sizeEl = document.getElementById('dev1QueueBatchSizeInput');
         if (mhtmlHintRow) {
             mhtmlHintRow.hidden = false;
         }
-        if (sizeEl) {
-            sizeEl.disabled = runIsActive || exportMode !== 'batch-zip';
+        if (sizeEl instanceof HTMLInputElement) {
+            if (document.activeElement !== sizeEl) {
+                sizeEl.value = String(getQueueBatchSize());
+            }
+            sizeEl.disabled = runIsActive;
         }
     }
 
@@ -4880,39 +5478,44 @@
         const openReviewBtn = document.getElementById('dev1OpenReviewBtn');
         const resumeBtn = document.getElementById('dev1ResumeBtn');
         const refreshRunStateBtn = document.getElementById('dev1RefreshRunStateBtn');
-        const exportModeSelect = document.getElementById('dev1ExportModeSelect');
-        const batchSizeSelect = document.getElementById('dev1BatchSizeSelect');
         const reviewSyncBtn = document.getElementById('dev1ReviewSyncBtn');
         const reviewSubmitBtn = document.getElementById('dev1ReviewSubmitBtn');
-        const queueItems = getExecutionQueueItems();
+        const batchPrevBtn = document.getElementById('dev1QueueBatchPrevBtn');
+        const batchNextBtn = document.getElementById('dev1QueueBatchNextBtn');
+        const queueItems = getCurrentQueueBatchItems();
+        const batches = getQueueBatches();
+        const currentBatchIndex = clampQueueBatchIndex();
         const activeQueueItems = getActiveQueueItems(queueItems);
         const queueCount = Array.isArray(activeQueueItems) ? activeQueueItems.length : 0;
-        const bypassReview = shouldBypassReviewForQueue(activeQueueItems);
-        const reviewSatisfied = isReviewSatisfiedForQueue(activeQueueItems);
+        const openStepSatisfied = isReviewOpenStepSatisfied(activeQueueItems);
+        const submitStepSatisfied = isReviewSubmitStepSatisfied(activeQueueItems);
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
         if (runBtn) runBtn.disabled = !!disabled && !runIsActive;
         updateRunPrimaryButton(runIsActive);
         if (cancelBtn) cancelBtn.disabled = !runIsActive;
         if (clearBtn) clearBtn.disabled = !!disabled;
         if (scopeBtn) scopeBtn.disabled = !!disabled;
-        if (openReviewBtn) openReviewBtn.disabled = !!disabled || queueCount <= 0;
+        if (openReviewBtn) {
+            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || state.workflowSteps?.openDone === true);
+            openReviewBtn.disabled = !!disabled || queueCount <= 0;
+        }
         if (resumeBtn) resumeBtn.disabled = !!disabled || !(state.captureRunState && state.captureRunState.resumable);
         if (refreshRunStateBtn) refreshRunStateBtn.disabled = !!disabled;
         if (reviewSyncBtn) reviewSyncBtn.disabled = !!disabled || getReviewWindowId() == null;
+        if (batchPrevBtn instanceof HTMLButtonElement) {
+            batchPrevBtn.disabled = !!disabled || batches.length <= 1 || currentBatchIndex <= 0;
+        }
+        if (batchNextBtn instanceof HTMLButtonElement) {
+            batchNextBtn.disabled = !!disabled || batches.length <= 1 || currentBatchIndex >= batches.length - 1;
+        }
         if (reviewSubmitBtn) {
             reviewSubmitBtn.hidden = false;
-            reviewSubmitBtn.classList.toggle('dev1-step-done', bypassReview || reviewSatisfied || state.workflowSteps?.submitDone === true);
+            reviewSubmitBtn.classList.toggle('dev1-step-done', submitStepSatisfied);
             reviewSubmitBtn.disabled = !!disabled
                 || getReviewWindowId() == null
                 || queueCount <= 0;
         }
-        if (exportModeSelect) exportModeSelect.disabled = !!disabled;
-        if (batchSizeSelect) {
-            batchSizeSelect.disabled = !!disabled
-                || String(state.captureRunState?.status || '').toLowerCase() === 'running'
-                || getSelectedExportMode() !== 'batch-zip';
-        }
-        updateBatchSizeControlState();
+        updateQueueBatchSizeControlState();
     }
 
     function isUserPausedCaptureState(runState) {
@@ -4936,6 +5539,21 @@
         setStatus(`${t(doneTextKey)} (${t('statusOk')}: ${response?.summary?.successCount || 0}, ${t('statusPartial')}: ${response?.summary?.partialCount || 0}, ${t('statusFail')}: ${response?.summary?.failureCount || 0})`, 'success');
     }
 
+    function hasRunDownloadEvidence(response) {
+        const status = String(response?.status || '').trim().toLowerCase();
+        if (status === 'completed') return true;
+        const summary = response?.summary || {};
+        if ((Number(summary.successCount) || 0) > 0 || (Number(summary.partialCount) || 0) > 0) return true;
+        const artifacts = Array.isArray(response?.artifacts) ? response.artifacts : [];
+        return artifacts.some((artifact) => String(artifact?.filePath || '').trim());
+    }
+
+    function clearReviewWorkflowAfterRunIfDone(response) {
+        if (!hasRunDownloadEvidence(response)) return;
+        clearReviewSession();
+        resetWorkflowSteps();
+    }
+
     async function startCaptureTask() {
         if (state.running) return;
         if (isUserPausedCaptureState(state.captureRunState)) {
@@ -4957,7 +5575,7 @@
             if (!response || response.success !== true) {
                 throw new Error(response?.error || t('runPauseFailed'));
             }
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
             rerenderAllDataPanels();
             setStatus(t('runPaused'), 'warning');
         } catch (error) {
@@ -4977,7 +5595,7 @@
             if (!response || response.success !== true) {
                 throw new Error(response?.error || t('runCancelFailed'));
             }
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
             rerenderAllDataPanels();
             setStatus(t('runCancelled'), 'warning');
         } catch (error) {
@@ -4994,7 +5612,7 @@
             return;
         }
 
-        let queueItems = getActiveQueueItems(getExecutionQueueItems());
+        let queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
         if (!Array.isArray(queueItems) || queueItems.length === 0) {
             setStatus(t('runBlockedNoQueue'), 'error');
             return;
@@ -5011,12 +5629,12 @@
         }
 
         if (!isReviewSatisfiedForQueue(queueItems)) {
-            const synced = await syncReviewWindowQueue({ silentStatus: true, fromInterval: false });
+            const synced = await syncReviewWindowQueue({ silentStatus: true });
             if (!synced) {
                 setStatus(t('reviewSyncFailed'), 'warning');
                 return;
             }
-            queueItems = getActiveQueueItems(getExecutionQueueItems());
+            queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
         }
         if (!Array.isArray(queueItems) || queueItems.length === 0) {
             setStatus(t('runBlockedNoQueue'), 'error');
@@ -5049,9 +5667,9 @@
 
         const captureMode = getSelectedCaptureMode();
         const exportMode = getSelectedExportMode();
-        const batchSize = getSelectedBatchSize();
+        const batchSize = getQueueBatchSize();
         markWorkflowStep('runDone', true);
-        stopReviewSyncLoop();
+        cancelReviewSyncTimers();
         clearReviewTrackingState();
         state.running = true;
         setRunControlsDisabled(true);
@@ -5059,7 +5677,7 @@
 
         try {
             const items = queueItems.map((item, index) => ({
-                index,
+                index: getQueueItemDisplayIndex(item, index),
                 title: item.title,
                 url: item.url,
                 folderPath: item.folderPath,
@@ -5067,7 +5685,10 @@
                 subdomain: item.subdomain,
                 actionText: item.actionText,
                 existingTabId: item.existingTabId,
-                useExistingTab: item.useExistingTab === true
+                useExistingTab: item.useExistingTab === true,
+                queueBatchIndex: item.queueBatchIndex,
+                queueBatchPosition: item.queueBatchPosition,
+                queueDisplayIndex: item.queueDisplayIndex
             }));
 
             const response = await sendRuntimeMessage({
@@ -5088,20 +5709,16 @@
                 throw new Error(response?.error || t('runFailed'));
             }
 
-            state.lastRunResult = {
-                summary: response.summary || {},
-                results: Array.isArray(response.results) ? response.results : []
-            };
-
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
+            clearReviewWorkflowAfterRunIfDone(response);
             rerenderAllDataPanels();
             applyRunResponseStatus(response, 'runDone');
         } catch (error) {
             setStatus(`${t('runFailed')}: ${error?.message || ''}`, 'error');
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
         } finally {
             state.running = false;
-            stopReviewSyncLoop();
+            cancelReviewSyncTimers();
             clearReviewTrackingState();
             resetWorkflowSteps();
             setRunControlsDisabled(false);
@@ -5115,9 +5732,9 @@
         const formats = getSelectedFormats();
         const captureMode = getSelectedCaptureMode();
         const exportMode = getSelectedExportMode();
-        const batchSize = getSelectedBatchSize();
+        const batchSize = getQueueBatchSize();
         markWorkflowStep('runDone', true);
-        stopReviewSyncLoop();
+        cancelReviewSyncTimers();
         clearReviewTrackingState();
         state.running = true;
         setRunControlsDisabled(true);
@@ -5142,20 +5759,16 @@
                 throw new Error(response?.error || t('recoveryResumeFailed'));
             }
 
-            state.lastRunResult = {
-                summary: response.summary || {},
-                results: Array.isArray(response.results) ? response.results : []
-            };
-
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
+            clearReviewWorkflowAfterRunIfDone(response);
             rerenderAllDataPanels();
             applyRunResponseStatus(response, 'recoveryResumeDone');
         } catch (error) {
             setStatus(`${t('recoveryResumeFailed')}: ${error?.message || ''}`, 'error');
-            await refreshCaptureRunState({ includeResults: true, silent: true });
+            await refreshCaptureRunState({ silent: true });
         } finally {
             state.running = false;
-            stopReviewSyncLoop();
+            cancelReviewSyncTimers();
             clearReviewTrackingState();
             resetWorkflowSteps();
             setRunControlsDisabled(false);
@@ -5170,6 +5783,8 @@
             setStatus(t('scopeRefreshingCurrentChanges'));
         }
         if (!state.initialized) {
+            loadSavedReviewAutoReviewMs();
+            loadSavedQueueBatchSize();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -5220,6 +5835,8 @@
             setStatus(t('scopeRefreshingAllTabs'));
         }
         if (!state.initialized) {
+            loadSavedReviewAutoReviewMs();
+            loadSavedQueueBatchSize();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -5263,6 +5880,8 @@
 
         setStatus(t('loading'));
         if (!state.initialized) {
+            loadSavedReviewAutoReviewMs();
+            loadSavedQueueBatchSize();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -5359,7 +5978,9 @@
                     <div class="dev1-queue-head">
                         <h3 class="dev1-card-title">
                             ${escapeHtml(t('queueTitle'))}
-                            <span class="dev1-help-dot" tabindex="0" data-tip="${escapeHtml(t('queueHelp'))}">?</span>
+                            <button id="dev1ReviewSettingsBtn" type="button" class="dev1-title-icon-btn" title="${escapeHtml(t('reviewSettingsOpen'))}" aria-label="${escapeHtml(t('reviewSettingsOpen'))}" aria-expanded="false">
+                                <i class="fas fa-cog"></i>
+                            </button>
                         </h3>
                         <div class="dev1-run-controls">
                             <button id="dev1OpenReviewBtn" class="action-btn compact" title="${escapeHtml(t('tipReviewOpenWindow'))}">
@@ -5395,6 +6016,19 @@
                                 <i class="fas fa-ban"></i>
                                 <span style="margin-left: 6px;">${escapeHtml(t('runCancelBtn'))}</span>
                             </button>
+                            <div class="dev1-queue-batch-pager" aria-label="${escapeHtml(t('queueBatchTitle'))}">
+                                <button id="dev1QueueBatchPrevBtn" type="button" class="dev1-queue-batch-page-btn" title="${escapeHtml(t('queueBatchPrevious'))}" aria-label="${escapeHtml(t('queueBatchPrevious'))}">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <span id="dev1QueueBatchPageLabel" class="dev1-queue-batch-page-label">${escapeHtml(t('queueBatchTitle'))} 1 / 1</span>
+                                <button id="dev1QueueBatchNextBtn" type="button" class="dev1-queue-batch-page-btn" title="${escapeHtml(t('queueBatchNext'))}" aria-label="${escapeHtml(t('queueBatchNext'))}">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                            <label class="dev1-queue-batch-size-control" title="${escapeHtml(t('queueBatchSizeTip'))}">
+                                <span>${escapeHtml(t('queueBatchSizeLabel'))}</span>
+                                <input id="dev1QueueBatchSizeInput" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(String(getQueueBatchSize()))}">
+                            </label>
                         </div>
                     </div>
                     <div id="dev1QueueWrap" class="dev1-table-wrap"></div>
@@ -5420,29 +6054,6 @@
                             <span>${escapeHtml(t('mhtmlLoadedHint'))}</span>
                         </div>
                     </div>
-                    <div class="dev1-format-row dev1-field-row">
-                        <label for="dev1ExportModeSelect">${escapeHtml(t('exportModeLabel'))}</label>
-                        <div class="dev1-field-control">
-                            <select id="dev1ExportModeSelect">
-                                <option value="single-file" selected>${escapeHtml(t('exportModeSingleFile'))}</option>
-                                <option value="batch-zip">${escapeHtml(t('exportModeBatchZip'))}</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div id="dev1BatchSizeRow" class="dev1-format-row dev1-field-row dev1-sub-field-row" hidden>
-                        <label for="dev1BatchSizeSelect">${escapeHtml(t('batchSizeLabel'))}</label>
-                        <div class="dev1-field-control">
-                            <select id="dev1BatchSizeSelect" disabled>
-                                <option value="10">10</option>
-                                <option value="20" selected>20</option>
-                            </select>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="dev1-card">
-                    <h3 class="dev1-card-title">${escapeHtml(t('resultTitle'))}</h3>
-                    <div id="dev1ResultWrap" class="dev1-table-wrap"></div>
                 </section>
 
                 <div id="dev1ScopeModal" class="modal dev1-scope-overlay" aria-hidden="true">
@@ -5506,6 +6117,39 @@
                         </div>
                     </div>
                 </div>
+                <div id="dev1ReviewSettingsModal" class="modal dev1-review-settings-overlay" aria-hidden="true">
+                    <div class="modal-content dev1-secondary-modal dev1-review-settings-modal">
+                        <div class="modal-header compact dev1-secondary-modal-header">
+                            <h3>${escapeHtml(t('reviewSettingsTitle'))}</h3>
+                            <button id="dev1ReviewSettingsModalClose" class="modal-close" aria-label="${escapeHtml(getLangKey() === 'en' ? 'Close' : '关闭')}">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body dev1-review-settings-body">
+                            <div class="dev1-review-settings-note">${escapeHtml(t('reviewSettingsIntro'))}</div>
+                            <label class="dev1-review-setting-row" for="dev1ReviewAutoReviewMsInput">
+                                <span class="dev1-review-setting-label">
+                                    <i class="fas fa-stopwatch"></i>
+                                    <span>${escapeHtml(t('reviewAutoReviewMsLabel'))}</span>
+                                </span>
+                                <span class="dev1-review-setting-input-wrap">
+                                    <input id="dev1ReviewAutoReviewMsInput" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(String(getReviewAutoReviewMs()))}">
+                                    <span>ms</span>
+                                </span>
+                            </label>
+                            <div class="dev1-review-settings-hint">${escapeHtml(t('reviewAutoReviewMsHint'))}</div>
+                            <ul class="dev1-review-settings-warning-list">
+                                <li id="dev1ReviewAutoReviewHelpText">${escapeHtml(getReviewAutoReviewHelpText())}</li>
+                                <li>${escapeHtml(t('queueHelpSubmitWarning'))}</li>
+                                <li>${escapeHtml(t('queueHelpWarning'))}</li>
+                            </ul>
+                        </div>
+                        <div class="modal-footer dev1-secondary-modal-footer">
+                            <button id="dev1ReviewSettingsCancelBtn" type="button" class="modal-btn">${escapeHtml(t('reviewSettingsCancel'))}</button>
+                            <button id="dev1ReviewSettingsSaveBtn" type="button" class="modal-btn primary">${escapeHtml(t('reviewSettingsSave'))}</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -5514,11 +6158,15 @@
         const root = getActiveRoot();
         if (!root) return;
 
+        if (!state.initialized) {
+            loadSavedReviewAutoReviewMs();
+        }
         renderLayout(root);
         bindRootEvents(root);
         renderScopePanelVisibility();
-        updateBatchSizeControlState();
-        await refreshCaptureRunState({ includeResults: true, silent: true });
+        renderReviewSettingsVisibility();
+        updateQueueBatchSizeControlState();
+        await refreshCaptureRunState({ silent: true });
 
         const shouldForceRefresh = options && options.forceRefresh === true;
         if (shouldForceRefresh || state.sourceItems.length === 0) {
@@ -5533,10 +6181,13 @@
         }
 
         if (getReviewWindowId() != null) {
-            ensureReviewSyncLoop();
-            await syncReviewWindowQueue({ silentStatus: true, fromInterval: false });
+            ensureReviewEventSyncState();
+            const synced = await syncReviewWindowQueue({ silentStatus: true });
+            if (synced) {
+                scheduleReviewAutoReviewCheck(getReviewWindowId());
+            }
         } else {
-            stopReviewSyncLoop();
+            cancelReviewSyncTimers();
         }
         renderReviewWorkflowPanel();
     }
@@ -5545,6 +6196,20 @@
         render: (options = {}) => renderDev1View(options),
         refresh: () => refreshSource({ force: true })
     };
+
+    if (runtimeApi?.runtime?.onMessage && typeof runtimeApi.runtime.onMessage.addListener === 'function') {
+        runtimeApi.runtime.onMessage.addListener((message) => {
+            handleReviewWindowChangedEvent(message);
+        });
+    }
+
+    if (runtimeApi?.storage?.onChanged && typeof runtimeApi.storage.onChanged.addListener === 'function') {
+        runtimeApi.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== 'local') return;
+            const nextEvent = changes?.[DEV1_REVIEW_WINDOW_EVENT_KEY]?.newValue;
+            handleReviewWindowChangedEvent(nextEvent);
+        });
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
         if (getCurrentViewSafe() === DEV1_VIEW_KEY) {

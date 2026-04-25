@@ -184,6 +184,16 @@ function formatSyncTimeForFileName(syncTime) {
     return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
 }
 
+function formatWebSnapshotHourFolderName(syncTime) {
+    const date = syncTime ? new Date(syncTime) : new Date();
+    const d = Number.isNaN(date.getTime()) ? new Date() : date;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    return `${yyyy}${mm}${dd}_${hh}`;
+}
+
 function computeSyncFingerprintByTime(syncTime) {
     try {
         const input = String(syncTime || '');
@@ -4006,7 +4016,13 @@ const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';
 const DEV1_CAPTURE_RUN_STATE_VERSION = 1;
 const DEV1_CAPTURE_MAX_RETRY_LIMIT = 2;
 const DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS = 120000;
-const DEV1_BATCH_SIZE_DEFAULT = 20;
+const DEV1_BATCH_SIZE_DEFAULT = 10;
+const DEV1_BATCH_SIZE_MAX = 50;
+const DEV1_REVIEW_OPEN_BATCH_SIZE_DEFAULT = 10;
+const DEV1_REVIEW_OPEN_BATCH_SIZE_MAX = 50;
+const DEV1_REVIEW_WINDOW_IDS_KEY = 'dev1ReviewWindowIdsV1';
+const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
+const DEV1_REVIEW_WINDOW_IDS = new Set();
 const DEV1_CAPTURE_PREWARM_TAB_LIMIT = 3;
 const DEV1_RUN_CONTROL_NONE = '';
 const DEV1_RUN_CONTROL_PAUSE = 'pause_requested';
@@ -4032,12 +4048,18 @@ function dev1NormalizeExportMode(value = '') {
 }
 
 function dev1NormalizeBatchSize(value) {
+    if (value == null || String(value).trim() === '') return DEV1_BATCH_SIZE_DEFAULT;
     const size = Number(value);
     if (!Number.isFinite(size)) return DEV1_BATCH_SIZE_DEFAULT;
     const normalized = Math.floor(size);
-    if (normalized === 10) return 10;
-    if (normalized === 20) return 20;
-    return DEV1_BATCH_SIZE_DEFAULT;
+    return Math.max(1, Math.min(DEV1_BATCH_SIZE_MAX, normalized));
+}
+
+function dev1NormalizeReviewOpenBatchSize(value) {
+    if (value == null || String(value).trim() === '') return DEV1_REVIEW_OPEN_BATCH_SIZE_DEFAULT;
+    const size = Number(value);
+    if (!Number.isFinite(size)) return DEV1_REVIEW_OPEN_BATCH_SIZE_DEFAULT;
+    return Math.max(1, Math.min(DEV1_REVIEW_OPEN_BATCH_SIZE_MAX, Math.floor(size)));
 }
 
 function dev1NormalizeRunSource(value = '', fallback = 'capture_urls') {
@@ -4108,6 +4130,9 @@ function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
     const normalizedExistingTabId = dev1NormalizeTabId(rawRow?.existingTabId ?? fallbackRow?.existingTabId);
     const rawBatchId = String(rawRow?.batchId || fallbackRow?.batchId || '').trim();
     const rawBatchSequence = Number(rawRow?.batchSequence ?? fallbackRow?.batchSequence);
+    const queueBatchIndex = dev1NormalizeQueueMetadataIndex(rawRow?.queueBatchIndex ?? fallbackRow?.queueBatchIndex);
+    const queueBatchPosition = dev1NormalizeQueueMetadataIndex(rawRow?.queueBatchPosition ?? fallbackRow?.queueBatchPosition);
+    const queueDisplayIndex = dev1NormalizeQueueMetadataIndex(rawRow?.queueDisplayIndex ?? fallbackRow?.queueDisplayIndex);
     const next = {
         index: Number.isFinite(Number(rawRow?.index)) ? Math.max(0, Math.floor(Number(rawRow.index))) : (Number.isFinite(Number(fallbackRow?.index)) ? Math.max(0, Math.floor(Number(fallbackRow.index))) : 0),
         url: String(rawRow?.url || fallbackRow?.url || '').trim(),
@@ -4118,6 +4143,9 @@ function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
         actionText: String(rawRow?.actionText || fallbackRow?.actionText || '').trim(),
         existingTabId: normalizedExistingTabId,
         useExistingTab: (rawRow?.useExistingTab === true || fallbackRow?.useExistingTab === true) && normalizedExistingTabId != null,
+        queueBatchIndex,
+        queueBatchPosition,
+        queueDisplayIndex,
         batchId: rawBatchId,
         batchSequence: Number.isFinite(rawBatchSequence) ? Math.max(1, Math.floor(rawBatchSequence)) : null,
         status: String(rawRow?.status || fallbackRow?.status || 'pending').trim().toLowerCase(),
@@ -4596,7 +4624,7 @@ function dev1BuildAllWindowTabsSourceItems(tabs = []) {
         if (tabId == null || seenTabIds.has(tabId)) return;
         seenTabIds.add(tabId);
 
-        const urlText = String(tab?.url || '').trim();
+        const urlText = String(tab?.url || tab?.pendingUrl || '').trim();
         if (!urlText) return;
 
         let parsed = null;
@@ -4638,8 +4666,82 @@ function dev1BuildAllWindowTabsSourceItems(tabs = []) {
     return items;
 }
 
-async function dev1OpenReviewWindowForItems(rawItems = []) {
-    const items = dev1NormalizeCaptureItems(rawItems);
+function dev1TrackReviewWindowId(windowId, tracked = true) {
+    const reviewWindowId = dev1NormalizeWindowId(windowId);
+    if (reviewWindowId == null) return;
+    if (tracked) {
+        DEV1_REVIEW_WINDOW_IDS.add(reviewWindowId);
+    } else {
+        DEV1_REVIEW_WINDOW_IDS.delete(reviewWindowId);
+    }
+    dev1PersistTrackedReviewWindowIds().catch(() => { });
+}
+
+async function dev1LoadTrackedReviewWindowIds() {
+    if (!browserAPI?.storage?.session) {
+        return new Set(DEV1_REVIEW_WINDOW_IDS);
+    }
+    try {
+        const store = await browserAPI.storage.session.get([DEV1_REVIEW_WINDOW_IDS_KEY]);
+        const rawIds = Array.isArray(store?.[DEV1_REVIEW_WINDOW_IDS_KEY])
+            ? store[DEV1_REVIEW_WINDOW_IDS_KEY]
+            : [];
+        rawIds
+            .map(id => dev1NormalizeWindowId(id))
+            .filter(id => id != null)
+            .forEach(id => DEV1_REVIEW_WINDOW_IDS.add(id));
+    } catch (_) { }
+    return new Set(DEV1_REVIEW_WINDOW_IDS);
+}
+
+async function dev1PersistTrackedReviewWindowIds() {
+    if (!browserAPI?.storage?.session) return;
+    try {
+        await browserAPI.storage.session.set({
+            [DEV1_REVIEW_WINDOW_IDS_KEY]: Array.from(DEV1_REVIEW_WINDOW_IDS)
+        });
+    } catch (_) { }
+}
+
+async function dev1IsTrackedReviewWindowId(windowId) {
+    const reviewWindowId = dev1NormalizeWindowId(windowId);
+    if (reviewWindowId == null) return false;
+    if (DEV1_REVIEW_WINDOW_IDS.has(reviewWindowId)) return true;
+    const ids = await dev1LoadTrackedReviewWindowIds();
+    return ids.has(reviewWindowId);
+}
+
+async function dev1BroadcastReviewWindowChanged(windowId, details = {}) {
+    const reviewWindowId = dev1NormalizeWindowId(windowId);
+    if (reviewWindowId == null || !(await dev1IsTrackedReviewWindowId(reviewWindowId))) return;
+    const payload = {
+        action: 'dev1ReviewWindowChanged',
+        windowId: reviewWindowId,
+        tabId: dev1NormalizeTabId(details?.tabId),
+        reason: String(details?.reason || 'changed').trim() || 'changed',
+        isWindowClosing: details?.isWindowClosing === true,
+        at: Date.now()
+    };
+    try {
+        const maybePromise = browserAPI.runtime.sendMessage(payload);
+        if (maybePromise && typeof maybePromise.catch === 'function') {
+            maybePromise.catch(() => { });
+        }
+    } catch (_) { }
+    try {
+        if (browserAPI?.storage?.local && (
+            payload.isWindowClosing === true
+            || payload.reason === 'tab-removed'
+            || payload.reason === 'window-removed'
+        )) {
+            await browserAPI.storage.local.set({ [DEV1_REVIEW_WINDOW_EVENT_KEY]: payload });
+        }
+    } catch (_) { }
+}
+
+async function dev1OpenReviewWindowForItems(rawItems = [], options = {}) {
+    const maxTabs = dev1NormalizeReviewOpenBatchSize(options?.maxTabs ?? options?.batchSize);
+    const items = dev1NormalizeCaptureItems(rawItems).slice(0, maxTabs);
     if (!items.length) {
         throw new Error('No valid URL items to open for review');
     }
@@ -4671,37 +4773,50 @@ async function dev1OpenReviewWindowForItems(rawItems = []) {
     if (reviewWindowId == null) {
         throw new Error('Failed to create review window');
     }
+    dev1TrackReviewWindowId(reviewWindowId, true);
 
     const firstTabId = dev1NormalizeTabId(reviewWindow?.tabs?.[0]?.id);
     const preparedItems = [];
 
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        let tabId = null;
+    try {
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            let tabId = null;
 
-        if (i === 0 && firstTabId != null) {
-            tabId = firstTabId;
-        } else {
-            const createdTab = await browserAPI.tabs.create({
-                windowId: reviewWindowId,
-                url: item.url,
-                active: false
+            if (i === 0 && firstTabId != null) {
+                tabId = firstTabId;
+            } else {
+                const createdTab = await browserAPI.tabs.create({
+                    windowId: reviewWindowId,
+                    url: item.url,
+                    active: false
+                });
+                tabId = dev1NormalizeTabId(createdTab?.id);
+            }
+
+            if (tabId == null) continue;
+            preparedItems.push({
+                ...item,
+                existingTabId: tabId,
+                useExistingTab: true,
+                reviewWindowId,
+                reviewWindowActive: i === 0,
+                reviewLastAccessed: Date.now()
             });
-            tabId = dev1NormalizeTabId(createdTab?.id);
         }
-
-        if (tabId == null) continue;
-        preparedItems.push({
-            ...item,
-            existingTabId: tabId,
-            useExistingTab: true,
-            reviewWindowId,
-            reviewWindowActive: i === 0,
-            reviewLastAccessed: Date.now()
-        });
+    } catch (error) {
+        try {
+            await browserAPI.windows.remove(reviewWindowId);
+        } catch (_) { }
+        dev1TrackReviewWindowId(reviewWindowId, false);
+        throw error;
     }
 
     if (!preparedItems.length) {
+        try {
+            await browserAPI.windows.remove(reviewWindowId);
+        } catch (_) { }
+        dev1TrackReviewWindowId(reviewWindowId, false);
         throw new Error('No review tab could be opened');
     }
 
@@ -4852,11 +4967,68 @@ async function dev1CloseReviewWindow(windowId) {
     try {
         await browserAPI.windows.remove(reviewWindowId);
     } catch (_) { }
+    dev1TrackReviewWindowId(reviewWindowId, false);
 
     return {
         success: true,
         removedWindowId: reviewWindowId
     };
+}
+
+function dev1GetReviewTabUpdateReason(changeInfo = {}) {
+    if (!changeInfo || typeof changeInfo !== 'object') return '';
+    if (Object.prototype.hasOwnProperty.call(changeInfo, 'url')) return 'tab-url-updated';
+    if (Object.prototype.hasOwnProperty.call(changeInfo, 'title')) return 'tab-title-updated';
+    if (changeInfo.status === 'complete') return 'tab-complete';
+    return '';
+}
+
+if (browserAPI?.tabs?.onActivated && typeof browserAPI.tabs.onActivated.addListener === 'function') {
+    browserAPI.tabs.onActivated.addListener((activeInfo = {}) => {
+        const reviewWindowId = dev1NormalizeWindowId(activeInfo?.windowId);
+        if (reviewWindowId == null) return;
+        dev1BroadcastReviewWindowChanged(reviewWindowId, {
+            tabId: activeInfo?.tabId,
+            reason: 'tab-activated'
+        });
+    });
+}
+
+if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener === 'function') {
+    browserAPI.tabs.onUpdated.addListener((tabId, changeInfo = {}, tab = {}) => {
+        const reason = dev1GetReviewTabUpdateReason(changeInfo);
+        if (!reason) return;
+        const reviewWindowId = dev1NormalizeWindowId(tab?.windowId);
+        if (reviewWindowId == null) return;
+        dev1BroadcastReviewWindowChanged(reviewWindowId, {
+            tabId,
+            reason
+        });
+    });
+}
+
+if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener === 'function') {
+    browserAPI.tabs.onRemoved.addListener((tabId, removeInfo = {}) => {
+        const reviewWindowId = dev1NormalizeWindowId(removeInfo?.windowId);
+        if (reviewWindowId == null) return;
+        dev1BroadcastReviewWindowChanged(reviewWindowId, {
+            tabId,
+            reason: 'tab-removed',
+            isWindowClosing: removeInfo?.isWindowClosing === true
+        });
+    });
+}
+
+if (browserAPI?.windows?.onRemoved && typeof browserAPI.windows.onRemoved.addListener === 'function') {
+    browserAPI.windows.onRemoved.addListener(async (windowId) => {
+        const reviewWindowId = dev1NormalizeWindowId(windowId);
+        if (reviewWindowId == null) return;
+        await dev1BroadcastReviewWindowChanged(reviewWindowId, {
+            reason: 'window-removed',
+            isWindowClosing: true
+        });
+        dev1TrackReviewWindowId(reviewWindowId, false);
+    });
 }
 
 function dev1NormalizeActiveTabCaptureOptions(options = {}) {
@@ -5205,6 +5377,13 @@ function dev1SanitizeFilePart(value, fallback = 'item', maxLen = 64) {
     return text || String(fallback || 'item');
 }
 
+function dev1NormalizeQueueMetadataIndex(value) {
+    if (value == null || String(value).trim() === '') return null;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return null;
+    return Math.floor(number);
+}
+
 function dev1NormalizeCaptureItems(rawItems = []) {
     if (!Array.isArray(rawItems)) return [];
     const results = [];
@@ -5227,7 +5406,7 @@ function dev1NormalizeCaptureItems(rawItems = []) {
         seen.add(normalizedUrl);
 
         results.push({
-            index,
+            index: dev1NormalizeQueueMetadataIndex(raw?.index) ?? index,
             url: normalizedUrl,
             title: String(raw?.title || '').trim(),
             folderPath: String(raw?.folderPath || '').trim(),
@@ -5235,7 +5414,10 @@ function dev1NormalizeCaptureItems(rawItems = []) {
             subdomain: String(raw?.subdomain || '').trim(),
             actionText: String(raw?.actionText || '').trim(),
             existingTabId: dev1NormalizeTabId(raw?.existingTabId),
-            useExistingTab: raw?.useExistingTab === true && dev1NormalizeTabId(raw?.existingTabId) != null
+            useExistingTab: raw?.useExistingTab === true && dev1NormalizeTabId(raw?.existingTabId) != null,
+            queueBatchIndex: dev1NormalizeQueueMetadataIndex(raw?.queueBatchIndex),
+            queueBatchPosition: dev1NormalizeQueueMetadataIndex(raw?.queueBatchPosition),
+            queueDisplayIndex: dev1NormalizeQueueMetadataIndex(raw?.queueDisplayIndex)
         });
     });
 
@@ -5538,6 +5720,26 @@ function dev1GetMaxBatchSequence(runState) {
     }, 0);
 }
 
+function dev1GetQueueBatchSequence(row = {}) {
+    const batchIndex = dev1NormalizeQueueMetadataIndex(row?.queueBatchIndex);
+    return batchIndex == null ? null : batchIndex + 1;
+}
+
+function dev1GetBatchSequenceFromRefs(runState, refs = []) {
+    if (!runState || !Array.isArray(runState.items) || !Array.isArray(refs)) return null;
+    const sequences = [];
+    refs.forEach((ref) => {
+        const rowIndex = Number(ref?.rowIndex);
+        if (!Number.isFinite(rowIndex) || rowIndex < 0) return;
+        const row = runState.items[Math.floor(rowIndex)];
+        const sequence = dev1GetQueueBatchSequence(row);
+        if (sequence != null) sequences.push(sequence);
+    });
+
+    const uniqueSequences = Array.from(new Set(sequences));
+    return uniqueSequences.length === 1 ? uniqueSequences[0] : null;
+}
+
 function dev1GetIncompleteBatchIds(runState) {
     if (!runState || !Array.isArray(runState.batches)) return new Set();
     return new Set(
@@ -5580,7 +5782,7 @@ async function runDev1CaptureAndExport(message = {}) {
         const exportRootFolder = getExportRootFolderByLang(lang);
         const snapshotFolder = getWebSnapshotExportFolderByLang(lang);
         const buildTargetFolder = () => {
-            const runToken = formatSyncTimeForFileName(new Date().toISOString());
+            const runToken = formatWebSnapshotHourFolderName(new Date().toISOString());
             return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
         };
 
@@ -5639,7 +5841,7 @@ async function runDev1CaptureAndExport(message = {}) {
                     runQueue.push({
                         rowIndex,
                         item: {
-                            index: rowIndex,
+                            index: normalizedRow.index,
                             url: normalizedRow.url,
                             title: normalizedRow.title,
                             folderPath: normalizedRow.folderPath,
@@ -5647,7 +5849,10 @@ async function runDev1CaptureAndExport(message = {}) {
                             subdomain: normalizedRow.subdomain,
                             actionText: normalizedRow.actionText,
                             existingTabId: normalizedRow.existingTabId,
-                            useExistingTab: normalizedRow.useExistingTab === true
+                            useExistingTab: normalizedRow.useExistingTab === true,
+                            queueBatchIndex: normalizedRow.queueBatchIndex,
+                            queueBatchPosition: normalizedRow.queueBatchPosition,
+                            queueDisplayIndex: normalizedRow.queueDisplayIndex
                         }
                     });
                 }
@@ -5684,7 +5889,7 @@ async function runDev1CaptureAndExport(message = {}) {
                 runQueue.push({
                     rowIndex,
                     item: {
-                        index: rowIndex,
+                        index: row.index,
                         url: row.url,
                         title: row.title,
                         folderPath: row.folderPath,
@@ -5692,7 +5897,10 @@ async function runDev1CaptureAndExport(message = {}) {
                         subdomain: row.subdomain,
                         actionText: row.actionText,
                         existingTabId: row.existingTabId,
-                        useExistingTab: row.useExistingTab === true
+                        useExistingTab: row.useExistingTab === true,
+                        queueBatchIndex: row.queueBatchIndex,
+                        queueBatchPosition: row.queueBatchPosition,
+                        queueDisplayIndex: row.queueDisplayIndex
                     }
                 });
             });
@@ -5709,6 +5917,12 @@ async function runDev1CaptureAndExport(message = {}) {
         await dev1SaveCaptureRunState(runState);
         let batchSlotCount = 0;
         let batchSequence = dev1GetMaxBatchSequence(runState);
+        const usedBatchSequences = new Set(
+            (Array.isArray(runState.batches) ? runState.batches : [])
+                .map(batch => Number(batch?.sequence))
+                .filter(sequence => Number.isFinite(sequence) && sequence >= 1)
+                .map(sequence => Math.floor(sequence))
+        );
         let batchEntries = [];
         let batchRowRefs = [];
         let requestedRunControl = DEV1_RUN_CONTROL_NONE;
@@ -5727,18 +5941,30 @@ async function runDev1CaptureAndExport(message = {}) {
                 return;
             }
 
-            batchSequence += 1;
-            const batchId = dev1BuildBatchId(batchSequence);
-            const zipFilePath = dev1BuildBatchZipFilePath(runState.targetFolder, batchSequence);
             const rowIndexes = Array.from(new Set(
                 pendingRefs
                     .map((ref) => Number(ref?.rowIndex))
                     .filter((rowIndex) => Number.isFinite(rowIndex) && rowIndex >= 0)
                     .map((rowIndex) => Math.floor(rowIndex))
             ));
+            let resolvedBatchSequence = dev1GetBatchSequenceFromRefs(runState, pendingRefs);
+            if (resolvedBatchSequence == null) {
+                do {
+                    batchSequence += 1;
+                } while (usedBatchSequences.has(batchSequence));
+                resolvedBatchSequence = batchSequence;
+            } else {
+                while (usedBatchSequences.has(resolvedBatchSequence)) {
+                    resolvedBatchSequence += 1;
+                }
+                batchSequence = Math.max(batchSequence, resolvedBatchSequence);
+            }
+            usedBatchSequences.add(resolvedBatchSequence);
+            const batchId = dev1BuildBatchId(resolvedBatchSequence);
+            const zipFilePath = dev1BuildBatchZipFilePath(runState.targetFolder, resolvedBatchSequence);
             const batchRecord = dev1NormalizeRunBatch({
                 batchId,
-                sequence: batchSequence,
+                sequence: resolvedBatchSequence,
                 status: 'running',
                 rowIndexes,
                 entryCount: pendingEntries.length,
@@ -5747,7 +5973,7 @@ async function runDev1CaptureAndExport(message = {}) {
                 filePath: '',
                 artifactId: '',
                 error: ''
-            }, { sequence: batchSequence });
+            }, { sequence: resolvedBatchSequence });
             runState.batches.push(batchRecord);
             try {
                 const zipBlob = __zipStore(pendingEntries);
@@ -5779,7 +6005,7 @@ async function runDev1CaptureAndExport(message = {}) {
                         .map(v => String(v || '').trim())
                         .filter(Boolean)));
                     row.batchId = batchId;
-                    row.batchSequence = batchSequence;
+                    row.batchSequence = resolvedBatchSequence;
                     row.status = row.errors.length > 0 ? 'partial' : 'success';
                     row.finishedAt = finishedAt;
                     runState.items[rowIndex] = row;
@@ -5809,7 +6035,7 @@ async function runDev1CaptureAndExport(message = {}) {
                     const row = dev1NormalizeResultRow(runState.items[rowIndex], { index: rowIndex });
                     row.errors = [...(Array.isArray(row.errors) ? row.errors : []), `ZIP: ${messageText}`];
                     row.batchId = batchId;
-                    row.batchSequence = batchSequence;
+                    row.batchSequence = resolvedBatchSequence;
                     row.status = 'error';
                     row.finishedAt = finishedAt;
                     runState.items[rowIndex] = row;
@@ -5996,7 +6222,10 @@ async function runDev1CaptureAndExport(message = {}) {
                         baseRow.errors.push(`Review: final host changed (${requestedHost} -> ${finalHost})`);
                     }
 
-                    const leafBase = dev1BuildCaptureLeafName(rowIndex, baseRow, effectiveUrl, effectiveTitle);
+                    const leafIndex = Number.isFinite(Number(baseRow.index))
+                        ? Math.max(0, Math.floor(Number(baseRow.index)))
+                        : rowIndex;
+                    const leafBase = dev1BuildCaptureLeafName(leafIndex, baseRow, effectiveUrl, effectiveTitle);
                     const rowBatchArtifacts = [];
 
                     if (formats.mhtml) {
@@ -8358,7 +8587,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'dev1OpenReviewWindowForItems') {
             (async () => {
                 try {
-                    const result = await dev1OpenReviewWindowForItems(message?.items);
+                    const result = await dev1OpenReviewWindowForItems(message?.items, {
+                        maxTabs: message?.maxTabs ?? message?.batchSize
+                    });
                     sendResponse(result);
                 } catch (error) {
                     sendResponse({

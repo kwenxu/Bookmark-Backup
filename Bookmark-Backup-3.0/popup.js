@@ -145,8 +145,95 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     const safetyTooltip = document.querySelector('#backupHistorySafetyCheckpointBtn .tooltip');
     if (safetyTooltip) safetyTooltip.textContent = isEn ? 'Temporary Safety Snapshot' : '临时安全快照';
 
+    const webSnapshotTooltip = document.querySelector('#backupHistoryWebSnapshotBtn .tooltip');
+    if (webSnapshotTooltip) webSnapshotTooltip.textContent = isEn ? 'Web Snapshot' : '网页快照';
+
     const restoreSafetyTooltip = document.querySelector('#restoreSafetyCheckpointEntryBtn .tooltip');
     if (restoreSafetyTooltip) restoreSafetyTooltip.textContent = isEn ? 'Safety Snapshot' : '安全快照';
+}
+
+function isHistoryHtmlTabForView(rawUrl, view) {
+    try {
+        const url = new URL(String(rawUrl || ''));
+        const target = new URL(chrome.runtime.getURL('history_html/history.html'));
+        return url.origin === target.origin
+            && url.pathname === target.pathname
+            && url.searchParams.get('view') === view;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function queryTabsSafe(queryInfo = {}) {
+    if (typeof chrome === 'undefined' || !chrome.tabs || typeof chrome.tabs.query !== 'function') {
+        return [];
+    }
+    return new Promise((resolve) => {
+        try {
+            chrome.tabs.query(queryInfo, (tabs) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[popup] 查询标签页失败:', chrome.runtime.lastError.message);
+                    resolve([]);
+                    return;
+                }
+                resolve(Array.isArray(tabs) ? tabs : []);
+            });
+        } catch (error) {
+            console.warn('[popup] 查询标签页异常:', error);
+            resolve([]);
+        }
+    });
+}
+
+async function focusTabAndWindowSafe(tab) {
+    if (!tab || !Number.isInteger(tab.id)) return false;
+    let tabActivated = false;
+
+    if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.update === 'function') {
+        await new Promise((resolve) => {
+            try {
+                chrome.tabs.update(tab.id, { active: true }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('[popup] 激活标签页失败:', chrome.runtime.lastError.message);
+                    } else {
+                        tabActivated = true;
+                    }
+                    resolve();
+                });
+            } catch (error) {
+                console.warn('[popup] 激活标签页异常:', error);
+                resolve();
+            }
+        });
+    }
+
+    if (Number.isInteger(tab.windowId) && typeof chrome !== 'undefined' && chrome.windows && typeof chrome.windows.update === 'function') {
+        await new Promise((resolve) => {
+            try {
+                chrome.windows.update(tab.windowId, { focused: true }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('[popup] 聚焦窗口失败:', chrome.runtime.lastError.message);
+                    }
+                    resolve();
+                });
+            } catch (error) {
+                console.warn('[popup] 聚焦窗口异常:', error);
+                resolve();
+            }
+        });
+    }
+
+    return tabActivated;
+}
+
+async function openOrFocusHistoryHtmlView(view) {
+    const targetUrl = chrome.runtime.getURL(`history_html/history.html?view=${encodeURIComponent(view)}`);
+    const tabs = await queryTabsSafe({});
+    const existingTab = tabs.find(tab => isHistoryHtmlTabForView(tab && tab.url, view));
+    if (existingTab && await focusTabAndWindowSafe(existingTab)) {
+        return existingTab;
+    }
+    return safeCreateTab({ url: targetUrl });
 }
 
 function normalizeBackupHistorySlimmingSettings(rawSettings) {
@@ -229,6 +316,12 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
     if (safetyBtn) {
         safetyBtn.setAttribute('aria-label', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
         safetyBtn.setAttribute('title', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
+    }
+
+    const webSnapshotBtn = document.getElementById('backupHistoryWebSnapshotBtn');
+    if (webSnapshotBtn) {
+        webSnapshotBtn.setAttribute('aria-label', isEn ? 'Web Snapshot' : '网页快照');
+        webSnapshotBtn.setAttribute('title', isEn ? 'Web Snapshot' : '网页快照');
     }
 
     const restoreSafetyText = document.getElementById('restoreSafetyCheckpointEntryText');
@@ -9173,6 +9266,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         backupHistorySafetyCheckpointTooltip.textContent = lang === 'en' ? 'Temporary Safety Snapshot' : '临时安全快照';
     }
 
+    const backupHistoryWebSnapshotTooltip = document.querySelector('#backupHistoryWebSnapshotBtn .tooltip');
+    if (backupHistoryWebSnapshotTooltip) {
+        backupHistoryWebSnapshotTooltip.textContent = lang === 'en' ? 'Web Snapshot' : '网页快照';
+    }
+
     const restoreSafetyCheckpointEntryText = document.getElementById('restoreSafetyCheckpointEntryText');
     if (restoreSafetyCheckpointEntryText) {
         restoreSafetyCheckpointEntryText.textContent = lang === 'en'
@@ -9882,7 +9980,7 @@ function initializeBackupSettings() {
 
     chrome.storage.local.get(['overwriteMode'], function (result) {
         const overwriteModeRaw = String(result.overwriteMode || '').trim().toLowerCase();
-        const overwriteMode = overwriteModeRaw === 'overwrite' ? 'overwrite' : 'versioned';
+        const overwriteMode = overwriteModeRaw === 'versioned' ? 'versioned' : 'overwrite';
 
         if (overwriteMode === 'versioned') {
             overwriteVersioned.checked = true;
@@ -19894,7 +19992,10 @@ document.addEventListener('DOMContentLoaded', function () {
         saveText: lang === 'en' ? 'Save' : '保存',
         noteText: lang === 'en'
             ? 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
-            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。'
+            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
+        strategyNoteText: lang === 'en'
+            ? 'Main UI backups for Local, Cloud 1, and Cloud 2 are saved as Versioned or Overwrite. This setting only controls detail data kept in the extension HTML backup history.'
+            : '主 UI 的本地、云端1、云端2备份会按版本化 / 覆盖保存；这里控制的是插件内 HTML 备份历史的详情数据。'
     });
 
     const openBackupHistorySlimmingSettingsDialog = async () => {
@@ -19910,7 +20011,8 @@ document.addEventListener('DOMContentLoaded', function () {
             contentHtml: `
                 <div class="backup-history-dialog-stack">
                     <div class="backup-history-secondary-note">
-                        ${escapeHtml(labels.noteText)}
+                        <div>${escapeHtml(labels.noteText)}</div>
+                        <div class="backup-history-slimming-strategy-note">${escapeHtml(labels.strategyNoteText)}</div>
                     </div>
                     <div class="backup-history-choice-grid">
                         <label class="backup-history-choice-card">
@@ -20311,6 +20413,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportHistoryBtn = document.getElementById('exportHistoryBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
+    const backupHistoryWebSnapshotBtn = document.getElementById('backupHistoryWebSnapshotBtn');
 
     const openHistoryViewerByAction = async (action = '') => {
         const suffix = action ? `&action=${encodeURIComponent(action)}` : '';
@@ -20349,6 +20452,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         bindHistoryActionButtonTooltip(openHistoryViewerBtn);
         openHistoryViewerBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (backupHistoryWebSnapshotBtn && !backupHistoryWebSnapshotBtn.hasAttribute('data-listener-attached')) {
+        backupHistoryWebSnapshotBtn.addEventListener('click', async function () {
+            await openOrFocusHistoryHtmlView('dev-1');
+        });
+        bindHistoryActionButtonTooltip(backupHistoryWebSnapshotBtn);
+        backupHistoryWebSnapshotBtn.setAttribute('data-listener-attached', 'true');
     }
 
     // 添加状态卡片点击事件 - 直接跳转到当前变化视图

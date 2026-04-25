@@ -460,6 +460,17 @@ let currentView = (() => {
     }
 })();
 
+function syncHistoryViewParam(view) {
+    try {
+        if (!ALLOWED_VIEWS.includes(view)) return;
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('view', view);
+        if (nextUrl.toString() !== window.location.href) {
+            window.history.replaceState({}, '', nextUrl.toString());
+        }
+    } catch (_) { }
+}
+
 // 用于避免重复在一次备份后多次重置（基于最近一条备份记录的指纹或时间）
 window.__lastResetFingerprint = window.__lastResetFingerprint || null;
 
@@ -2601,6 +2612,10 @@ const i18n = {
         'zh_CN': '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
         'en': 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
     },
+    historySlimmingSettingsStrategyDescription: {
+        'zh_CN': '主 UI 的本地、云端1、云端2备份会按版本化 / 覆盖保存；这里控制的是插件内 HTML 备份历史的详情数据。',
+        'en': 'Main UI backups for Local, Cloud 1, and Cloud 2 are saved as Versioned or Overwrite. This setting only controls detail data kept in the extension HTML backup history.'
+    },
     historySlimmingSaveSnapshotData: {
         'zh_CN': '保存快照数据',
         'en': 'Save snapshot data'
@@ -3220,14 +3235,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 优先级：URL参数 > localStorage > 默认值
     if (viewParam && ALLOWED_VIEWS.includes(viewParam)) {
         currentView = viewParam;
-        
-
-        // 【关键】应用 URL 参数后，立即从 URL 中移除 view 参数
-        // 这样刷新页面时就会使用 localStorage，实现持久化
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete('view');
-        window.history.replaceState({}, '', newUrl.toString());
-        
     } else {
         const lastView = localStorage.getItem('lastActiveView');
         if (lastView && ALLOWED_VIEWS.includes(lastView)) {
@@ -3238,6 +3245,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             
         }
     }
+
+    syncHistoryViewParam(currentView);
 
     // 立即应用视图状态到DOM
     
@@ -3715,7 +3724,7 @@ function applyLanguage() {
     const historySlimmingSettingsModalTitle = document.getElementById('historySlimmingSettingsModalTitle');
     if (historySlimmingSettingsModalTitle) historySlimmingSettingsModalTitle.textContent = i18n.historySlimmingSettingsTitle[currentLang];
     const historySlimmingSettingsDesc = document.getElementById('historySlimmingSettingsDesc');
-    if (historySlimmingSettingsDesc) historySlimmingSettingsDesc.textContent = i18n.historySlimmingSettingsDescription[currentLang];
+    if (historySlimmingSettingsDesc) historySlimmingSettingsDesc.innerHTML = buildHistorySlimmingSettingsDescriptionHtml(currentLang);
     const historySlimmingSaveSnapshotDataText = document.getElementById('historySlimmingSaveSnapshotDataText');
     if (historySlimmingSaveSnapshotDataText) historySlimmingSaveSnapshotDataText.textContent = i18n.historySlimmingSaveSnapshotData[currentLang];
     const historySlimmingSaveChangeDataText = document.getElementById('historySlimmingSaveChangeDataText');
@@ -6440,6 +6449,7 @@ function switchView(view) {
 
     // 更新全局变量
     currentView = view;
+    syncHistoryViewParam(view);
 
     // 当前变化预览的展开状态仅在当前页面会话中有效；每次重新进入时重置
     if (view === 'current-changes' && previousView !== 'current-changes') {
@@ -9964,6 +9974,15 @@ function renderChangeTreeItem(bookmark, type) {
                     i18n.moved[currentLang]}
             </span>
         </div>
+    `;
+}
+
+function buildHistorySlimmingSettingsDescriptionHtml(lang = currentLang) {
+    const baseText = i18n.historySlimmingSettingsDescription[lang] || i18n.historySlimmingSettingsDescription.zh_CN;
+    const strategyText = i18n.historySlimmingSettingsStrategyDescription[lang] || i18n.historySlimmingSettingsStrategyDescription.zh_CN;
+    return `
+        <div>${escapeHtml(baseText)}</div>
+        <div class="backup-history-slimming-strategy-note">${escapeHtml(strategyText)}</div>
     `;
 }
 

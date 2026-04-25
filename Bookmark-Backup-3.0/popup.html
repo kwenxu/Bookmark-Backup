@@ -939,6 +939,12 @@
             line-height: 1.55;
         }
 
+        .backup-history-slimming-strategy-note {
+            margin-top: 6px;
+            color: var(--theme-warning-color);
+            font-weight: 700;
+        }
+
         .backup-history-dialog-row,
         .backup-history-secondary-row {
             display: flex;
@@ -5031,10 +5037,28 @@
             color: var(--text-tertiary) !important;
         }
 
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] {
+            align-items: center;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-toggle,
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon,
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-label {
+            align-self: center;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-label {
+            line-height: 16px;
+        }
+
         #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon {
             color: var(--text-secondary) !important;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
             line-height: 1;
-            transform: translateY(2px);
+            transform: none;
         }
 
         #restoreConfirmModal #closeRestoreConfirmModal:hover {
@@ -6350,11 +6374,11 @@
                                     </div>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="overwriteVersioned" checked>
+                                            <input type="checkbox" id="overwriteVersioned">
                                             <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
                                         </label>
                                         <label class="clean-segment-label">
-                                            <input type="checkbox" id="overwriteOverwrite">
+                                            <input type="checkbox" id="overwriteOverwrite" checked>
                                             <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
                                         </label>
                                     </div>
@@ -6540,6 +6564,13 @@
                                         <i class="fas fa-shield-alt"></i>
                                         <span class="tooltip"
                                             style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">临时安全快照</span>
+                                    </button>
+                                    <button id="backupHistoryWebSnapshotBtn"
+                                        class="action-button history-nav-btn backup-history-header-btn"
+                                        type="button" style="display: inline-flex;">
+                                        <i class="fas fa-flask"></i>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">网页快照</span>
                                     </button>
                                 </div>
                                 <!-- 分页控件（10条/页）- 紧靠“备份历史”标题右侧 -->

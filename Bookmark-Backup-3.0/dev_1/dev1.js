@@ -6126,7 +6126,14 @@
                             </button>
                         </div>
                         <div class="modal-body dev1-review-settings-body">
-                            <div class="dev1-review-settings-note">${escapeHtml(t('reviewSettingsIntro'))}</div>
+                            <div class="dev1-review-settings-note">
+                                <div>${escapeHtml(t('reviewSettingsIntro'))}</div>
+                                <div class="dev1-review-settings-step-list">
+                                    <div>1. ${escapeHtml(t('reviewOpenWindow'))}</div>
+                                    <div>2. ${escapeHtml(t('reviewSubmit'))}</div>
+                                    <div>3. ${escapeHtml(t('runStartBtn'))}</div>
+                                </div>
+                            </div>
                             <label class="dev1-review-setting-row" for="dev1ReviewAutoReviewMsInput">
                                 <span class="dev1-review-setting-label">
                                     <i class="fas fa-stopwatch"></i>

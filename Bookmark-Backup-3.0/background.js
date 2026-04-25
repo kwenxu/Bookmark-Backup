@@ -10144,7 +10144,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
     }
 
     // 获取覆盖策略设置
-    const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+    const { overwriteMode = 'overwrite' } = await browserAPI.storage.local.get(['overwriteMode']);
     const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
     const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
     if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
@@ -10226,7 +10226,7 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
     }
 
     // 获取覆盖策略设置
-    const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+    const { overwriteMode = 'overwrite' } = await browserAPI.storage.local.get(['overwriteMode']);
     const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
     const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
     if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
@@ -12912,7 +12912,7 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
         ]);
         const overwriteMode = options.overwriteMode === 'overwrite'
             ? 'overwrite'
-            : (overwriteCfg?.overwriteMode === 'overwrite' ? 'overwrite' : 'versioned');
+            : (overwriteCfg?.overwriteMode === 'versioned' ? 'versioned' : 'overwrite');
         const optionMovedIds = Array.isArray(options.explicitMovedIds)
             ? options.explicitMovedIds.map(v => String(v || '').trim()).filter(Boolean)
             : [];
@@ -13344,7 +13344,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
     try {
         // 获取覆盖策略设置
-        const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+        const { overwriteMode = 'overwrite' } = await browserAPI.storage.local.get(['overwriteMode']);
         const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
         const snapshotSettings = options.snapshotSettings || await getSnapshotBackupSettings();
         if (options.respectSnapshotBackupEnabled !== false && snapshotSettings.enabled === false) {
@@ -20327,7 +20327,7 @@ async function updateBookmarks(bookmarksData) {
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
     try {
         const postSyncWarnings = [];
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'overwrite', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',

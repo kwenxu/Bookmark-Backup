@@ -2452,10 +2452,28 @@ option {
     color: var(--text-tertiary) !important;
 }
 
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] {
+    align-items: center;
+}
+
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-toggle,
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon,
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-label {
+    align-self: center;
+}
+
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-label {
+    line-height: 16px;
+}
+
 #restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon {
     color: var(--text-secondary) !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
     line-height: 1;
-    transform: translateY(2px);
+    transform: none;
 }
 
 #revertModal #revertPreviewView {
@@ -3279,11 +3297,34 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
     color: var(--text-secondary);
 }
 
+.tree-item[data-node-type="folder"] {
+    align-items: center;
+}
+
+.tree-item[data-node-type="folder"] > .tree-toggle,
+.tree-item[data-node-type="folder"] > .tree-icon,
+.tree-item[data-node-type="folder"] > .tree-label {
+    align-self: center;
+}
+
+.tree-item[data-node-type="folder"] > .tree-toggle,
+.tree-item[data-node-type="folder"] > .tree-icon {
+    margin-top: 0;
+}
+
+.tree-item[data-node-type="folder"] > .tree-label {
+    line-height: 16px;
+}
+
 /* Folder glyph optical alignment: Font Awesome folder sits slightly high vs label baseline. */
 .tree-item[data-node-type="folder"] > i.tree-icon.fas.fa-folder,
 .tree-item[data-node-type="folder"] > i.tree-icon.fas.fa-folder-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
     line-height: 1;
-    transform: translateY(2px);
+    transform: none;
 }
 
 .tree-label {
@@ -3531,7 +3572,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .history-tree-container[data-collection-view="true"] .tree-item[data-node-type="folder"] > .tree-icon {
-    transform: translateY(2px);
+    font-size: 15px;
+    transform: none;
 }
 
 /* 集合视图：图标/折叠箭头跟随变化类型着色，和文字保持一致 */
@@ -3978,6 +4020,12 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.55;
+}
+
+.backup-history-slimming-strategy-note {
+    margin-top: 6px;
+    color: var(--warning);
+    font-weight: 700;
 }
 
 .history-settings-panel,
@@ -5384,14 +5432,19 @@ a.tree-label.tree-bookmark-link:hover {
 
 .change-tree-folder i {
     color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
     line-height: 1;
-    transform: translateY(1px);
+    transform: none;
 }
 
 .change-tree-folder-name {
     flex: 1;
     font-weight: 500;
     color: var(--text-primary);
+    line-height: 16px;
 }
 
 .change-tree-items {

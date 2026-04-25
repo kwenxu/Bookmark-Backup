@@ -468,7 +468,8 @@
             </div>
             <div class="modal-body history-slimming-modal-body backup-history-secondary-stack">
                 <div id="historySlimmingSettingsDesc" class="backup-history-secondary-note">
-                    选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。
+                    <div>选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。</div>
+                    <div class="backup-history-slimming-strategy-note">主 UI 的本地、云端1、云端2备份会按版本化 / 覆盖保存；这里控制的是插件内 HTML 备份历史的详情数据。</div>
                 </div>
                 <div class="backup-history-choice-grid">
                     <label class="backup-history-choice-card">

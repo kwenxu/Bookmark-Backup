@@ -61,6 +61,14 @@
 .dev1-run-controls .action-btn {
     min-width: 94px !important;
     width: auto;
+    border-color: color-mix(in srgb, var(--accent-primary) 30%, var(--border-color) 70%);
+    background: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-secondary) 95%);
+}
+
+.dev1-run-controls .action-btn:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-color) 55%);
+    background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary) 92%);
+    color: var(--accent-primary);
 }
 
 .dev1-run-controls .action-btn.dev1-step-done,
@@ -293,6 +301,10 @@
 .dev1-secondary-modal {
     width: min(560px, 94vw);
     max-width: 560px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
     border-radius: 10px;
     overflow: hidden;
 }
@@ -326,10 +338,13 @@
 }
 
 .dev1-review-settings-body {
-    padding: 18px 20px;
+    padding: 18px 20px 76px;
+    overflow-y: auto;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    background: var(--bg-elevated);
 }
 
 .dev1-review-settings-note,
@@ -341,6 +356,20 @@
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.55;
+}
+
+.dev1-review-settings-note {
+    border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-color) 76%);
+    background: color-mix(in srgb, var(--accent-primary) 4%, var(--bg-secondary) 96%);
+}
+
+.dev1-review-settings-step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 7px;
+    color: var(--accent-primary);
+    font-weight: 700;
 }
 
 .dev1-review-setting-row {
@@ -406,12 +435,19 @@
 }
 
 .dev1-secondary-modal-footer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
-    padding: 0 20px 20px;
+    gap: 12px;
+    padding: 16px 20px;
+    background: transparent;
     border-top: 0;
+    pointer-events: none;
 }
 
 .dev1-secondary-modal-footer .modal-btn {
@@ -426,6 +462,11 @@
     justify-content: center;
     white-space: nowrap;
     cursor: pointer;
+    pointer-events: auto;
+}
+
+.dev1-secondary-modal-footer .modal-btn.primary {
+    min-width: 112px;
 }
 
 .dev1-secondary-modal-footer .modal-btn:not(.primary) {

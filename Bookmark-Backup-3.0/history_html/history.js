@@ -33,7 +33,7 @@ try {
 
 window.currentLang = currentLang; // 暴露给其他模块使用
 // 允许外部页面限制可用视图（拆分插件时使用）
-const DEFAULT_VIEWS = ['current-changes', 'history'];
+const DEFAULT_VIEWS = ['current-changes', 'history', 'dev-1'];
 const ALLOWED_VIEWS = (Array.isArray(window.__ALLOWED_VIEWS) && window.__ALLOWED_VIEWS.length)
     ? window.__ALLOWED_VIEWS
     : DEFAULT_VIEWS;
@@ -2484,6 +2484,10 @@ const i18n = {
         'zh_CN': '备份历史',
         'en': 'Backup History'
     },
+    navDev1: {
+        'zh_CN': '网页快照',
+        'en': 'Web Snapshot'
+    },
     currentChangesViewTitle: {
         'zh_CN': '当前变化',
         'en': 'Current Changes'
@@ -2491,6 +2495,10 @@ const i18n = {
     historyViewTitle: {
         'zh_CN': '备份历史',
         'en': 'Backup History'
+    },
+    dev1ViewTitle: {
+        'zh_CN': '网页快照',
+        'en': 'Web Snapshot'
     },
     clearBackupHistoryTooltip: {
         'zh_CN': '清除记录',
@@ -3248,6 +3256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    updateTopSearchVisibilityForView(currentView);
+
     localStorage.setItem('lastActiveView', currentView);
     
 
@@ -3610,6 +3620,8 @@ function applyLanguage() {
     if (navCurrentChangesText) navCurrentChangesText.textContent = i18n.navCurrentChanges[currentLang];
     const navHistoryText = document.getElementById('navHistoryText');
     if (navHistoryText) navHistoryText.textContent = i18n.navHistory[currentLang];
+    const navDev1Text = document.getElementById('navDev1Text');
+    if (navDev1Text) navDev1Text.textContent = i18n.navDev1[currentLang];
     const bookmarkGitTitle = document.getElementById('bookmarkGitTitle');
     if (bookmarkGitTitle) bookmarkGitTitle.textContent = i18n.bookmarkGitTitle[currentLang];
 
@@ -3643,6 +3655,8 @@ function applyLanguage() {
     if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     const historyViewTitle = document.getElementById('historyViewTitle');
     if (historyViewTitle) historyViewTitle.textContent = i18n.historyViewTitle[currentLang];
+    const dev1ViewTitle = document.getElementById('dev1ViewTitle');
+    if (dev1ViewTitle) dev1ViewTitle.textContent = i18n.dev1ViewTitle[currentLang];
 
     // 备份历史：清除记录按钮与确认弹窗
     const clearBackupHistoryBtn = document.getElementById('clearBackupHistoryBtn');
@@ -6376,6 +6390,43 @@ function initSidebarToggle() {
     });
 }
 
+function updateTopSearchVisibilityForView(view) {
+    const normalizedView = String(view || '').trim().toLowerCase();
+    const shouldHide = normalizedView === 'dev-1';
+    const searchContainer = document.querySelector('.history-header .search-container') || document.querySelector('.search-container');
+    if (!searchContainer) return;
+
+    searchContainer.style.display = shouldHide ? 'none' : '';
+    searchContainer.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.disabled = shouldHide;
+        if (shouldHide) searchInput.blur();
+    }
+
+    const searchModeMenu = document.getElementById('searchModeMenu');
+    if (searchModeMenu && shouldHide) {
+        searchModeMenu.hidden = true;
+    }
+
+    const searchModeTrigger = document.getElementById('searchModeTrigger');
+    if (searchModeTrigger && shouldHide) {
+        searchModeTrigger.classList.remove('active');
+    }
+
+    const searchResultsPanel = document.getElementById('searchResultsPanel');
+    if (searchResultsPanel) {
+        if (shouldHide) {
+            searchResultsPanel.classList.remove('show');
+            searchResultsPanel.innerHTML = '';
+            searchResultsPanel.style.display = 'none';
+        } else {
+            searchResultsPanel.style.display = '';
+        }
+    }
+}
+
 // =============================================================================
 // 视图切换
 // =============================================================================
@@ -6385,7 +6436,7 @@ function switchView(view) {
 
     const previousView = currentView;
 
-    // 仅保留 current-changes / history，不再处理其他视图的特殊逻辑
+    // 主视图：current-changes / history / dev-1
 
     // 更新全局变量
     currentView = view;
@@ -6456,6 +6507,8 @@ function switchView(view) {
         }
     });
 
+    updateTopSearchVisibilityForView(view);
+
 
     // 保存到 localStorage
     localStorage.setItem('lastActiveView', view);
@@ -6486,6 +6539,13 @@ function renderCurrentView() {
                 });
             }
             renderHistoryView();
+            break;
+        case 'dev-1':
+            try {
+                if (window.Dev1PageBridge && typeof window.Dev1PageBridge.render === 'function') {
+                    window.Dev1PageBridge.render();
+                }
+            } catch (_) { }
             break;
     }
 }
@@ -6785,7 +6845,14 @@ function __getChangesPreviewMode() {
     try {
         const root = document.getElementById('changesTreePreviewInline');
         if (root && root.classList && root.classList.contains('collection-mode')) return 'collection';
-        return root && root.classList && root.classList.contains('compact-mode') ? 'compact' : 'detailed';
+        if (root && root.classList) {
+            return root.classList.contains('compact-mode') ? 'compact' : 'detailed';
+        }
+        const rememberedModeRaw = String(window.__currentChangesPreviewMode || '').trim();
+        if (rememberedModeRaw) {
+            return normalizeCurrentChangesPreviewMode(rememberedModeRaw, 'detailed');
+        }
+        return 'detailed';
     } catch (_) {
         return 'detailed';
     }
@@ -6806,6 +6873,7 @@ function applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, 
     if (!treePreviewContainer) return;
     const normalized = normalizeCurrentChangesPreviewMode(mode);
     const toggleRoot = modeToggleRoot || document.getElementById('currentChangesModeToggle');
+    try { window.__currentChangesPreviewMode = normalized; } catch (_) { }
 
     treePreviewContainer.classList.remove('compact-mode', 'collection-mode');
     if (normalized === 'compact') {
@@ -21523,6 +21591,9 @@ function performSearch(query) {
                 searchHistoryLegacy(query);
             }
             break;
+        case 'dev-1':
+            hideSearchResultsPanel();
+            break;
     }
 }
 
@@ -21602,6 +21673,13 @@ function toggleLanguage() {
     if (typeof window.updateSearchUILanguage === 'function') {
         window.updateSearchUILanguage();
     }
+
+    // dev_1 视图在语言切换时需要刷新文案与筛选标签
+    try {
+        if (currentView === 'dev-1' && window.Dev1PageBridge && typeof window.Dev1PageBridge.render === 'function') {
+            window.Dev1PageBridge.render();
+        }
+    } catch (_) { }
 }
 
 // 更新依赖语言的UI元素（不重新渲染内容，避免图标重新加载）
@@ -25536,6 +25614,111 @@ function normalizeCurrentChangesExportModeManual(mode) {
     if (text === 'collection') return 'collection';
     return 'simple';
 }
+
+function normalizeCurrentChangesVisualModeForDev1(mode, fallback = 'collection') {
+    const text = String(mode || '').trim().toLowerCase();
+    if (text === 'collection') return 'collection';
+    if (text === 'detailed') return 'detailed';
+    if (text === 'compact' || text === 'simple') return 'simple';
+
+    const fallbackText = String(fallback || '').trim().toLowerCase();
+    if (fallbackText === 'collection') return 'collection';
+    if (fallbackText === 'detailed') return 'detailed';
+    if (fallbackText === 'simple' || fallbackText === 'compact') return 'simple';
+    return 'collection';
+}
+
+async function resolveCurrentChangesVisualModeForDev1() {
+    let mode = '';
+    let hasPreviewRoot = false;
+
+    try {
+        const previewRoot = document.getElementById('changesTreePreviewInline');
+        hasPreviewRoot = !!previewRoot;
+    } catch (_) {
+        hasPreviewRoot = false;
+    }
+
+    try {
+        if (hasPreviewRoot && typeof __getChangesPreviewMode === 'function') {
+            mode = String(__getChangesPreviewMode() || '').trim().toLowerCase();
+        }
+    } catch (_) { }
+
+    if (!mode) {
+        try {
+            mode = String(window.__currentChangesPreviewMode || '').trim().toLowerCase();
+        } catch (_) { }
+    }
+
+    if (!mode) {
+        try {
+            mode = await new Promise((resolve) => {
+                if (!browserAPI || !browserAPI.storage || !browserAPI.storage.local) {
+                    resolve('');
+                    return;
+                }
+                browserAPI.storage.local.get(['currentChangesViewMode'], (result) => {
+                    resolve(String(result?.currentChangesViewMode || '').trim().toLowerCase());
+                });
+            });
+        } catch (_) {
+            mode = '';
+        }
+    }
+
+    return normalizeCurrentChangesVisualModeForDev1(mode, 'collection');
+}
+
+window.__buildCurrentChangesVisualPayloadForDev1 = async function (options = {}) {
+    const forceRefresh = options && options.forceRefresh === true;
+    const mode = await resolveCurrentChangesVisualModeForDev1();
+
+    const buildEmptyPayload = () => {
+        const isZh = currentLang === 'zh_CN';
+        return {
+            title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+            children: [],
+            _exportInfo: {
+                exportDate: new Date().toISOString(),
+                exportMode: mode,
+                source: 'bookmark-backup-changes',
+                empty: true
+            }
+        };
+    };
+
+    let changeData = null;
+    if (!forceRefresh && latestCurrentChangesData && typeof latestCurrentChangesData === 'object') {
+        changeData = latestCurrentChangesData;
+    } else {
+        try {
+            changeData = await getDetailedChanges(forceRefresh);
+        } catch (error) {
+            if (forceRefresh) throw error;
+            changeData = latestCurrentChangesData;
+        }
+    }
+
+    if (!changeData || changeData.hasChanges !== true) {
+        return {
+            success: true,
+            mode,
+            payload: buildEmptyPayload(),
+            source: 'history-current-changes-visual',
+            hasChanges: false
+        };
+    }
+
+    const payload = await buildCurrentChangesExportPayloadManual(changeData || {}, mode);
+    return {
+        success: true,
+        mode,
+        payload,
+        source: 'history-current-changes-visual',
+        hasChanges: true
+    };
+};
 
 function normalizeCurrentChangesExportStatsManual(changeData) {
     const stats = changeData?.stats || {};

@@ -8,6 +8,7 @@
     <script src="history_theme_bootstrap.js"></script>
     <link rel="stylesheet" href="history.css?v=2.1">
     <link rel="stylesheet" href="search/search.css">
+    <link rel="stylesheet" href="../dev_1/dev1.css">
     <link rel="stylesheet" href="../font-awesome.min.css">
     <script src="history_bootstrap.js" defer></script>
     <script src="bookmark_tree_context_menu.js" defer></script>
@@ -15,6 +16,7 @@
     <script src="pointer_drag.js" defer></script>
     <script src="shortcuts_helpers.js" defer></script>
     <script src="history.js" defer></script>
+    <script src="../dev_1/dev1.js" defer></script>
     <!-- 搜索模块（当前变化 / 备份历史） -->
     <script src="search/search.js" defer></script>
 </head>
@@ -86,6 +88,10 @@
                     <button class="nav-tab" data-view="history">
                         <i class="fas fa-history"></i>
                         <span id="navHistoryText">备份历史</span>
+                    </button>
+                    <button class="nav-tab" data-view="dev-1">
+                        <i class="fas fa-flask"></i>
+                        <span id="navDev1Text">网页快照</span>
                     </button>
                 </div>
             </nav>
@@ -238,6 +244,11 @@
                 <div id="historyList" class="history-commits">
                     <!-- 动态加载历史记录 -->
                 </div>
+            </div>
+
+            <!-- 网页快照视图 -->
+            <div id="dev-1View" class="view">
+                <div id="dev1App"></div>
             </div>
 
             <!-- 永久栏目 - 在canvas-content内部通过JS添加 -->

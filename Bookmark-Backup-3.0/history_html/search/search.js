@@ -168,6 +168,10 @@ window.SearchContextManager = {
             placeholder = currentLang === 'zh_CN'
                 ? '序号 / 备注 / 哈希 / 日期 / 类型 / 方向 / 变化'
                 : 'Seq / note / hash / date / type / direction / changes';
+        } else if (ctx.view === 'dev-1') {
+            placeholder = currentLang === 'zh_CN'
+                ? 'dev_1 使用面板内四维筛选（顶部搜索不参与）'
+                : 'dev_1 uses panel-side 4-dim filters (top search is disabled)';
         }
 
         if (placeholder) {
@@ -3818,6 +3822,14 @@ const SEARCH_MODES = [
         icon: 'fa-history',
         desc: '序号 / 备注 / 哈希 / 日期 / 类型 / 方向 / 变化',
         descEn: 'Seq / note / hash / date / type / direction / changes'
+    },
+    {
+        key: 'dev-1',
+        label: '第一维 / dev_1',
+        labelEn: 'Dimension-1 / dev_1',
+        icon: 'fa-flask',
+        desc: '使用实验区四维筛选与导出',
+        descEn: 'Use dev_1 panel filters and export actions'
     }
 ];
 
@@ -3895,10 +3907,44 @@ const SEARCH_MODE_GUIDES = {
                 '2026-01-15 no change'
             ]
         }
+    },
+    'dev-1': {
+        title: {
+            zh_CN: 'dev_1 实验区',
+            en: 'dev_1 Experiment View'
+        },
+        summary: {
+            zh_CN: '此视图使用面板内四维筛选（书签/文件夹/域名/子域名）和导出按钮，顶部搜索不参与。',
+            en: 'This view uses panel filters (bookmark/folder/domain/subdomain) and export buttons; top search is not used.'
+        },
+        rules: {
+            zh_CN: [
+                '先刷新“当前变化”来源，再选择筛选维度',
+                '筛选后队列即为静默抓取目标',
+                '导出格式支持 HTML / MD / MHTML'
+            ],
+            en: [
+                'Refresh current-change source before filtering',
+                'Filtered queue becomes the silent-capture target set',
+                'Export formats: HTML / MD / MHTML'
+            ]
+        },
+        examples: {
+            zh_CN: [
+                '选择域名后执行导出',
+                '按子域名筛选队列',
+                '仅导出 MHTML'
+            ],
+            en: [
+                'Filter by domain then export',
+                'Filter queue by subdomain',
+                'Export MHTML only'
+            ]
+        }
     }
 };
 
-const SEARCH_MODE_KEYS = ['current-changes', 'history'];
+const SEARCH_MODE_KEYS = ['current-changes', 'history', 'dev-1'];
 
 function getCurrentViewSafe() {
     try {
@@ -4015,9 +4061,20 @@ function renderSearchModeMenu() {
         const isActive = mode.key === searchUiState.activeMode;
         const isZh = currentLang === 'zh_CN';
         const modeName = isZh ? mode.label : mode.labelEn;
-        const desc = mode.key === 'current-changes'
-            ? (isZh ? '匹配标题、URL、路径（空格=并且）' : 'Match title, URL, and path (space = AND)')
-            : (isZh ? '匹配序号、备注、哈希、日期、类型、方向、变化' : 'Match seq, note, hash, date, type, direction, and changes');
+        let desc = '';
+        if (mode.key === 'current-changes') {
+            desc = isZh
+                ? '匹配标题、URL、路径（空格=并且）'
+                : 'Match title, URL, and path (space = AND)';
+        } else if (mode.key === 'history') {
+            desc = isZh
+                ? '匹配序号、备注、哈希、日期、类型、方向、变化'
+                : 'Match seq, note, hash, date, type, direction, and changes';
+        } else {
+            desc = isZh
+                ? '使用 dev_1 面板内筛选与导出'
+                : 'Use dev_1 panel filters and export';
+        }
 
         return `
             <div class="search-mode-menu-item ${isActive ? 'active' : ''}" data-mode-key="${mode.key}">

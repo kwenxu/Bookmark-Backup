@@ -3110,6 +3110,10 @@ const i18n = {
         'zh_CN': '复制到剪贴板',
         'en': 'Copy to Clipboard'
     },
+    exportChangesActionHelp: {
+        'zh_CN': '复制说明',
+        'en': 'Copy Help'
+    },
     // ==================== 导出变化功能翻译 ====================
     exportChangesModalTitle: {
         'zh_CN': '导出书签变化',
@@ -3158,6 +3162,10 @@ const i18n = {
     exportChangesActionCopy: {
         'zh_CN': '复制到剪贴板',
         'en': 'Copy to Clipboard'
+    },
+    exportChangesActionHelp: {
+        'zh_CN': '复制说明',
+        'en': 'Copy Help'
     },
     exportChangesConfirmText: {
         'zh_CN': '确认',
@@ -3898,6 +3906,8 @@ function applyLanguage() {
     if (exportChangesActionDownload) exportChangesActionDownload.textContent = i18n.exportChangesActionDownload[currentLang];
     const exportChangesActionCopy = document.getElementById('exportChangesActionCopy');
     if (exportChangesActionCopy) exportChangesActionCopy.textContent = i18n.exportChangesActionCopy[currentLang];
+    const exportChangesActionHelp = document.getElementById('exportChangesActionHelp');
+    if (exportChangesActionHelp) exportChangesActionHelp.title = i18n.exportChangesActionHelp[currentLang];
     const exportChangesConfirmText = document.getElementById('exportChangesConfirmText');
     if (exportChangesConfirmText) exportChangesConfirmText.textContent = i18n.exportChangesConfirmText[currentLang];
     const exportChangesCancelText = document.getElementById('exportChangesCancelText');
@@ -24837,6 +24847,274 @@ let currentExportHistoryRecord = null;
 // 当前导出的书签树（供备份历史导出使用）
 let currentExportBookmarkTree = null;
 let currentExportHistoryArtifactType = 'changes';
+const EXPORT_CLIPBOARD_MAX_NODE_COUNT = 1500;
+const EXPORT_CLIPBOARD_METADATA_NODE_COUNT = 5;
+
+function getExportClipboardTooManyNodesMessage(nodeCount, isZh = currentLang === 'zh_CN') {
+    const count = Math.max(0, Math.ceil(Number(nodeCount) || 0));
+    return isZh
+        ? `当前导出视图预计包含约 ${count} 个导出项，超过 ${EXPORT_CLIPBOARD_MAX_NODE_COUNT} 项复制限制，请使用“导出文件”。`
+        : `The current export view is estimated at about ${count} exported items, over the ${EXPORT_CLIPBOARD_MAX_NODE_COUNT}-item copy limit. Use "Export file" instead.`;
+}
+
+function countExportTreeNodes(nodes) {
+    let count = 0;
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        count += 1;
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child));
+        }
+    };
+
+    (Array.isArray(nodes) ? nodes : [nodes]).forEach(node => walk(node));
+    return count;
+}
+
+function getChangeExportRootChildren(bookmarkTree) {
+    const roots = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const children = [];
+    roots.forEach(root => {
+        if (root && Array.isArray(root.children)) {
+            children.push(...root.children);
+        }
+    });
+    return children;
+}
+
+function getChangeTypeParts(changeType) {
+    return String(changeType || '')
+        .split('+')
+        .map(part => part.trim())
+        .filter(Boolean);
+}
+
+function estimateStoredSimpleChangeNodeCount(nodes) {
+    const countNode = (node) => {
+        if (!node || typeof node !== 'object') return 0;
+        const selfChanged = !!String(node.changeType || '').trim();
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+        if (selfChanged) return countExportTreeNodes(node);
+        if (!isFolder || !Array.isArray(node.children)) return 0;
+
+        const childCount = node.children.reduce((sum, child) => sum + countNode(child), 0);
+        return childCount > 0 ? childCount + 1 : 0;
+    };
+
+    return (Array.isArray(nodes) ? nodes : []).reduce((sum, node) => sum + countNode(node), 0);
+}
+
+function estimateStoredCollectionChangeNodeCount(nodes) {
+    const bucketCounts = {
+        added: 0,
+        deleted: 0,
+        moved: 0,
+        modified: 0
+    };
+
+    const addToBucket = (bucketKey, node) => {
+        bucketCounts[bucketKey] += countExportTreeNodes(node);
+    };
+
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+
+        const parts = getChangeTypeParts(node.changeType);
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+        let appendedFullSubtree = false;
+
+        if (parts.includes('added')) {
+            addToBucket('added', node);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (parts.includes('deleted')) {
+            addToBucket('deleted', node);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (parts.includes('moved')) {
+            addToBucket('moved', node);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (parts.includes('modified')) {
+            addToBucket('modified', node);
+            if (isFolder) appendedFullSubtree = true;
+        }
+
+        if (!appendedFullSubtree && Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child));
+        }
+    };
+
+    (Array.isArray(nodes) ? nodes : []).forEach(node => walk(node));
+    const groupCount = Object.values(bucketCounts).filter(value => value > 0).length;
+    return groupCount + Object.values(bucketCounts).reduce((sum, value) => sum + value, 0);
+}
+
+function estimateStoredChangeExportNodeCount(changeData, mode) {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'simple');
+    const detailedChildren = Array.isArray(changeData?.detailedChildren) ? changeData.detailedChildren : null;
+
+    if (Array.isArray(detailedChildren)) {
+        if (normalizedMode === 'detailed') return countExportTreeNodes(detailedChildren);
+        if (normalizedMode === 'collection') return estimateStoredCollectionChangeNodeCount(detailedChildren);
+        return estimateStoredSimpleChangeNodeCount(detailedChildren);
+    }
+
+    if (normalizedMode === 'collection' && Array.isArray(changeData?.collectionChildren)) {
+        return countExportTreeNodes(changeData.collectionChildren);
+    }
+
+    return null;
+}
+
+function estimateStatsChangeNodeCount(changeData) {
+    const stats = normalizeCurrentChangesExportStatsManual(changeData || {});
+    const safeNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0);
+
+    const movedBreakdown = safeNumber(stats.movedBookmarkCount) + safeNumber(stats.movedFolderCount);
+    const modifiedBreakdown = safeNumber(stats.modifiedBookmarkCount) + safeNumber(stats.modifiedFolderCount);
+
+    return safeNumber(stats.bookmarkAdded)
+        + safeNumber(stats.folderAdded)
+        + safeNumber(stats.bookmarkDeleted)
+        + safeNumber(stats.folderDeleted)
+        + (movedBreakdown > 0 ? movedBreakdown : safeNumber(stats.movedCount))
+        + (modifiedBreakdown > 0 ? modifiedBreakdown : safeNumber(stats.modifiedCount));
+}
+
+function estimateBookmarkTreeChangeExportNodeCount(bookmarkTree, changeMap, mode, options = {}) {
+    const normalizedMode = normalizeCurrentChangesExportModeManual(mode);
+    const map = changeMap instanceof Map ? changeMap : new Map();
+    if (!bookmarkTree) return 0;
+
+    const getChange = (node) => {
+        if (!node || node.id == null) return null;
+        return map.get(node.id) || map.get(String(node.id)) || null;
+    };
+    const hasChangeMemo = typeof WeakMap === 'function' ? new WeakMap() : null;
+    const hasChangesRecursive = (node) => {
+        if (!node || typeof node !== 'object') return false;
+        if (hasChangeMemo && hasChangeMemo.has(node)) return hasChangeMemo.get(node);
+        const changed = !!getChange(node) || (Array.isArray(node.children) && node.children.some(child => hasChangesRecursive(child)));
+        if (hasChangeMemo) hasChangeMemo.set(node, changed);
+        return changed;
+    };
+
+    if (normalizedMode === 'collection') {
+        const bucketCounts = {
+            added: 0,
+            deleted: 0,
+            moved: 0,
+            modified: 0
+        };
+        const addToBucket = (bucketKey, node) => {
+            bucketCounts[bucketKey] += countExportTreeNodes(node);
+        };
+        const walk = (node) => {
+            if (!node || typeof node !== 'object') return;
+            const parts = getChangeTypeParts(getChange(node)?.type);
+            if (parts.includes('added')) addToBucket('added', node);
+            if (parts.includes('deleted')) addToBucket('deleted', node);
+            if (parts.includes('moved')) addToBucket('moved', node);
+            if (parts.includes('modified')) addToBucket('modified', node);
+            if (Array.isArray(node.children)) {
+                node.children.forEach(child => walk(child));
+            }
+        };
+
+        getChangeExportRootChildren(bookmarkTree).forEach(child => walk(child));
+        const groupCount = Object.values(bucketCounts).filter(value => value > 0).length;
+        return groupCount + Object.values(bucketCounts).reduce((sum, value) => sum + value, 0);
+    }
+
+    const expandedIds = options.expandedIds instanceof Set ? options.expandedIds : null;
+    const forceSimpleChangedFolderDescendants = options.forceSimpleChangedFolderDescendants === true;
+    const useWysiwygExpansion = normalizedMode === 'detailed' && expandedIds instanceof Set && expandedIds.size > 0;
+
+    const countNode = (node, forceInclude = false) => {
+        if (!node || typeof node !== 'object') return 0;
+
+        const nodeHasChanges = hasChangesRecursive(node);
+        if (normalizedMode !== 'detailed' && !forceInclude && !nodeHasChanges) return 0;
+
+        let count = 1;
+        const isFolder = !node.url && Array.isArray(node.children);
+        if (!isFolder) return count;
+
+        const changeType = String(getChange(node)?.type || '').trim();
+        const nextForceInclude = forceInclude
+            || (normalizedMode !== 'detailed' && forceSimpleChangedFolderDescendants && !!changeType);
+
+        let shouldRecurse = false;
+        if (normalizedMode === 'detailed') {
+            shouldRecurse = nodeHasChanges || (useWysiwygExpansion && expandedIds.has(String(node.id)));
+        } else {
+            shouldRecurse = true;
+        }
+
+        if (shouldRecurse) {
+            node.children.forEach(child => {
+                count += countNode(child, nextForceInclude);
+            });
+        }
+
+        return count;
+    };
+
+    return getChangeExportRootChildren(bookmarkTree).reduce((sum, child) => sum + countNode(child), 0);
+}
+
+async function estimateCurrentChangesClipboardNodeCount(changeData, mode) {
+    const normalizedMode = normalizeCurrentChangesExportModeManual(mode);
+    const statsCount = estimateStatsChangeNodeCount(changeData);
+    if (statsCount + EXPORT_CLIPBOARD_METADATA_NODE_COUNT > EXPORT_CLIPBOARD_MAX_NODE_COUNT) {
+        return statsCount + EXPORT_CLIPBOARD_METADATA_NODE_COUNT;
+    }
+
+    const { treeToExport, changeMap, expandedIds } = await getCurrentChangesExportTreeDataManual(normalizedMode);
+    const viewState = normalizedMode === 'detailed'
+        ? getCurrentChangesExportViewStateManual()
+        : { expandedIds, exactExpandedState: false };
+    const treeCount = estimateBookmarkTreeChangeExportNodeCount(treeToExport, changeMap, normalizedMode, {
+        expandedIds: normalizedMode === 'detailed' ? viewState.expandedIds : expandedIds,
+        forceSimpleChangedFolderDescendants: true
+    });
+
+    return Math.max(statsCount, treeCount) + EXPORT_CLIPBOARD_METADATA_NODE_COUNT;
+}
+
+function estimateHistoryChangesClipboardNodeCount(prepared, mode, expandedIds = null) {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'simple');
+    const changeData = prepared?.changeData || null;
+    const storedCount = estimateStoredChangeExportNodeCount(changeData, normalizedMode);
+
+    if (typeof storedCount === 'number' && Number.isFinite(storedCount)) {
+        return storedCount + EXPORT_CLIPBOARD_METADATA_NODE_COUNT;
+    }
+
+    const treeCount = estimateBookmarkTreeChangeExportNodeCount(
+        prepared?.treeToExport || null,
+        prepared?.changeMap instanceof Map ? prepared.changeMap : new Map(),
+        normalizedMode,
+        {
+            expandedIds,
+            forceSimpleChangedFolderDescendants: false
+        }
+    );
+
+    return treeCount + EXPORT_CLIPBOARD_METADATA_NODE_COUNT;
+}
+
+async function getExportClipboardNodePreflight({ isHistoryExport, mode, historyPrepared, historyExpandedIds }) {
+    const nodeCount = isHistoryExport
+        ? estimateHistoryChangesClipboardNodeCount(historyPrepared, mode, historyExpandedIds)
+        : await estimateCurrentChangesClipboardNodeCount(currentExportChangeData, mode);
+
+    return {
+        nodeCount,
+        allowed: nodeCount <= EXPORT_CLIPBOARD_MAX_NODE_COUNT
+    };
+}
 
 function normalizeHistoryExportArtifactType(value, fallback = 'changes') {
     const normalized = String(value || '').trim().toLowerCase();
@@ -24928,9 +25206,6 @@ function updateExportChangesActionOptionsByMode(modal) {
 
     const isHistorySnapshotExport = !!currentExportHistoryRecord
         && getSelectedHistoryExportArtifactType(modal) === 'snapshot';
-    const modeValue = modal.querySelector('input[name="exportChangesMode"]:checked')?.value || 'simple';
-    const isCollectionMode = modeValue === 'collection';
-
     const copyInput = modal.querySelector('input[name="exportChangesAction"][value="copy"]');
     const downloadInput = modal.querySelector('input[name="exportChangesAction"][value="download"]');
     const copyLabel = copyInput ? copyInput.closest('label') : null;
@@ -24949,15 +25224,11 @@ function updateExportChangesActionOptionsByMode(modal) {
     }
 
     if (copyLabel) {
-        copyLabel.style.display = isCollectionMode ? 'none' : '';
+        copyLabel.style.display = '';
     }
 
     if (copyInput) {
-        copyInput.disabled = isCollectionMode;
-    }
-
-    if (isCollectionMode && copyInput && copyInput.checked && downloadInput) {
-        downloadInput.checked = true;
+        copyInput.disabled = false;
     }
 }
 
@@ -24992,6 +25263,8 @@ function updateExportChangesModalContextUi(modal = document.getElementById('expo
     const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
     const modeHelpIcon = document.getElementById('exportChangesDetailedHelp');
     const modeHelpContent = document.getElementById('exportChangesDetailedHelpContent');
+    const actionHelpIcon = document.getElementById('exportChangesActionHelp');
+    const actionHelpContent = document.getElementById('exportChangesActionHelpContent');
 
     const formatHtmlInput = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
     const formatJsonInput = modal.querySelector('input[name="exportChangesFormat"][value="json"]');
@@ -25057,12 +25330,16 @@ function updateExportChangesModalContextUi(modal = document.getElementById('expo
 
     if (legendHelpContent) legendHelpContent.style.display = 'none';
     if (modeHelpContent) modeHelpContent.style.display = 'none';
+    if (actionHelpContent) actionHelpContent.style.display = 'none';
 
     if (legendHelpIcon) {
         legendHelpIcon.style.display = isSnapshotExport ? 'none' : '';
     }
     if (modeHelpIcon) {
         modeHelpIcon.style.display = isSnapshotExport ? 'none' : '';
+    }
+    if (actionHelpIcon) {
+        actionHelpIcon.style.display = isSnapshotExport ? 'none' : '';
     }
 
     if (formatHtmlInput) formatHtmlInput.disabled = false;
@@ -25104,6 +25381,13 @@ function buildExportChangesModeGuideHtml() {
     return isZh
         ? `<strong>模式说明：</strong><br>• 简略：仅导出有变化的分支，保持原生书签树层级。<br>• ${detailedGuide}<br>• 集合：按增加/删除/移动/修改分组导出为文件夹集合。<br>• 下载路径：${exportFolderPath}。`
         : `<strong>Mode Guide:</strong><br>• Simple: Export changed branches only, keeping native bookmark-tree hierarchy.<br>• ${detailedGuide}<br>• Collection: Export grouped folders by Added/Deleted/Moved/Modified.<br>• Download path: ${exportFolderPath}.`;
+}
+
+function buildExportChangesActionGuideHtml() {
+    const isZh = currentLang === 'zh_CN';
+    return isZh
+        ? `<strong>复制说明：</strong><br>• 复制到剪贴板适合少量内容，当前上限为 ${EXPORT_CLIPBOARD_MAX_NODE_COUNT} 个导出项。<br>• 导出项按当前选择的导出模式估算，书签、文件夹、集合分组和说明项都会计入。<br>• 超过上限时不会生成复制内容，会提示改用“导出文件”。`
+        : `<strong>Copy Guide:</strong><br>• Copy to Clipboard is for smaller exports. The current limit is ${EXPORT_CLIPBOARD_MAX_NODE_COUNT} exported items.<br>• Items are estimated from the selected export mode, including bookmarks, folders, collection groups, and metadata rows.<br>• When the limit is exceeded, copy content is not generated and "Download File" is suggested.`;
 }
 
 // 显示导出变化模态框
@@ -25323,6 +25607,8 @@ function initExportChangesModal() {
             // 切换模式时隐藏帮助内容
             const helpContent = document.getElementById('exportChangesDetailedHelpContent');
             if (helpContent) helpContent.style.display = 'none';
+            const actionHelpContent = document.getElementById('exportChangesActionHelpContent');
+            if (actionHelpContent) actionHelpContent.style.display = 'none';
         });
     });
 
@@ -25351,6 +25637,24 @@ function initExportChangesModal() {
             if (helpContent) {
                 if (helpContent.style.display === 'none') {
                     helpContent.innerHTML = buildExportChangesModeGuideHtml();
+                    helpContent.style.display = 'block';
+                } else {
+                    helpContent.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    const actionHelpIcon = document.getElementById('exportChangesActionHelp');
+    if (actionHelpIcon) {
+        actionHelpIcon.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const helpContent = document.getElementById('exportChangesActionHelpContent');
+            if (helpContent) {
+                if (helpContent.style.display === 'none') {
+                    helpContent.innerHTML = buildExportChangesActionGuideHtml();
                     helpContent.style.display = 'block';
                 } else {
                     helpContent.style.display = 'none';
@@ -25439,10 +25743,42 @@ async function executeExportChanges() {
         // 稍微延迟一下让UI更新，避免大计算量卡顿
         await new Promise(resolve => setTimeout(resolve, 50));
 
+        let historyPreparedForExport = null;
+        if (isHistoryExport && !isHistorySnapshotExport) {
+            historyPreparedForExport = await prepareDataForExport(currentExportHistoryRecord);
+        }
+
+        if (action === 'copy' && !isHistorySnapshotExport) {
+            const preflight = await getExportClipboardNodePreflight({
+                isHistoryExport,
+                mode,
+                historyPrepared: historyPreparedForExport,
+                historyExpandedIds: historyRecordExpandedIds
+            });
+            if (!preflight.allowed) {
+                const message = getExportClipboardTooManyNodesMessage(preflight.nodeCount, isZh);
+                const downloadInput = modal.querySelector('input[name="exportChangesAction"][value="download"]');
+                if (downloadInput) downloadInput.checked = true;
+                showToast(message, 'warning', 3600);
+                confirmBtn.style.setProperty('background-color', 'var(--warning-color)', 'important');
+                confirmBtn.style.setProperty('color', 'white', 'important');
+                confirmBtn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${isZh ? '内容过多' : 'Too many items'}`;
+                setTimeout(() => {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = originalBtnHTML;
+                    confirmBtn.style.backgroundColor = '';
+                    confirmBtn.style.color = '';
+                    confirmBtn.style.borderColor = '';
+                    confirmBtn.style.animation = '';
+                }, 1800);
+                return;
+            }
+        }
+
         let historyStoredChangePayload = null;
         if (isHistoryExport && !isHistorySnapshotExport) {
             const normalizedHistoryMode = normalizeHistoryDetailMode(mode, 'simple');
-            const prepared = await prepareDataForExport(currentExportHistoryRecord);
+            const prepared = historyPreparedForExport || await prepareDataForExport(currentExportHistoryRecord);
             historyStoredChangePayload = normalizedHistoryMode === 'collection'
                 ? await buildHistoryCollectionExportPayload(currentExportHistoryRecord, prepared)
                 : await buildHistoryStoredChangeViewExportPayload(currentExportHistoryRecord, normalizedHistoryMode, prepared);

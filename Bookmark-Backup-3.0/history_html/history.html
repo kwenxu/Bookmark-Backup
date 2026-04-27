@@ -423,8 +423,12 @@
 
                 <!-- 操作选择 -->
                 <div class="export-section" id="exportChangesActionSection" style="margin-bottom: 16px;">
-                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
-                        id="exportChangesActionLabel">操作方式</h4>
+                    <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <h4 style="margin: 0; font-size: 14px; color: var(--text-secondary);"
+                            id="exportChangesActionLabel">操作方式</h4>
+                        <i class="fas fa-question-circle" id="exportChangesActionHelp" title="复制说明"
+                            style="color: var(--text-tertiary); cursor: pointer;"></i>
+                    </div>
                     <div class="radio-group" style="display: flex; gap: 20px;">
                         <label class="radio-label"
                             style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -436,6 +440,9 @@
                             <input type="radio" name="exportChangesAction" value="copy">
                             <span id="exportChangesActionCopy">复制到剪贴板</span>
                         </label>
+                    </div>
+                    <div id="exportChangesActionHelpContent"
+                        style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; border: 1px solid var(--border-color);">
                     </div>
                 </div>
 

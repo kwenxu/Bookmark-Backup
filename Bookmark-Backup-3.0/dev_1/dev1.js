@@ -2858,6 +2858,8 @@
     }
 
     function getActiveScopeSourceKey() {
+        const kind = getActiveScopeKind();
+        if (kind === 'domain' || kind === 'subdomain') return SOURCE_BOOKMARKS;
         return normalizeSourceKey(state.scopeUi?.sourceKey);
     }
 
@@ -4846,6 +4848,9 @@
                     return;
                 }
                 if (!SCOPE_UI_KIND_KEYS.includes(kind)) return;
+                if (kind === 'domain' || kind === 'subdomain') {
+                    state.scopeUi.sourceKey = SOURCE_BOOKMARKS;
+                }
                 state.scopeUi.kind = kind;
                 state.scopeUi.keyword = '';
                 renderScopeSelector();

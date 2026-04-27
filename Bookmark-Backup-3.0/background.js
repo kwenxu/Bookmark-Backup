@@ -6813,11 +6813,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         throw new Error('缺少导出内容');
                     }
 
+                    const lang = message.lang || (await getCurrentLang());
                     const content = message.content;
+                    const fallbackFileBase = lang === 'en' ? 'Bookmark_Backup_History' : '书签备份历史记录';
                     const baseFileName =
                         message.fileName ||
-                        `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
-                    const lang = message.lang || (await getCurrentLang());
+                        `${fallbackFileBase}_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
 
                     const config = await browserAPI.storage.local.get([
                         'githubRepoToken',
@@ -6885,9 +6886,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         throw new Error('缺少导出内容');
                     }
 
-                    const content = message.content;
-                    const fileName = message.fileName || `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
                     const lang = message.lang || 'zh_CN';
+                    const content = message.content;
+                    const fallbackFileBase = lang === 'en' ? 'Bookmark_Backup_History' : '书签备份历史记录';
+                    const fileName = message.fileName || `${fallbackFileBase}_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
 
                     // 获取WebDAV配置
                     const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
@@ -7005,8 +7007,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         throw new Error('缺少导出内容');
                     }
 
+                    const lang = message.lang || (await getCurrentLang());
                     const content = message.content;
-                    const fileName = message.fileName || `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
+                    const fallbackFileBase = lang === 'en' ? 'Bookmark_Backup_History' : '书签备份历史记录';
+                    const fileName = message.fileName || `${fallbackFileBase}_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
 
                     // 获取本地备份配置
                     const config = await browserAPI.storage.local.get([
@@ -10377,6 +10381,119 @@ function __sanitizePathPart(part) {
         .replace(/[\\/]/g, '_')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+function translateHistoryRecordSystemNoteForFileNameBg(rawNote, lang = 'zh_CN') {
+    const text = String(rawNote || '').trim();
+    if (!text) return '';
+    const isEn = lang === 'en';
+
+    const exactZhToEn = {
+        '恢复失败（继续）': 'Restore failed (continue)',
+        '恢复失败（回滚）': 'Restore failed (rollback)',
+        '撤销失败（继续）': 'Revert failed (continue)',
+        '撤销失败（回滚）': 'Revert failed (rollback)'
+    };
+    const exactEnToZh = {
+        'restore failed (continue)': '恢复失败（继续）',
+        'restore failed (rollback)': '恢复失败（回滚）',
+        'revert failed (continue)': '撤销失败（继续）',
+        'revert failed (rollback)': '撤销失败（回滚）'
+    };
+
+    if (isEn && exactZhToEn[text]) return exactZhToEn[text];
+    if (!isEn && exactEnToZh[text.toLowerCase()]) return exactEnToZh[text.toLowerCase()];
+
+    const replacements = isEn
+        ? [
+            [/^导入合并自\s*/, 'Import merged from '],
+            [/^补丁恢复至\s*/, 'Patch restored to '],
+            [/^覆盖恢复至\s*/, 'Overwrite restored to '],
+            [/^补丁撤销至\s*/, 'Patch reverted to '],
+            [/^覆盖撤销至\s*/, 'Overwrite reverted to '],
+            [/^恢复到\s*/, 'Restore to '],
+            [/^恢复至\s*/, 'Restored to ']
+        ]
+        : [
+            [/^Import merged from\s*/i, '导入合并自 '],
+            [/^Patch restored to\s*/i, '补丁恢复至 '],
+            [/^Overwrite restored to\s*/i, '覆盖恢复至 '],
+            [/^Patch reverted to\s*/i, '补丁撤销至 '],
+            [/^Overwrite reverted to\s*/i, '覆盖撤销至 '],
+            [/^Restore to\s*/i, '恢复到 '],
+            [/^Restored to\s*/i, '恢复至 ']
+        ];
+
+    for (const [pattern, replacement] of replacements) {
+        if (pattern.test(text)) {
+            return text.replace(pattern, replacement).trim();
+        }
+    }
+
+    return text;
+}
+
+function getHistoryRecordFileNameNoteBg(record, lang = 'zh_CN') {
+    const rawNote = (record && typeof record.note === 'string') ? record.note.trim() : '';
+    const isEn = lang === 'en';
+    const recordType = String(record?.type || '').trim().toLowerCase() || (() => {
+        if (rawNote === '手动备份' || rawNote === 'Manual Backup') return 'manual';
+        if (rawNote === '切换备份' || rawNote === 'Switch Backup') return 'switch';
+        return 'auto';
+    })();
+
+    const manualLabel = isEn ? 'Manual Backup' : '手动备份';
+    const switchLabel = isEn ? 'Switch Backup' : '切换备份';
+    const autoPrefix = isEn ? 'Auto Backup' : '自动备份';
+    const isSystemManualNote = !rawNote || rawNote === '手动备份' || rawNote === 'Manual Backup';
+    const isSystemSwitchNote = !rawNote || rawNote === '切换备份' || rawNote === 'Switch Backup';
+
+    if (recordType === 'manual') {
+        return isSystemManualNote ? manualLabel : rawNote;
+    }
+    if (recordType === 'switch' || recordType === 'auto_switch') {
+        return isSystemSwitchNote ? switchLabel : rawNote;
+    }
+    if (recordType === 'restore' || recordType === 'revert') {
+        return translateHistoryRecordSystemNoteForFileNameBg(rawNote, lang);
+    }
+
+    const lowerNote = rawNote.toLowerCase();
+    const looksLikeSpecificReason = rawNote.includes('特定')
+        || lowerNote.includes('specific')
+        || /\d{4}-\d{2}-\d{2}[ tT]\d{2}:\d{2}/.test(rawNote);
+    const looksLikeRegularReason = rawNote.includes('常规')
+        || lowerNote.includes('regular')
+        || rawNote.includes(' - ')
+        || rawNote.includes('每')
+        || rawNote.includes('周')
+        || lowerNote.includes('every');
+    const looksLikeLegacyReasonOnly = recordType === 'auto' && (looksLikeSpecificReason || looksLikeRegularReason);
+    const isSystemAutoNote = !rawNote
+        || rawNote === '自动备份'
+        || rawNote === 'Auto Backup'
+        || rawNote.startsWith('自动备份 - ')
+        || rawNote.startsWith('Auto Backup - ')
+        || rawNote.startsWith('自动备份--')
+        || rawNote.startsWith('Auto Backup--')
+        || looksLikeLegacyReasonOnly;
+
+    if (isSystemAutoNote) {
+        if (looksLikeSpecificReason) return isEn ? 'Auto Backup--Specific' : '自动备份--特定';
+        if (looksLikeRegularReason) return isEn ? 'Auto Backup--Regular' : '自动备份--常规';
+        return isEn ? 'Auto Backup--Realtime' : '自动备份--实时';
+    }
+
+    return rawNote;
+}
+
+function sanitizeHistoryExportFileNamePartBg(value, maxLength = 30) {
+    const text = String(value || '')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return maxLength > 0 ? text.substring(0, maxLength) : text;
 }
 
 function buildCurrentChangesArtifactLeafName({ naming, mode, format, lang }) {
@@ -15071,7 +15188,7 @@ async function exportSyncHistoryToCloud(options = {}) {
                     const recordTime = new Date(record.time);
                     const dateStr = `${recordTime.getFullYear()}${(recordTime.getMonth() + 1).toString().padStart(2, '0')}${recordTime.getDate().toString().padStart(2, '0')}_${recordTime.getHours().toString().padStart(2, '0')}${recordTime.getMinutes().toString().padStart(2, '0')}`;
                     const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 7)}` : '';
-                    const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').substring(0, 30) : '';
+                    const cleanNote = sanitizeHistoryExportFileNamePartBg(getHistoryRecordFileNameNoteBg(record, lang), 30);
                     const notePrefix = cleanNote || (isZh ? '备份' : 'backup');
 
                     const baseName = `${seqStr}_${notePrefix}${fingerprint}_${dateStr}`;

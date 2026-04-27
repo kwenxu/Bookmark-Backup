@@ -10167,6 +10167,107 @@ function getUnifiedHistoryRecordNote(record, lang) {
     return rawNote;
 }
 
+function translateHistoryRecordSystemNoteForFilename(rawNote, lang = currentLang) {
+    const text = String(rawNote || '').trim();
+    if (!text) return '';
+    const isEn = lang === 'en';
+
+    const exactZhToEn = {
+        '恢复失败（继续）': 'Restore failed (continue)',
+        '恢复失败（回滚）': 'Restore failed (rollback)',
+        '撤销失败（继续）': 'Revert failed (continue)',
+        '撤销失败（回滚）': 'Revert failed (rollback)'
+    };
+    const exactEnToZh = {
+        'restore failed (continue)': '恢复失败（继续）',
+        'restore failed (rollback)': '恢复失败（回滚）',
+        'revert failed (continue)': '撤销失败（继续）',
+        'revert failed (rollback)': '撤销失败（回滚）'
+    };
+
+    if (isEn && exactZhToEn[text]) return exactZhToEn[text];
+    if (!isEn && exactEnToZh[text.toLowerCase()]) return exactEnToZh[text.toLowerCase()];
+
+    const replacements = isEn
+        ? [
+            [/^导入合并自\s*/, 'Import merged from '],
+            [/^补丁恢复至\s*/, 'Patch restored to '],
+            [/^覆盖恢复至\s*/, 'Overwrite restored to '],
+            [/^补丁撤销至\s*/, 'Patch reverted to '],
+            [/^覆盖撤销至\s*/, 'Overwrite reverted to '],
+            [/^恢复到\s*/, 'Restore to '],
+            [/^恢复至\s*/, 'Restored to ']
+        ]
+        : [
+            [/^Import merged from\s*/i, '导入合并自 '],
+            [/^Patch restored to\s*/i, '补丁恢复至 '],
+            [/^Overwrite restored to\s*/i, '覆盖恢复至 '],
+            [/^Patch reverted to\s*/i, '补丁撤销至 '],
+            [/^Overwrite reverted to\s*/i, '覆盖撤销至 '],
+            [/^Restore to\s*/i, '恢复到 '],
+            [/^Restored to\s*/i, '恢复至 ']
+        ];
+
+    for (const [pattern, replacement] of replacements) {
+        if (pattern.test(text)) {
+            return text.replace(pattern, replacement).trim();
+        }
+    }
+
+    return text;
+}
+
+function getHistoryRecordFilenameNote(record, lang = currentLang) {
+    const rawNote = (record && typeof record.note === 'string') ? record.note.trim() : '';
+    const recordType = String(record?.type || '').trim().toLowerCase() || (() => {
+        if (rawNote === '手动备份' || rawNote === 'Manual Backup') return 'manual';
+        if (rawNote === '切换备份' || rawNote === 'Switch Backup') return 'switch';
+        return 'auto';
+    })();
+
+    if (recordType === 'restore' || recordType === 'revert') {
+        return translateHistoryRecordSystemNoteForFilename(rawNote, lang);
+    }
+
+    const lowerNote = rawNote.toLowerCase();
+    const looksLikeSpecificReason = rawNote.includes('特定') ||
+        lowerNote.includes('specific') ||
+        /\d{4}-\d{2}-\d{2}[ tT]\d{2}:\d{2}/.test(rawNote);
+    const looksLikeRegularReason = rawNote.includes('常规') ||
+        lowerNote.includes('regular') ||
+        rawNote.includes(' - ') ||
+        rawNote.includes('每') ||
+        rawNote.includes('周') ||
+        lowerNote.includes('every');
+    const looksLikeLegacyReasonOnly = recordType === 'auto' && (looksLikeSpecificReason || looksLikeRegularReason);
+    const isSystemNote = !rawNote ||
+        rawNote === '手动备份' ||
+        rawNote === 'Manual Backup' ||
+        rawNote === '切换备份' ||
+        rawNote === 'Switch Backup' ||
+        rawNote === '自动备份' ||
+        rawNote === 'Auto Backup' ||
+        rawNote.startsWith('自动备份 - ') ||
+        rawNote.startsWith('Auto Backup - ') ||
+        rawNote.startsWith('自动备份--') ||
+        rawNote.startsWith('Auto Backup--') ||
+        looksLikeLegacyReasonOnly;
+
+    if (isSystemNote) {
+        return getUnifiedHistoryRecordNote(record, lang);
+    }
+
+    return rawNote;
+}
+
+function sanitizeHistoryExportFilenamePart(value) {
+    return String(value || '')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
 function normalizeHistoryOperationStrategyValue(value) {
     const normalized = String(value || '').trim().toLowerCase();
     if (normalized === 'patch') return 'patch';
@@ -25829,7 +25930,7 @@ async function executeExportChanges() {
                 // Construct filename: Note_Hash_Mode_Time
                 const record = currentExportHistoryRecord;
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
-                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
+                const cleanNote = sanitizeHistoryExportFilenamePart(getHistoryRecordFilenameNote(record, currentLang));
                 const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
                 const modeStr = mode === 'detailed'
                     ? (isZh ? '_详细' : '_Detailed')
@@ -25875,7 +25976,7 @@ async function executeExportChanges() {
                 // Construct filename: Note_Hash_Mode_Time
                 const record = currentExportHistoryRecord;
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
-                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
+                const cleanNote = sanitizeHistoryExportFilenamePart(getHistoryRecordFilenameNote(record, currentLang));
                 const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
                 const modeStr = mode === 'detailed'
                     ? (isZh ? '_详细' : '_Detailed')

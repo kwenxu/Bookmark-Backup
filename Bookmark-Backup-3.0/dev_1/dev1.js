@@ -24,7 +24,7 @@
     const SCOPE_UI_KIND_KEYS = ['folder', 'domain', 'subdomain', 'bookmark', 'whitelist'];
     const CHANGES_VIEW_MODE_KEYS = ['simple', 'detailed', 'collection'];
     const SCOPE_TREE_CHILD_BATCH = 120;
-    const REVIEW_AUTO_REVIEW_DEFAULT_MS = 2500;
+    const REVIEW_AUTO_REVIEW_DEFAULT_MS = 500;
     const REVIEW_AUTO_REVIEW_MIN_MS = 100;
     const REVIEW_AUTO_REVIEW_MAX_MS = 60000;
     const QUEUE_BATCH_SIZE_DEFAULT = 10;
@@ -275,9 +275,9 @@
             exportFormats: '导出格式',
             exportTypesLabel: '导出类型',
             mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API。它只能保存抓取瞬间浏览器已经加载出来的页面状态；论坛、长列表等虚拟滚动或懒加载内容支持可能不好，未渲染区域可能空白或缺失，当前无法在本地补齐这些未加载内容。',
-            exportHelp: '导出配置：固定导出 MHTML；复核与打包批次由队列批大小控制。',
-            exportModeSingleFile: '单文件下载',
-            exportModeBatchZip: '批次 ZIP',
+            exportHelp: '导出配置：固定导出 MHTML 文件到网页快照文件夹；不再生成 ZIP。复核列表由队列批大小控制。',
+            exportModeSingleFile: '文件夹直出',
+            exportModeBatchZip: '文件夹直出',
             queueBatchSizeLabel: '每批',
             queueBatchSizeTip: '控制每个队列列表最多打开和导出的 URL 数，默认 10。',
             queueBatchSizeUpdated: '队列批大小已更新。',
@@ -332,7 +332,7 @@
             reviewQueueChanged: '复核窗口队列发生变化，请重新勾选并提交。',
             reviewQueueReady: '抓取队列已更新，请点击“在新窗口打开”进行复核。',
             reviewSyncFailed: '刷新复核队列失败',
-            reviewWindowClosedBatchRemoved: '复核窗口已关闭，当前批次已从队列移除。',
+            reviewWindowClosedBatchRemoved: '复核窗口已关闭，对应队列项已移除。',
             tipReviewSyncNow: '手动从复核窗口拉取当前已打开页面，并同步到待抓取队列。',
             tipReviewOpenWindow: '按当前抓取队列在新窗口打开复核页面。',
             tipReviewSubmit: '提交本次复核结果，提交后才允许执行抓取。',
@@ -344,6 +344,7 @@
             reviewReviewedSummary: '复核',
             reviewCountBookmarks: '书签',
             reviewCountFolders: '文件夹',
+            scopeExistingQueuePrefix: '已存在',
             scopeTitle: '网页快照·选取范围',
             scopeSearchPlaceholder: '搜索当前维度...',
             scopeSameDataHint: '同一批书签数据，切换不同选择视角（树 / 域名 / 子域名）',
@@ -470,9 +471,9 @@
             exportFormats: 'Export Formats',
             exportTypesLabel: 'Format Types',
             mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API. It can only save the page state already loaded in the browser at capture time; forums, long lists, virtual scrolling, and lazy-loaded content may be incomplete or blank, and this local capture flow cannot reconstruct content that was never loaded.',
-            exportHelp: 'Export setup: MHTML only. Review and ZIP batching follow the queue batch size.',
-            exportModeSingleFile: 'Single Files',
-            exportModeBatchZip: 'Batch ZIP',
+            exportHelp: 'Export setup: MHTML files are written directly to the Web Snapshot folder; ZIP output is no longer generated. Review lists still follow the queue batch size.',
+            exportModeSingleFile: 'Folder Files',
+            exportModeBatchZip: 'Folder Files',
             queueBatchSizeLabel: 'Batch',
             queueBatchSizeTip: 'Controls the maximum URLs opened and exported per queue list. Default is 10.',
             queueBatchSizeUpdated: 'Queue batch size updated.',
@@ -527,7 +528,7 @@
             reviewQueueChanged: 'Review queue changed. Please re-check and submit again.',
             reviewQueueReady: 'Queue updated. Click "Open in New Window" to start review.',
             reviewSyncFailed: 'Failed to refresh review queue',
-            reviewWindowClosedBatchRemoved: 'Review window closed. Current batch was removed from the queue.',
+            reviewWindowClosedBatchRemoved: 'Review window closed. Matching queue items were removed.',
             tipReviewSyncNow: 'Manually pull currently open pages from the review window and sync them to the queue.',
             tipReviewOpenWindow: 'Open review pages in a new window for the current queue.',
             tipReviewSubmit: 'Submit review result. Capture is blocked before submission.',
@@ -539,6 +540,7 @@
             reviewReviewedSummary: 'Reviewed',
             reviewCountBookmarks: 'Bookmarks',
             reviewCountFolders: 'Folders',
+            scopeExistingQueuePrefix: 'Existing',
             scopeTitle: 'Web Snapshot Scope Picker',
             scopeSearchPlaceholder: 'Search in current dimension...',
             scopeSameDataHint: 'Same bookmark dataset, different selection views (Tree / Domain / Subdomain)',
@@ -1065,6 +1067,32 @@
         return getBookmarkFolderCounts(sourceState?.filteredItems || []);
     }
 
+    function getScopeExistingQueueMatchCounts(sourceState, kind) {
+        if (kind === 'whitelist') {
+            return {
+                bookmarkCount: 0,
+                folderCount: 0
+            };
+        }
+
+        const queueUrlKeys = new Set(
+            cloneQueueItems(state.lockedQueueItems)
+                .map(item => getQueueItemStableKey(item))
+                .filter(Boolean)
+        );
+        if (queueUrlKeys.size === 0) {
+            return {
+                bookmarkCount: 0,
+                folderCount: 0
+            };
+        }
+
+        const selectedItems = Array.isArray(sourceState?.filteredItems) ? sourceState.filteredItems : [];
+        const matchedItems = selectedItems
+            .filter((item) => queueUrlKeys.has(normalizeWhitelistKey(item?.url || '')));
+        return getBookmarkFolderCounts(matchedItems);
+    }
+
     function normalizeReviewSession(raw) {
         const rawWindowId = Number(raw?.windowId);
         const windowId = Number.isFinite(rawWindowId) ? Math.floor(rawWindowId) : null;
@@ -1252,16 +1280,20 @@
                 cancelReviewSyncTimers();
                 return;
             }
-            removeCurrentReviewBatchFromQueue(state.lockedQueueItems, { useInitialBatchKeys: true, reviewWindowId });
+            const { remainingQueue } = removeReviewQueueItemsByWindowId(reviewWindowId);
             clearReviewSession();
             rerenderAllDataPanels();
-            setStatus(t('reviewWindowClosedBatchRemoved'), 'success');
+            setStatus(remainingQueue.length <= 0 ? t('queueCleared') : t('reviewWindowClosedBatchRemoved'), 'success');
             return;
         }
 
-        const removeBatchOnMissing = event?.removeBatchOnMissing === true
-            || reason === 'tab-removed'
-            || reason === 'window-removed';
+        const eventTabId = Number(event?.tabId);
+        if (reason === 'tab-removed' && Number.isFinite(eventTabId)) {
+            removeReviewQueueItemByTabId(eventTabId, reviewWindowId);
+            rerenderAllDataPanels();
+        }
+
+        const removeBatchOnMissing = event?.removeBatchOnMissing === true;
         const pruneMissingItems = event?.pruneMissingItems === true || reason === 'tab-removed';
         if (reason !== 'auto-review-timer') {
             clearReviewAutoReviewTimer();
@@ -1324,6 +1356,48 @@
     function setLockedQueueItems(items) {
         state.lockedQueueItems = assignQueueBatchMetadata(items);
         persistQueueSnapshot();
+    }
+
+    function appendLockedQueueItems(items) {
+        const existingQueue = cloneQueueItems(state.lockedQueueItems);
+        const selectedItems = cloneQueueItems(items);
+        if (selectedItems.length === 0) {
+            return {
+                queue: existingQueue,
+                addedCount: 0,
+                skippedCount: 0
+            };
+        }
+
+        const seenKeys = new Set(
+            existingQueue
+                .map(item => getQueueItemStableKey(item))
+                .filter(Boolean)
+        );
+        const nextQueue = existingQueue.slice();
+        let addedCount = 0;
+        let skippedCount = 0;
+        selectedItems.forEach((item) => {
+            const key = getQueueItemStableKey(item);
+            if (!key) return;
+            if (seenKeys.has(key)) {
+                skippedCount += 1;
+                return;
+            }
+            seenKeys.add(key);
+            nextQueue.push(item);
+            addedCount += 1;
+        });
+
+        if (addedCount > 0 || existingQueue.length === 0) {
+            setLockedQueueItems(nextQueue);
+        }
+
+        return {
+            queue: cloneQueueItems(state.lockedQueueItems),
+            addedCount,
+            skippedCount
+        };
     }
 
     function clearLockedQueueItems() {
@@ -1621,6 +1695,54 @@
             applyAllFilters();
         }
         return remainingQueue;
+    }
+
+    function removeReviewQueueItemsByPredicate(predicate) {
+        if (typeof predicate !== 'function') return { removed: false, remainingQueue: cloneQueueItems(state.lockedQueueItems) };
+        const previousQueue = cloneQueueItems(state.lockedQueueItems);
+        let removed = false;
+        const remainingQueue = previousQueue.filter((item) => {
+            if (predicate(item)) {
+                removed = true;
+                return false;
+            }
+            return true;
+        });
+        if (removed) {
+            setLockedQueueItems(remainingQueue);
+            clampQueueBatchIndex(remainingQueue);
+            if (remainingQueue.length <= 0) {
+                clearAllScopeSelections();
+                applyAllFilters();
+            }
+        }
+        return { removed, remainingQueue };
+    }
+
+    function removeReviewQueueItemByTabId(tabId, reviewWindowId = null) {
+        const normalizedTabId = Number(tabId);
+        if (!Number.isFinite(normalizedTabId)) {
+            return { removed: false, remainingQueue: cloneQueueItems(state.lockedQueueItems) };
+        }
+        const normalizedWindowId = Number(reviewWindowId);
+        const hasWindowId = Number.isFinite(normalizedWindowId);
+        return removeReviewQueueItemsByPredicate((item) => {
+            const itemTabId = getQueueItemTabId(item);
+            if (itemTabId !== Math.floor(normalizedTabId)) return false;
+            if (!hasWindowId) return true;
+            const itemWindowId = getQueueItemReviewWindowId(item);
+            return itemWindowId == null || itemWindowId === Math.floor(normalizedWindowId);
+        });
+    }
+
+    function removeReviewQueueItemsByWindowId(reviewWindowId) {
+        const normalizedWindowId = Number(reviewWindowId);
+        if (!Number.isFinite(normalizedWindowId)) {
+            return { removed: false, remainingQueue: cloneQueueItems(state.lockedQueueItems) };
+        }
+        return removeReviewQueueItemsByPredicate((item) => {
+            return getQueueItemReviewWindowId(item) === Math.floor(normalizedWindowId);
+        });
     }
 
     function getActiveQueueItems(items = getExecutionQueueItems()) {
@@ -4091,10 +4213,17 @@
         const selectedHeaderSummaryEl = document.getElementById('dev1ScopeSelectedSummaryHeader');
         if (selectedHeaderSummaryEl) {
             const headerCounts = getScopeSelectionSummaryCounts(sourceState, kind, whitelistCount);
-            const summaryText = getLangKey() === 'en'
-                ? `${t('reviewCountBookmarks')} ${headerCounts.bookmarkCount} · ${t('reviewCountFolders')} ${headerCounts.folderCount}`
-                : `${t('reviewCountBookmarks')} ${headerCounts.bookmarkCount} · ${t('reviewCountFolders')} ${headerCounts.folderCount}`;
+            const summaryText = `${t('reviewSelectedSummary')} ${t('reviewCountBookmarks')} ${headerCounts.bookmarkCount} · ${t('reviewCountFolders')} ${headerCounts.folderCount}`;
             selectedHeaderSummaryEl.textContent = summaryText;
+        }
+        const existingSummaryEl = document.getElementById('dev1ScopeExistingSummary');
+        if (existingSummaryEl) {
+            const existingCounts = getScopeExistingQueueMatchCounts(sourceState, kind);
+            const hasExisting = existingCounts.bookmarkCount > 0 || existingCounts.folderCount > 0;
+            existingSummaryEl.hidden = !hasExisting;
+            existingSummaryEl.textContent = hasExisting
+                ? `${t('scopeExistingQueuePrefix')} ${t('reviewCountBookmarks')} ${existingCounts.bookmarkCount} · ${t('reviewCountFolders')} ${existingCounts.folderCount}`
+                : '';
         }
         const clearKindBtn = document.getElementById('dev1ScopeClearKindBtn');
         if (clearKindBtn) {
@@ -4607,7 +4736,7 @@
         const reviewSyncBtn = root.querySelector('#dev1ReviewSyncBtn');
         if (reviewSyncBtn) {
             reviewSyncBtn.addEventListener('click', () => {
-                syncReviewWindowQueue({ silentStatus: false, removeBatchOnMissing: true }).then((synced) => {
+                syncReviewWindowQueue({ silentStatus: false, pruneMissingItems: true }).then((synced) => {
                     if (synced) {
                         scheduleReviewAutoReviewCheck(getReviewWindowId());
                     }
@@ -4716,11 +4845,21 @@
                 } catch (_) { }
                 clearReviewSession();
                 applyAllFilters();
-                setLockedQueueItems(state.filteredItems);
+                const selectedItems = cloneQueueItems(state.filteredItems);
+                const previousQueue = cloneQueueItems(state.lockedQueueItems);
+                const appendResult = appendLockedQueueItems(selectedItems);
                 state.scopePanelOpen = false;
                 resetScopePanelSessionState({ clearSelections: true, keepChangesMode: true });
                 renderScopePanelVisibility();
                 rerenderAllDataPanels();
+                if (selectedItems.length === 0 && previousQueue.length > 0) {
+                    setStatus(t('queueSelectScopeFirst'), 'warning');
+                    return;
+                }
+                if (selectedItems.length > 0 && appendResult.addedCount <= 0 && previousQueue.length > 0) {
+                    setStatus(t('reviewQueueReady'), 'success');
+                    return;
+                }
                 const queueItems = getCurrentQueueBatchItems();
                 if (!Array.isArray(queueItems) || queueItems.length === 0) {
                     setStatus(t('queueSelectScopeFirst'), 'warning');
@@ -5106,7 +5245,7 @@
     }
 
     function getSelectedExportMode() {
-        return 'batch-zip';
+        return 'single-file';
     }
 
     function getSelectedBatchSize() {
@@ -5362,7 +5501,10 @@
             throw new Error(t('reviewWindowMissing'));
         }
 
-        const synced = await syncReviewWindowQueue({ silentStatus: true });
+        const synced = await syncReviewWindowQueue({
+            silentStatus: true,
+            pruneMissingItems: true
+        });
         if (!synced) {
             throw new Error(t('reviewWindowMissing'));
         }
@@ -5634,7 +5776,10 @@
         }
 
         if (!isReviewSatisfiedForQueue(queueItems)) {
-            const synced = await syncReviewWindowQueue({ silentStatus: true });
+            const synced = await syncReviewWindowQueue({
+                silentStatus: true,
+                pruneMissingItems: true
+            });
             if (!synced) {
                 setStatus(t('reviewSyncFailed'), 'warning');
                 return;
@@ -6114,7 +6259,10 @@
                             </div>
                         </div>
                         <div class="manual-selector-footer dev1-scope-footer">
-                            <span class="manual-selector-count dev1-scope-footer-summary" id="dev1ScopeSelectedSummaryHeader">${escapeHtml(t('reviewCountBookmarks'))} 0 · ${escapeHtml(t('reviewCountFolders'))} 0</span>
+                            <div class="dev1-scope-footer-left">
+                                <span class="manual-selector-count dev1-scope-footer-summary" id="dev1ScopeSelectedSummaryHeader">${escapeHtml(t('reviewSelectedSummary'))} ${escapeHtml(t('reviewCountBookmarks'))} 0 · ${escapeHtml(t('reviewCountFolders'))} 0</span>
+                                <span class="dev1-scope-footer-existing" id="dev1ScopeExistingSummary" hidden></span>
+                            </div>
                             <div class="dev1-scope-footer-actions">
                                 <button id="dev1ScopeClearKindBtn" class="manual-selector-btn manual-selector-btn-clear" type="button">${escapeHtml(t('scopeClearCurrentKind'))}</button>
                                 <button id="dev1ScopeDoneBtn" class="manual-selector-btn manual-selector-btn-confirm" type="button">${escapeHtml(t('scopeDone'))}</button>
@@ -6194,7 +6342,10 @@
 
         if (getReviewWindowId() != null) {
             ensureReviewEventSyncState();
-            const synced = await syncReviewWindowQueue({ silentStatus: true });
+            const synced = await syncReviewWindowQueue({
+                silentStatus: true,
+                pruneMissingItems: true
+            });
             if (synced) {
                 scheduleReviewAutoReviewCheck(getReviewWindowId());
             }

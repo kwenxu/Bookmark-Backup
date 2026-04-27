@@ -4173,8 +4173,9 @@ function dev1NormalizeCaptureMode(value = '') {
 }
 
 function dev1NormalizeExportMode(value = '') {
-    const mode = String(value || '').trim().toLowerCase();
-    return mode === 'batch-zip' ? 'batch-zip' : 'single-file';
+    // Legacy "batch-zip" requests now export the same MHTML files directly
+    // into the web snapshot folder. ZIP packaging is intentionally disabled.
+    return 'single-file';
 }
 
 function dev1NormalizeBatchSize(value) {
@@ -4404,7 +4405,9 @@ function dev1BuildPublicRunState(runState, options = {}) {
     const summary = dev1ComputeSummaryFromRows(rows);
     const status = String(runState.status || '').trim().toLowerCase() || 'unknown';
     const interruptedReason = String(runState.interruptedReason || '').trim();
-    const pendingBatchCount = batches.filter((batch) => batch.status !== 'completed').length;
+    const pendingBatchCount = mode === 'batch-zip'
+        ? batches.filter((batch) => batch.status !== 'completed').length
+        : 0;
     const isCancelledByUser = interruptedReason === 'cancelled_by_user';
     return {
         version: Number(runState.version) || DEV1_CAPTURE_RUN_STATE_VERSION,
@@ -7038,7 +7041,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
-                    const lang = message.lang || (await getCurrentLang());
                     const localHistoryFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const downloadId = await new Promise((resolve, reject) => {

@@ -10958,7 +10958,7 @@ function getRestoreMergeViewModeAvailability(record = currentRestoreRecord) {
     }
 
     if (!capabilities.hasSnapshotData) {
-        return { supported: true, simple: false, detailed: false, collection: true };
+        return { supported: true, simple: true, detailed: true, collection: true };
     }
     return { supported: true, simple: true, detailed: true, collection: true };
 }
@@ -19674,10 +19674,35 @@ function renderDetailModalContent(record, mode) {
                             await ensureRecordBookmarkTree(record);
                             treeToSearch = record.bookmarkTree || null;
                         } else {
-                            const prepared = await prepareDataForExport(record);
-                            treeToSearch = prepared?.treeToExport || record.bookmarkTree;
-                            changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
-                            oldTreeToSearch = prepared?.comparisonBaseTree || null;
+                            const renderedDetail = getDetailChangeCache(record.time, normalizedMode);
+                            if (renderedDetail?.treeToRender && renderedDetail.changeMap instanceof Map) {
+                                treeToSearch = Array.isArray(renderedDetail.treeToRender)
+                                    ? renderedDetail.treeToRender
+                                    : [renderedDetail.treeToRender];
+                                changeMap = renderedDetail.changeMap;
+                                oldTreeToSearch = renderedDetail.comparisonBaseTree || null;
+                            } else {
+                                const prepared = await prepareDataForExport(record);
+                                const storedChildren = getPersistedChangeViewChildren(prepared?.changeData, normalizedMode, currentLang);
+                                const storedRoot = normalizedMode === 'collection' && Array.isArray(storedChildren)
+                                    ? buildCollectionViewRootForRecord(storedChildren, {
+                                        recordTime: record.time,
+                                        lazyKey: `${record.time}:collection`
+                                    })
+                                    : buildPersistedChangeViewRoot(
+                                        prepared?.changeData,
+                                        normalizedMode,
+                                        `${record.time}:stored-${normalizedMode}`
+                                    );
+                                if (storedRoot) {
+                                    treeToSearch = [storedRoot];
+                                    changeMap = buildChangeMapFromStoredViewTree(storedRoot);
+                                } else {
+                                    treeToSearch = prepared?.treeToExport || record.bookmarkTree;
+                                    changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+                                    oldTreeToSearch = prepared?.comparisonBaseTree || null;
+                                }
+                            }
 
                             // 变化搜索没有变化时隐藏；快照搜索允许空 changeMap，因为它搜索整棵快照树。
                             if (changeMap.size === 0) {
@@ -20141,18 +20166,6 @@ function invalidateRecordChangeDataCache(recordTime) {
     recordChangeDataCache.delete(timeKey);
 }
 
-function deserializeRecordChangeMap(changeData) {
-    const map = new Map();
-    const entries = Array.isArray(changeData?.changeEntries) ? changeData.changeEntries : [];
-    entries.forEach(entry => {
-        if (!Array.isArray(entry) || entry.length < 2) return;
-        const id = entry[0];
-        if (id == null) return;
-        map.set(String(id), entry[1] || {});
-    });
-    return map;
-}
-
 function hasDeletedChangeInMap(changeMap) {
     if (!(changeMap instanceof Map) || changeMap.size === 0) return false;
     for (const [, change] of changeMap) {
@@ -20170,6 +20183,20 @@ function cloneSerializableData(value) {
     }
 }
 
+function deserializeRecordChangeMap(entriesOrPayload) {
+    const map = new Map();
+    const entries = Array.isArray(entriesOrPayload)
+        ? entriesOrPayload
+        : (Array.isArray(entriesOrPayload?.changeEntries) ? entriesOrPayload.changeEntries : []);
+    entries.forEach(entry => {
+        if (!Array.isArray(entry) || entry.length < 2) return;
+        const id = entry[0];
+        if (id == null) return;
+        map.set(String(id), (entry[1] && typeof entry[1] === 'object') ? entry[1] : {});
+    });
+    return map;
+}
+
 function normalizeBookmarkComparisonGenerationManual(value, fallback = 1) {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed >= 1) return Math.floor(parsed);
@@ -20177,14 +20204,6 @@ function normalizeBookmarkComparisonGenerationManual(value, fallback = 1) {
     const parsedFallback = Number(fallback);
     if (Number.isFinite(parsedFallback) && parsedFallback >= 1) return Math.floor(parsedFallback);
     return 1;
-}
-
-function shouldUsePersistedChangeDataForRecord(options = {}) {
-    const persistedChangeData = options?.persistedChangeData || null;
-
-    if (!persistedChangeData || typeof persistedChangeData !== 'object') return false;
-    if (!Array.isArray(persistedChangeData.changeEntries)) return false;
-    return true;
 }
 
 function inferCollectionGroupChangeTypeFromTitle(title) {
@@ -20224,6 +20243,324 @@ function buildCollectionViewNodesWithIds(nodes, prefix = 'collection') {
     return walk(cloneSerializableData(nodes) || [], prefix, 0);
 }
 
+function stripStoredChangeTitlePrefix(title, changeType = '') {
+    const value = String(title || '');
+    const types = String(changeType || '').split('+').filter(Boolean);
+    if (types.includes('added')) return value.replace(/^\[\+\]\s+/, '');
+    if (types.includes('deleted')) return value.replace(/^\[-\]\s+/, '');
+    if (types.includes('modified') && types.includes('moved')) return value.replace(/^\[~>>\]\s+/, '');
+    if (types.includes('modified')) return value.replace(/^\[~\]\s+/, '');
+    if (types.includes('moved')) return value.replace(/^\[>>\]\s+/, '');
+    return value;
+}
+
+function getPersistedDetailedChangeChildren(changeData) {
+    if (!Array.isArray(changeData?.detailedChildren)) return null;
+    return cloneSerializableData(changeData.detailedChildren) || [];
+}
+
+function deriveSimpleChildrenFromDetailed(detailedChildren) {
+    const hasChangeRecursive = (node) => {
+        if (!node || typeof node !== 'object') return false;
+        if (String(node.changeType || '').trim()) return true;
+        return Array.isArray(node.children) && node.children.some(child => hasChangeRecursive(child));
+    };
+
+    const deriveNode = (node) => {
+        if (!node || typeof node !== 'object') return null;
+        const selfChanged = !!String(node.changeType || '').trim();
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+
+        if (selfChanged) {
+            return cloneSerializableData(node);
+        }
+
+        if (!isFolder || !Array.isArray(node.children)) {
+            return null;
+        }
+
+        const children = node.children
+            .filter(child => hasChangeRecursive(child))
+            .map(child => deriveNode(child))
+            .filter(Boolean);
+        if (!children.length) return null;
+
+        return { ...node, children };
+    };
+
+    return (Array.isArray(detailedChildren) ? detailedChildren : [])
+        .map(node => deriveNode(node))
+        .filter(Boolean);
+}
+
+function deriveCollectionChildrenFromDetailed(detailedChildren, stats = {}, lang = currentLang) {
+    const isZh = lang === 'zh_CN';
+    const safeNumberLocal = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+
+    const bookmarkAdded = safeNumberLocal(stats?.bookmarkAdded);
+    const folderAdded = safeNumberLocal(stats?.folderAdded);
+    const bookmarkDeleted = safeNumberLocal(stats?.bookmarkDeleted);
+    const folderDeleted = safeNumberLocal(stats?.folderDeleted);
+    const movedCount = safeNumberLocal(stats?.movedCount);
+    const modifiedCount = safeNumberLocal(stats?.modifiedCount);
+    const movedBookmarkCount = safeNumberLocal(stats?.movedBookmarkCount);
+    const movedFolderCount = safeNumberLocal(stats?.movedFolderCount);
+    const modifiedBookmarkCount = safeNumberLocal(stats?.modifiedBookmarkCount);
+    const modifiedFolderCount = safeNumberLocal(stats?.modifiedFolderCount);
+
+    const buckets = {
+        added: [],
+        deleted: [],
+        moved: [],
+        modified: []
+    };
+
+    const safeTitle = (title, changeType = '') => {
+        const stripped = stripStoredChangeTitlePrefix(title, changeType);
+        const normalized = String(stripped || '').trim();
+        return normalized || (isZh ? '(无标题)' : '(Untitled)');
+    };
+
+    const formatBookmarkFolderCounts = (bookmarkCount, folderCount) => {
+        const parts = [];
+        if (bookmarkCount > 0) {
+            parts.push(isZh ? `${bookmarkCount}个书签` : `${bookmarkCount} bookmarks`);
+        }
+        if (folderCount > 0) {
+            parts.push(isZh ? `${folderCount}个文件夹` : `${folderCount} folders`);
+        }
+        return parts.join(isZh ? '，' : ', ');
+    };
+
+    const buildCollectionGroupTitle = ({ marker, zhVerb, enVerb, bookmarkCount, folderCount, fallbackCount }) => {
+        const breakdown = formatBookmarkFolderCounts(bookmarkCount, folderCount);
+        if (breakdown) {
+            return isZh ? `${marker} ${zhVerb}${breakdown}` : `${marker} ${enVerb} ${breakdown}`;
+        }
+        if (fallbackCount > 0) {
+            return isZh ? `${marker} ${zhVerb}${fallbackCount}项` : `${marker} ${enVerb} ${fallbackCount} items`;
+        }
+        return isZh ? `${marker} ${zhVerb}` : `${marker} ${enVerb}`;
+    };
+
+    const cloneCollectionEntry = (node, rootChangeType = '') => {
+        const isFolder = node?.type === 'folder' || (!node?.url && Array.isArray(node?.children));
+        const sourceId = node?.sourceId != null
+            ? String(node.sourceId)
+            : (node?.id != null ? String(node.id) : '');
+        const entry = {
+            title: safeTitle(node?.title, node?.changeType),
+            type: isFolder ? 'folder' : 'bookmark',
+            ...(sourceId ? { sourceId } : {}),
+            ...(node?.url ? { url: node.url } : {}),
+            ...(rootChangeType ? { changeType: rootChangeType } : {})
+        };
+
+        if (isFolder) {
+            entry.children = (Array.isArray(node?.children) ? node.children : [])
+                .map(child => cloneCollectionEntry(child, ''))
+                .filter(Boolean);
+        }
+
+        return entry;
+    };
+
+    const appendEntry = (bucketKey, node, changeType) => {
+        buckets[bucketKey].push(cloneCollectionEntry(node, changeType));
+    };
+
+    const traverse = (node) => {
+        if (!node || typeof node !== 'object') return;
+
+        const changeType = String(node.changeType || '').trim();
+        const types = changeType ? changeType.split('+') : [];
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+        let appendedFullSubtree = false;
+
+        if (types.includes('added')) {
+            appendEntry('added', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('deleted')) {
+            appendEntry('deleted', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('moved')) {
+            appendEntry('moved', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('modified')) {
+            appendEntry('modified', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+
+        if (appendedFullSubtree) return;
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => traverse(child));
+        }
+    };
+
+    (Array.isArray(detailedChildren) ? detailedChildren : []).forEach(node => traverse(node));
+
+    const addedTitle = buildCollectionGroupTitle({
+        marker: '[+]',
+        zhVerb: '增加了',
+        enVerb: 'Added',
+        bookmarkCount: bookmarkAdded,
+        folderCount: folderAdded,
+        fallbackCount: bookmarkAdded + folderAdded
+    });
+    const deletedTitle = buildCollectionGroupTitle({
+        marker: '[-]',
+        zhVerb: '删除了',
+        enVerb: 'Deleted',
+        bookmarkCount: bookmarkDeleted,
+        folderCount: folderDeleted,
+        fallbackCount: bookmarkDeleted + folderDeleted
+    });
+    const movedTitle = buildCollectionGroupTitle({
+        marker: '[>>]',
+        zhVerb: '移动了',
+        enVerb: 'Moved',
+        bookmarkCount: movedBookmarkCount,
+        folderCount: movedFolderCount,
+        fallbackCount: movedCount
+    });
+    const modifiedTitle = buildCollectionGroupTitle({
+        marker: '[~]',
+        zhVerb: '修改了',
+        enVerb: 'Modified',
+        bookmarkCount: modifiedBookmarkCount,
+        folderCount: modifiedFolderCount,
+        fallbackCount: modifiedCount
+    });
+
+    return [
+        { title: addedTitle, type: 'folder', children: buckets.added },
+        { title: deletedTitle, type: 'folder', children: buckets.deleted },
+        { title: movedTitle, type: 'folder', children: buckets.moved },
+        { title: modifiedTitle, type: 'folder', children: buckets.modified }
+    ].filter(group => Array.isArray(group.children) && group.children.length > 0);
+}
+
+function buildChangeMapFromDetailedChildren(detailedChildren) {
+    const map = new Map();
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const id = node.id != null ? String(node.id) : '';
+        const changeType = String(node.changeType || '').trim();
+        const embeddedChange = node.change && typeof node.change === 'object'
+            ? cloneSerializableData(node.change)
+            : null;
+        const resolvedType = String(embeddedChange?.type || changeType || '').trim();
+        if (id && resolvedType) {
+            map.set(id, {
+                ...(embeddedChange || {}),
+                type: resolvedType
+            });
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child));
+        }
+    };
+    (Array.isArray(detailedChildren) ? detailedChildren : []).forEach(node => walk(node));
+    return map;
+}
+
+function getPersistedChangeViewChildren(changeData, mode, lang = currentLang) {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'collection');
+    const detailedChildren = getPersistedDetailedChangeChildren(changeData);
+    if (!Array.isArray(detailedChildren)) {
+        if (normalizedMode === 'collection' && Array.isArray(changeData?.collectionChildren)) {
+            return cloneSerializableData(changeData.collectionChildren) || [];
+        }
+        return null;
+    }
+    if (normalizedMode === 'detailed') return detailedChildren;
+    if (normalizedMode === 'simple') return deriveSimpleChildrenFromDetailed(detailedChildren);
+    return deriveCollectionChildrenFromDetailed(detailedChildren, changeData?.stats || {}, lang);
+}
+
+function buildStoredChangeViewNodesWithIds(nodes, prefix = 'stored-change-view', options = {}) {
+    const stripChangePrefix = options.stripChangePrefix === true;
+    const walk = (items, parentPath) => {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item, index) => {
+                if (!item || typeof item !== 'object') return null;
+                const currentPath = `${parentPath}-${index}`;
+                const copied = { ...item };
+                if (!copied.id) copied.id = currentPath;
+                if (stripChangePrefix && typeof copied.title === 'string') {
+                    copied.title = stripStoredChangeTitlePrefix(copied.title, copied.changeType);
+                }
+                if (Array.isArray(copied.children)) {
+                    copied.children = walk(copied.children, currentPath);
+                }
+                return copied;
+            })
+            .filter(Boolean);
+    };
+
+    return walk(cloneSerializableData(nodes) || [], prefix);
+}
+
+function buildPersistedChangeViewRoot(changeData, mode, prefix = 'persisted-change-view') {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'collection');
+    const children = getPersistedChangeViewChildren(changeData, normalizedMode);
+    if (!Array.isArray(children)) return null;
+    const rootChildren = normalizedMode === 'collection'
+        ? buildCollectionViewNodesWithIds(children, `${prefix}:collection`)
+        : buildStoredChangeViewNodesWithIds(children, `${prefix}:${normalizedMode}`, { stripChangePrefix: true });
+    return {
+        id: `${prefix}:root`,
+        title: 'root',
+        children: rootChildren
+    };
+}
+
+function buildChangeMapFromStoredViewTree(root) {
+    const map = new Map();
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const id = node.id != null ? String(node.id) : '';
+        const changeType = String(node.changeType || '').trim();
+        const embeddedChange = node.change && typeof node.change === 'object'
+            ? cloneSerializableData(node.change)
+            : null;
+        const resolvedType = String(embeddedChange?.type || changeType || '').trim();
+        if (id && resolvedType) {
+            map.set(id, {
+                ...(embeddedChange || {}),
+                type: resolvedType
+            });
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach(walk);
+        }
+    };
+    walk(root);
+    return map;
+}
+
+function getHistoryDetailModeLabel(mode) {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'collection');
+    if (normalizedMode === 'detailed') return currentLang === 'zh_CN' ? '详细' : 'Detailed';
+    if (normalizedMode === 'simple') return currentLang === 'zh_CN' ? '简略' : 'Simple';
+    return currentLang === 'zh_CN' ? '集合' : 'Collection';
+}
+
+function buildCollectionViewRootForRecord(collectionChildren, options = {}) {
+    const list = Array.isArray(collectionChildren) ? collectionChildren : [];
+    const recordTime = options.recordTime != null ? String(options.recordTime) : '';
+    const lazyKey = options.lazyKey != null ? String(options.lazyKey) : `${recordTime}:collection`;
+    return {
+        id: `${lazyKey}:root`,
+        title: 'root',
+        children: buildCollectionViewNodesWithIds(list, `${lazyKey}:node`)
+    };
+}
+
 function renderCollectionTreeHtmlForRecord(collectionChildren, options = {}) {
     const list = Array.isArray(collectionChildren) ? collectionChildren : [];
     if (!list.length) {
@@ -20241,11 +20578,7 @@ function renderCollectionTreeHtmlForRecord(collectionChildren, options = {}) {
     const lazyKey = options.lazyKey != null ? String(options.lazyKey) : `${recordTime}:collection`;
     const isZh = currentLang === 'zh_CN';
     const initialExpandDepth = Number.isFinite(options.expandDepth) ? Number(options.expandDepth) : 0;
-    const root = {
-        id: `${lazyKey}:root`,
-        title: 'root',
-        children: buildCollectionViewNodesWithIds(list, `${lazyKey}:node`)
-    };
+    const root = buildCollectionViewRootForRecord(list, { recordTime, lazyKey });
 
     return generateHistoryTreeHtml(root, new Map(), 'detailed', {
         recordTime: recordTime || lazyKey,
@@ -20327,11 +20660,10 @@ async function generateTreeBasedChanges(record, mode) {
     const prepared = await prepareDataForExport(record);
     const treeToRender = prepared?.treeToExport || record.bookmarkTree;
     const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+    const storedChildren = getPersistedChangeViewChildren(prepared?.changeData, detailMode, currentLang);
 
     if (detailMode === 'collection') {
-        let collectionChildren = Array.isArray(prepared?.changeData?.collectionChildren)
-            ? prepared.changeData.collectionChildren
-            : null;
+        let collectionChildren = Array.isArray(storedChildren) ? storedChildren : null;
 
         if (!collectionChildren) {
             const statsSource = prepared?.changeData?.stats || record?.bookmarkStats || {};
@@ -20345,9 +20677,13 @@ async function generateTreeBasedChanges(record, mode) {
         }
 
         const safeCollectionChildren = Array.isArray(collectionChildren) ? collectionChildren : [];
+        const collectionRoot = buildCollectionViewRootForRecord(safeCollectionChildren, {
+            recordTime: record.time,
+            lazyKey: `${record.time}:collection`
+        });
         setDetailChangeCache(record.time, detailMode, {
-            treeToRender,
-            changeMap,
+            treeToRender: collectionRoot,
+            changeMap: buildChangeMapFromStoredViewTree(collectionRoot),
             collectionChildren: safeCollectionChildren
         });
 
@@ -20355,6 +20691,38 @@ async function generateTreeBasedChanges(record, mode) {
             recordTime: record.time,
             lazyKey: `${record.time}:collection`
         });
+    }
+
+    if (Array.isArray(storedChildren)) {
+        const storedRoot = buildPersistedChangeViewRoot(
+            prepared.changeData,
+            detailMode,
+            `${record.time}:stored-${detailMode}`
+        );
+        if (storedRoot) {
+            const storedChangeMap = buildChangeMapFromStoredViewTree(storedRoot);
+            if (storedChangeMap.size === 0) {
+                return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${currentLang === 'zh_CN' ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+            }
+            setDetailChangeCache(record.time, detailMode, {
+                treeToRender: storedRoot,
+                changeMap: storedChangeMap,
+                storedView: true
+            });
+            return generateHistoryTreeHtml(storedRoot, storedChangeMap, detailMode, {
+                recordTime: record.time,
+                lazyKey: `${record.time}:stored-${detailMode}`,
+                customLabel: getHistoryDetailModeLabel(detailMode),
+                autoExpandChanges: detailMode !== 'detailed'
+            });
+        }
     }
 
     if (!treeToRender) {
@@ -24725,10 +25093,17 @@ function buildExportChangesModeGuideHtml() {
         ? (isZh ? '「备份历史」' : '"Backup History"')
         : (isZh ? '「当前变化」' : '"Current Changes"');
     const exportFolderPath = `${getHistoryExportRootFolder()}/${isHistoryExport ? getHistoryExportFolder() : getCurrentChangesExportFolder()}`;
+    const detailedGuide = isHistoryExport
+        ? (isZh
+            ? `详细：导出 ${viewLabel} 中保存的完整详细变化树。`
+            : `Detailed: Export the full detailed changes tree stored in ${viewLabel}.`)
+        : (isZh
+            ? `详细：导出 html 页面 ${viewLabel} 当前详细视图里已展开的内容（所见即所得）。`
+            : `Detailed: Export expanded content from the current detailed ${viewLabel} HTML view (WYSIWYG).`);
 
     return isZh
-        ? `<strong>模式说明：</strong><br>• 简略：仅导出有变化的分支，保持原生书签树层级。<br>• 详细：导出 html 页面 ${viewLabel} 当前详细视图里已展开的内容（所见即所得）。<br>• 集合：按增加/删除/移动/修改分组导出为文件夹集合。<br>• 下载路径：${exportFolderPath}。`
-        : `<strong>Mode Guide:</strong><br>• Simple: Export changed branches only, keeping native bookmark-tree hierarchy.<br>• Detailed: Export expanded content from the current detailed ${viewLabel} HTML view (WYSIWYG).<br>• Collection: Export grouped folders by Added/Deleted/Moved/Modified.<br>• Download path: ${exportFolderPath}.`;
+        ? `<strong>模式说明：</strong><br>• 简略：仅导出有变化的分支，保持原生书签树层级。<br>• ${detailedGuide}<br>• 集合：按增加/删除/移动/修改分组导出为文件夹集合。<br>• 下载路径：${exportFolderPath}。`
+        : `<strong>Mode Guide:</strong><br>• Simple: Export changed branches only, keeping native bookmark-tree hierarchy.<br>• ${detailedGuide}<br>• Collection: Export grouped folders by Added/Deleted/Moved/Modified.<br>• Download path: ${exportFolderPath}.`;
 }
 
 // 显示导出变化模态框
@@ -25064,6 +25439,15 @@ async function executeExportChanges() {
         // 稍微延迟一下让UI更新，避免大计算量卡顿
         await new Promise(resolve => setTimeout(resolve, 50));
 
+        let historyStoredChangePayload = null;
+        if (isHistoryExport && !isHistorySnapshotExport) {
+            const normalizedHistoryMode = normalizeHistoryDetailMode(mode, 'simple');
+            const prepared = await prepareDataForExport(currentExportHistoryRecord);
+            historyStoredChangePayload = normalizedHistoryMode === 'collection'
+                ? await buildHistoryCollectionExportPayload(currentExportHistoryRecord, prepared)
+                : await buildHistoryStoredChangeViewExportPayload(currentExportHistoryRecord, normalizedHistoryMode, prepared);
+        }
+
         if (isHistorySnapshotExport) {
             const seqMap = buildSequenceMapFromHistory(syncHistory);
             const seqWidth = String(Math.max(syncHistory?.length || 1, 1)).length;
@@ -25085,9 +25469,12 @@ async function executeExportChanges() {
         } else if (format === 'html') {
             if (isHistoryExport) {
                 // 备份历史导出：
-                // - collection 使用专用分组导出
-                // - simple/detailed 统一走完整树数据导出，避免 DOM 懒加载导致内容缺失
-                if (mode === 'collection') {
+                // - 优先使用记录里持久化的 detailedChildren 派生视图
+                // - 仅在没有持久化变化数据时回退到旧的快照树导出
+                if (historyStoredChangePayload) {
+                    const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+                    content = buildCurrentChangesNetscapeHtmlManual(historyStoredChangePayload, lang);
+                } else if (mode === 'collection') {
                     content = await generateHistoryCollectionChangesHTML(currentExportHistoryRecord, {
                         treeToExport: currentExportBookmarkTree,
                         changeMap: currentExportChangeData,
@@ -25129,9 +25516,11 @@ async function executeExportChanges() {
         } else {
             if (isHistoryExport) {
                 // 备份历史导出：
-                // - collection 使用专用分组导出
-                // - simple/detailed 统一走完整树数据导出，避免 DOM 懒加载导致内容缺失
-                if (mode === 'collection') {
+                // - 优先使用记录里持久化的 detailedChildren 派生视图
+                // - 仅在没有持久化变化数据时回退到旧的快照树导出
+                if (historyStoredChangePayload) {
+                    content = historyStoredChangePayload;
+                } else if (mode === 'collection') {
                     content = await generateHistoryCollectionChangesJSON(currentExportHistoryRecord, {
                         treeToExport: currentExportBookmarkTree,
                         changeMap: currentExportChangeData,
@@ -25989,6 +26378,8 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
         : (options?.mode === 'collection' ? 'collection' : 'simple');
     const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
     const exactExpandedState = mode === 'detailed' && options?.exactExpandedState === true;
+    const includeChangedFolderDescendants = options?.includeChangedFolderDescendants === true;
+    const includeNodeIds = options?.includeNodeIds === true;
     const isZh = options?.lang === 'zh_CN';
     const stats = options?.stats || {};
     const useWysiwygExpansion = mode === 'detailed' && (expandedIds instanceof Set) && expandedIds.size > 0;
@@ -26205,17 +26596,22 @@ function buildCurrentChangesExportTreeManual(bookmarkTree, changeMap, options = 
         const item = {
             title: prefix + title,
             type: isFolder ? 'folder' : 'bookmark',
+            ...(includeNodeIds && node.id != null ? { id: String(node.id) } : {}),
             ...(url ? { url } : {}),
             ...(changeType ? { changeType } : {})
         };
 
         if (isFolder) {
-            const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && !!changeType;
+            const shouldForceIncludeChildren = !forceInclude && !!changeType && (
+                mode !== 'detailed' || includeChangedFolderDescendants
+            );
             const nextForceInclude = forceInclude || shouldForceIncludeChildren;
 
             let shouldRecurse = false;
             if (mode === 'detailed') {
-                if (exactExpandedState && (expandedIds instanceof Set)) {
+                if (forceInclude) {
+                    shouldRecurse = true;
+                } else if (exactExpandedState && (expandedIds instanceof Set)) {
                     // 精确状态只负责“额外展开哪些分支”；
                     // 实际变化路径始终保底导出，避免折叠后把变化项本身裁掉。
                     shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
@@ -29183,45 +29579,47 @@ async function prepareDataForExport(record) {
     if (!record.bookmarkTree && capabilities.hasSnapshotData) {
         await ensureRecordBookmarkTree(record);
     }
-    if (!record.bookmarkTree && persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
-        changeMap = deserializeRecordChangeMap(persistedChangeData);
-
-        let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
-            ? cloneSerializableData(persistedChangeData.treeWithDeleted)
-            : null;
-
-        if (!treeToExport) {
-            const collectionChildren = Array.isArray(persistedChangeData.collectionChildren)
-                ? cloneSerializableData(persistedChangeData.collectionChildren)
-                : [];
-            if (Array.isArray(collectionChildren) && collectionChildren.length) {
-                treeToExport = { title: 'root', children: collectionChildren };
-            }
+    const persistedDetailedChildren = getPersistedDetailedChangeChildren(persistedChangeData);
+    if (Array.isArray(persistedDetailedChildren)) {
+        changeMap = buildChangeMapFromDetailedChildren(persistedDetailedChildren);
+        if (!record.bookmarkTree) {
+            return {
+                treeToExport: null,
+                changeMap,
+                changeData: persistedChangeData,
+                missingComparisonBase: false,
+                comparisonBaseTree: null,
+                changeDataOnly: true
+            };
         }
 
         return {
-            treeToExport,
+            treeToExport: record.bookmarkTree,
             changeMap,
             changeData: persistedChangeData,
             missingComparisonBase: false,
             comparisonBaseTree: null,
-            changeDataOnly: true
+            changeDataOnly: false
         };
     }
-    if (!record.bookmarkTree) {
-        return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false, comparisonBaseTree: null };
-    }
+    if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
+        changeMap = deserializeRecordChangeMap(persistedChangeData.changeEntries);
+        const hasPersistedTreeWithDeleted = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length > 0;
+        let treeToExport = hasPersistedTreeWithDeleted
+            ? cloneSerializableData(persistedChangeData.treeWithDeleted)
+            : (record.bookmarkTree || null);
+        let comparisonBaseTree = null;
 
-    const resolvePreviousRecordForComparison = async () => {
-        let previousRecord = null;
-        try {
-            previousRecord = await getPreviousHistoryRecordMeta(record.time);
-        } catch (_) {
-            previousRecord = null;
+        if (!treeToExport && Array.isArray(persistedChangeData.collectionChildren) && persistedChangeData.collectionChildren.length > 0) {
+            treeToExport = {
+                title: 'root',
+                children: cloneSerializableData(persistedChangeData.collectionChildren) || []
+            };
         }
 
-        if (!previousRecord) {
+        if (record.bookmarkTree && !hasPersistedTreeWithDeleted && hasDeletedChangeInMap(changeMap)) {
             const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
+            let previousRecord = null;
             if (recordIndex > 0) {
                 for (let i = recordIndex - 1; i >= 0; i--) {
                     if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
@@ -29230,57 +29628,33 @@ async function prepareDataForExport(record) {
                     }
                 }
             }
-        }
-
-        if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
-            try {
-                const prevTree = await getBackupDataLazy(previousRecord.time);
-                if (prevTree) previousRecord.bookmarkTree = prevTree;
-            } catch (_) { }
-        }
-
-        return previousRecord && previousRecord.bookmarkTree ? previousRecord : null;
-    };
-
-    if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
-        const previousRecord = await resolvePreviousRecordForComparison();
-        const comparisonBaseTree = previousRecord && previousRecord.bookmarkTree
-            ? previousRecord.bookmarkTree
-            : null;
-        const canUsePersisted = shouldUsePersistedChangeDataForRecord({
-            record,
-            previousRecord,
-            persistedChangeData,
-            comparisonBaseTree
-        });
-
-        if (canUsePersisted) {
-            changeMap = deserializeRecordChangeMap(persistedChangeData);
-
-            let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
-                ? cloneSerializableData(persistedChangeData.treeWithDeleted)
-                : record.bookmarkTree;
-
-            const shouldTryRebuildDeleted = hasDeletedChangeInMap(changeMap) && !(Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length);
-            if (shouldTryRebuildDeleted) {
-                if (previousRecord && previousRecord.bookmarkTree) {
-                    try {
-                        treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
-                    } catch (_) {
-                        treeToExport = record.bookmarkTree;
-                    }
+            if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
+                try {
+                    const prevTree = await getBackupDataLazy(previousRecord.time);
+                    if (prevTree) previousRecord.bookmarkTree = prevTree;
+                } catch (_) { }
+            }
+            if (previousRecord && previousRecord.bookmarkTree) {
+                comparisonBaseTree = previousRecord.bookmarkTree;
+                try {
+                    treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                } catch (_) {
+                    treeToExport = record.bookmarkTree;
                 }
             }
-
-            return {
-                treeToExport,
-                changeMap,
-                changeData: persistedChangeData,
-                missingComparisonBase: false,
-                comparisonBaseTree
-            };
         }
-        invalidateRecordChangeDataCache(record.time);
+
+        return {
+            treeToExport,
+            changeMap,
+            changeData: persistedChangeData,
+            missingComparisonBase: false,
+            comparisonBaseTree,
+            changeDataOnly: !record.bookmarkTree
+        };
+    }
+    if (!record.bookmarkTree) {
+        return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false, comparisonBaseTree: null };
     }
 
     const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
@@ -29357,16 +29731,14 @@ async function buildHistoryCollectionExportPayload(record, prepared = null) {
     const treeToExport = resolved?.treeToExport || null;
     const changeMap = resolved?.changeMap instanceof Map ? resolved.changeMap : new Map();
     const changeData = resolved?.changeData || null;
+    const statsSource = (changeData && changeData.stats && typeof changeData.stats === 'object')
+        ? changeData.stats
+        : (record && record.bookmarkStats ? record.bookmarkStats : {});
+    const normalizedStats = normalizeCurrentChangesExportStatsManual({ stats: statsSource });
 
-    let collectionChildren = Array.isArray(changeData?.collectionChildren)
-        ? cloneSerializableData(changeData.collectionChildren)
-        : null;
+    let collectionChildren = getPersistedChangeViewChildren(changeData, 'collection', currentLang);
 
     if (!collectionChildren) {
-        const statsSource = (changeData && changeData.stats && typeof changeData.stats === 'object')
-            ? changeData.stats
-            : (record && record.bookmarkStats ? record.bookmarkStats : {});
-        const normalizedStats = normalizeCurrentChangesExportStatsManual({ stats: statsSource });
         collectionChildren = buildCurrentChangesExportTreeManual(treeToExport, changeMap, {
             mode: 'collection',
             lang,
@@ -29375,6 +29747,9 @@ async function buildHistoryCollectionExportPayload(record, prepared = null) {
     }
 
     const counts = getHistoryChangeCounts(changeMap, treeToExport);
+    const countsLine = treeToExport
+        ? formatCountsLine(counts, isZh)
+        : buildCurrentChangesStatsLineManual(normalizedStats, lang);
     const exportTimeText = formatExportTimeText();
     const backupTimeText = record?.time
         ? (typeof formatTime === 'function' ? formatTime(new Date(record.time)) : new Date(record.time).toLocaleString())
@@ -29391,7 +29766,7 @@ async function buildHistoryCollectionExportPayload(record, prepared = null) {
                 title: legendTitle,
                 children: [
                     {
-                        title: `${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}`,
+                        title: `${isZh ? '操作统计' : 'Operation Counts'}: ${countsLine}`,
                         url: 'about:blank'
                     },
                     {
@@ -29428,6 +29803,72 @@ async function buildHistoryCollectionExportPayload(record, prepared = null) {
     };
 }
 
+async function buildHistoryStoredChangeViewExportPayload(record, mode, prepared = null) {
+    const normalizedMode = normalizeHistoryDetailMode(mode, 'simple');
+    const isZh = currentLang === 'zh_CN';
+    const lang = isZh ? 'zh_CN' : 'en';
+    const resolved = prepared || await prepareDataForExport(record);
+    const changeData = resolved?.changeData || null;
+    const storedChildren = getPersistedChangeViewChildren(changeData, normalizedMode, currentLang);
+    if (!Array.isArray(storedChildren)) return null;
+
+    const statsSource = (changeData && changeData.stats && typeof changeData.stats === 'object')
+        ? changeData.stats
+        : (record && record.bookmarkStats ? record.bookmarkStats : {});
+    const normalizedStats = normalizeCurrentChangesExportStatsManual({ stats: statsSource });
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = record?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(record.time)) : new Date(record.time).toLocaleString())
+        : '';
+    const noteText = record?.note ? record.note : (isZh ? '（无备注）' : '(No note)');
+    const legendTitle = isZh
+        ? '前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动'
+        : 'Prefix legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved';
+
+    return {
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: [
+            {
+                title: legendTitle,
+                children: [
+                    {
+                        title: `${isZh ? '操作统计' : 'Operation Counts'}: ${buildCurrentChangesStatsLineManual(normalizedStats, lang)}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备份时间' : 'Backup Time'}: ${backupTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备注' : 'Note'}: ${noteText}`,
+                        url: 'about:blank'
+                    }
+                ]
+            },
+            ...(cloneSerializableData(storedChildren) || [])
+        ],
+        _exportInfo: {
+            exportDate: new Date().toISOString(),
+            exportMode: normalizedMode,
+            source: 'bookmark-backup-history',
+            backupTime: record?.time || null,
+            note: record?.note || '',
+            fingerprint: record?.fingerprint || '',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[>>]': isZh ? '移动' : 'Moved',
+                '[~>>]': isZh ? '修改+移动' : 'Modified+Moved'
+            }
+        }
+    };
+}
+
 async function generateHistoryCollectionChangesHTML(record, prepared = null) {
     const payload = await buildHistoryCollectionExportPayload(record, prepared);
     const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
@@ -29446,6 +29887,9 @@ async function generateExportJsonContentForGlobal(record, mode) {
     if (normalizedMode === 'collection') {
         return await generateHistoryCollectionChangesJSON(record, prepared);
     }
+
+    const storedPayload = await buildHistoryStoredChangeViewExportPayload(record, normalizedMode, prepared);
+    if (storedPayload) return storedPayload;
 
     const { treeToExport, changeMap } = prepared;
 
@@ -29467,6 +29911,12 @@ async function generateExportHtmlContentForGlobal(record, mode) {
         return await generateHistoryCollectionChangesHTML(record, prepared);
     }
 
+    const storedPayload = await buildHistoryStoredChangeViewExportPayload(record, normalizedMode, prepared);
+    if (storedPayload) {
+        const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+        return buildCurrentChangesNetscapeHtmlManual(storedPayload, lang);
+    }
+
     const { treeToExport, changeMap } = prepared;
 
     // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
@@ -29482,14 +29932,25 @@ async function generateExportHtmlContentForGlobal(record, mode) {
 async function getProcessedTreeForRecord(record, mode) {
     const normalizedMode = normalizeRestoreMergeViewMode(mode) || 'simple';
     const { treeToExport, changeMap, changeData } = await prepareDataForExport(record);
+    const storedChildren = getPersistedChangeViewChildren(changeData, normalizedMode, currentLang);
 
-    if (normalizedMode === 'collection' && Array.isArray(changeData?.collectionChildren)) {
+    if (normalizedMode === 'collection' && Array.isArray(storedChildren)) {
         const collectionChildren = buildCollectionViewNodesWithIds(
-            cloneSerializableData(changeData.collectionChildren) || [],
+            cloneSerializableData(storedChildren) || [],
             `restore-collection-${String(record?.time || '') || 'record'}`
         );
         return {
             children: Array.isArray(collectionChildren) ? collectionChildren : []
+        };
+    }
+
+    if (Array.isArray(storedChildren)) {
+        return {
+            children: buildStoredChangeViewNodesWithIds(
+                storedChildren,
+                `restore-${normalizedMode}-${String(record?.time || '') || 'record'}`,
+                { stripChangePrefix: false }
+            )
         };
     }
 

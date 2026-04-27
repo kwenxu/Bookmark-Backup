@@ -1368,12 +1368,22 @@ function collectIdsFromCollectionNodes(nodes, outSet) {
         if (!node || typeof node !== 'object') continue;
         const id = String(node.id || '').trim();
         if (id) outSet.add(id);
+        const sourceId = String(node.sourceId || '').trim();
+        if (sourceId) outSet.add(sourceId);
         if (Array.isArray(node.children) && node.children.length > 0) {
             for (let i = node.children.length - 1; i >= 0; i -= 1) {
                 stack.push(node.children[i]);
             }
         }
     }
+}
+
+function isDerivedCollectionViewRoot(root) {
+    if (!root || typeof root !== 'object') return false;
+    const rootId = String(root.id || '').toLowerCase();
+    if (rootId.includes(':collection')) return true;
+    const children = Array.isArray(root.children) ? root.children : [];
+    return children.some(child => child && child.collectionGroup === true);
 }
 
 function buildCurrentChangesCollectionScopedIdSet(changeMap) {
@@ -1411,6 +1421,12 @@ function buildCollectionScopedIdSetFromTree(treeToRender, changeMap) {
     try {
         if (!(changeMap instanceof Map)) return outSet;
         if (!Array.isArray(treeToRender) || !treeToRender[0]) return outSet;
+
+        if (isDerivedCollectionViewRoot(treeToRender[0])) {
+            collectIdsFromCollectionNodes([treeToRender[0]], outSet);
+            return outSet;
+        }
+
         if (typeof buildCurrentChangesExportTreeManual !== 'function') return outSet;
 
         const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';

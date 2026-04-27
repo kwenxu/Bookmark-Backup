@@ -19991,11 +19991,11 @@ document.addEventListener('DOMContentLoaded', function () {
         cancelText: lang === 'en' ? 'Cancel' : '取消',
         saveText: lang === 'en' ? 'Save' : '保存',
         noteText: lang === 'en'
-            ? 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
-            : '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
+            ? 'Choose which detail data the extension keeps in local backup history. When change data is saved, the backup-time payload stores the Detailed change tree; Simple and Collection views are derived from it without requiring retained snapshot data. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
+            : '选择插件本地备份历史保留哪些详情数据。勾选“保存变化数据”时，会在备份当下写入详细变化树；简略、集合视图由它派生，不依赖同时保留快照数据。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
         strategyNoteText: lang === 'en'
-            ? 'Main UI backups for Local, Cloud 1, and Cloud 2 are saved as Versioned or Overwrite. This setting only controls detail data kept in the extension HTML backup history.'
-            : '主 UI 的本地、云端1、云端2备份会按版本化 / 覆盖保存；这里控制的是插件内 HTML 备份历史的详情数据。'
+            ? 'Main UI backup switches only control external Local, Cloud 1, and Cloud 2 artifacts. This setting controls only detail data retained in the extension HTML backup history.'
+            : '主 UI 的备份开关只控制本地、云端1、云端2这些外部备份产物；这里仅控制插件内 HTML 备份历史保留的详情数据。'
     });
 
     const openBackupHistorySlimmingSettingsDialog = async () => {

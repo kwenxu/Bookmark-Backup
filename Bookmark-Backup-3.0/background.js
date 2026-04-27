@@ -7697,6 +7697,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         tree = treeData[treeKey];
                     }
 
+                    let mergeImportTreeFromMessage = null;
+                    if (normalizedStrategy === 'merge') {
+                        mergeImportTreeFromMessage = resolveMergeImportTreeFromMessage(message);
+                        if (!tree && isBookmarkTreeShapeValid(mergeImportTreeFromMessage)) {
+                            tree = mergeImportTreeFromMessage;
+                        }
+                    }
+
                     if (!tree) {
                         await clearRecoveryIntentIfNeeded();
                         sendResponse({ success: false, error: preferredLang === 'en' ? 'No snapshot data' : '没有可用的快照数据' });
@@ -7800,7 +7808,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 recordTime: record.time != null ? String(record.time) : ''
                             };
                         }
-                        const mergeImportTreeFromMessage = resolveMergeImportTreeFromMessage(message);
                         const mergeTree = isBookmarkTreeShapeValid(mergeImportTreeFromMessage)
                             ? mergeImportTreeFromMessage
                             : tree;
@@ -10497,6 +10504,8 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
         : (options?.mode === 'collection' ? 'collection' : 'simple');
     const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
     const exactExpandedState = mode === 'detailed' && options?.exactExpandedState === true;
+    const includeChangedFolderDescendants = options?.includeChangedFolderDescendants === true;
+    const includeNodeIds = options?.includeNodeIds === true;
     const isZh = options?.lang === 'zh_CN';
     const stats = options?.stats || {};
     // 仅在存在有效展开节点时叠加 WYSIWYG 展开；变化路径始终保留
@@ -10718,17 +10727,22 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
         const item = {
             title: prefix + title,
             type: isFolder ? 'folder' : 'bookmark',
+            ...(includeNodeIds && node.id != null ? { id: String(node.id) } : {}),
             ...(url ? { url } : {}),
             ...(changeType ? { changeType } : {})
         };
 
         if (isFolder) {
-            const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && !!changeType;
+            const shouldForceIncludeChildren = !forceInclude && !!changeType && (
+                mode !== 'detailed' || includeChangedFolderDescendants
+            );
             const nextForceInclude = forceInclude || shouldForceIncludeChildren;
 
             let shouldRecurse = false;
             if (mode === 'detailed') {
-                if (exactExpandedState && (expandedIds instanceof Set)) {
+                if (forceInclude) {
+                    shouldRecurse = true;
+                } else if (exactExpandedState && (expandedIds instanceof Set)) {
                     // 精确状态只负责“额外展开哪些分支”；
                     // 实际变化路径始终保底导出，避免主 UI 自动归档把变化项裁掉。
                     shouldRecurse = nodeHasChanges || expandedIds.has(String(node.id));
@@ -12675,24 +12689,29 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
     return artifacts;
 }
 
-function serializeHistoryRecordChangeEntries(changeMap) {
-    if (!(changeMap instanceof Map) || changeMap.size === 0) {
-        return [];
-    }
+function attachChangeDetailsToDetailedChildrenBg(detailedChildren, changeMap) {
+    if (!Array.isArray(detailedChildren)) return [];
+    if (!(changeMap instanceof Map) || changeMap.size === 0) return detailedChildren;
 
-    const entries = [];
-    changeMap.forEach((change, id) => {
-        if (id == null) return;
-        entries.push([String(id), change || {}]);
-    });
-    return entries;
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const id = node.id != null ? String(node.id) : '';
+        const change = id ? changeMap.get(id) : null;
+        const type = String(change?.type || node.changeType || '').trim();
+        if (change && type) {
+            node.change = cloneJsonSafeBg({ ...change, type }, { type });
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child));
+        }
+    };
+
+    detailedChildren.forEach(node => walk(node));
+    return detailedChildren;
 }
 
 async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookmarks, currentBookmarks, explicitMovedIds = null, stats = null, baselineGeneration = null, currentGeneration = null }) {
     if (!Array.isArray(currentBookmarks) || currentBookmarks.length === 0) {
-        return null;
-    }
-    if (!Array.isArray(previousBookmarks) || previousBookmarks.length === 0) {
         return null;
     }
 
@@ -12709,6 +12728,56 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
     const normalizedCurrentGeneration = normalizeBookmarkComparisonGeneration(currentGeneration, BOOKMARK_COMPARISON_INITIAL_GENERATION);
     const normalizedBaselineGeneration = normalizeBookmarkComparisonGeneration(baselineGeneration, normalizedCurrentGeneration);
     const isCrossGeneration = normalizedBaselineGeneration !== normalizedCurrentGeneration;
+    const safeStats = stats && typeof stats === 'object' ? { ...stats } : {};
+
+    if (!Array.isArray(previousBookmarks) || previousBookmarks.length === 0) {
+        flattenBookmarkTreeBg(currentBookmarks).forEach((node) => {
+            if (!node?.id) return;
+            changeMap.set(String(node.id), { type: 'added' });
+        });
+
+        if (!Number.isFinite(Number(safeStats.currentBookmarkCount))) {
+            safeStats.currentBookmarkCount = countAllBookmarks(currentBookmarks);
+        }
+        if (!Number.isFinite(Number(safeStats.currentFolderCount))) {
+            safeStats.currentFolderCount = countAllFolders(currentBookmarks);
+        }
+        if (!Number.isFinite(Number(safeStats.bookmarkAdded))) {
+            safeStats.bookmarkAdded = countAllBookmarks(currentBookmarks);
+        }
+        if (!Number.isFinite(Number(safeStats.folderAdded))) {
+            safeStats.folderAdded = countAllFolders(currentBookmarks);
+        }
+        if (!Number.isFinite(Number(safeStats.addedCount))) {
+            safeStats.addedCount = Number(safeStats.bookmarkAdded || 0) + Number(safeStats.folderAdded || 0);
+        }
+
+        const detailedChildren = buildCurrentChangesExportTree(currentBookmarks, changeMap, {
+            mode: 'detailed',
+            lang: normalizedLang,
+            stats: safeStats,
+            includeChangedFolderDescendants: true,
+            includeNodeIds: true
+        });
+        attachChangeDetailsToDetailedChildrenBg(detailedChildren, changeMap);
+
+        return {
+            schemaVersion: 4,
+            source: 'backup-success',
+            recordTime: recordTime != null ? String(recordTime) : '',
+            generatedAt: new Date().toISOString(),
+            stats: safeStats,
+            comparisonGeneration: normalizedCurrentGeneration,
+            baselineGeneration: normalizedBaselineGeneration,
+            crossGeneration: false,
+            usedCrossGenerationAlignment: false,
+            comparisonBaselineSignature: '',
+            comparisonCurrentSignature: '',
+            hasDeleted: false,
+            initialBaseline: true,
+            detailedChildren: Array.isArray(detailedChildren) ? detailedChildren : []
+        };
+    }
 
     changeMap = detectTreeChangesFastBg(previousBookmarks, currentBookmarks, {
         explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null
@@ -12731,15 +12800,17 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
         treeToRender = currentBookmarks;
     }
 
-    const safeStats = stats && typeof stats === 'object' ? { ...stats } : {};
-    const collectionChildren = buildCurrentChangesExportTree(treeToRender, changeMap, {
-        mode: 'collection',
+    const detailedChildren = buildCurrentChangesExportTree(treeToRender, changeMap, {
+        mode: 'detailed',
         lang: normalizedLang,
-        stats: safeStats
+        stats: safeStats,
+        includeChangedFolderDescendants: true,
+        includeNodeIds: true
     });
+    attachChangeDetailsToDetailedChildrenBg(detailedChildren, changeMap);
 
     return {
-        schemaVersion: 2,
+        schemaVersion: 4,
         source: 'backup-success',
         recordTime: recordTime != null ? String(recordTime) : '',
         generatedAt: new Date().toISOString(),
@@ -12751,9 +12822,7 @@ async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookm
         comparisonBaselineSignature: '',
         comparisonCurrentSignature: '',
         hasDeleted,
-        changeEntries: serializeHistoryRecordChangeEntries(changeMap),
-        collectionChildren: Array.isArray(collectionChildren) ? collectionChildren : [],
-        treeWithDeleted: hasDeleted && Array.isArray(treeToRender) ? treeToRender : null
+        detailedChildren: Array.isArray(detailedChildren) ? detailedChildren : []
     };
 }
 
@@ -14119,16 +14188,11 @@ function escapeHtmlBg(str) {
         .replace(/'/g, '&#39;');
 }
 
-/**
- * 将持久化 changeEntries 反序列化为变化映射
- * @param {Array} entries
- * @returns {Map<string, Object>}
- */
-function deserializeRecordChangeMapBg(entries) {
+function deserializeRecordChangeMapBg(entriesOrPayload) {
     const map = new Map();
-    if (!Array.isArray(entries)) {
-        return map;
-    }
+    const entries = Array.isArray(entriesOrPayload)
+        ? entriesOrPayload
+        : (Array.isArray(entriesOrPayload?.changeEntries) ? entriesOrPayload.changeEntries : []);
     for (const entry of entries) {
         if (!Array.isArray(entry) || entry.length < 2) continue;
         const id = entry[0];
@@ -14154,14 +14218,364 @@ function prepareDataForExportBg(record, syncHistory) {
         ? record.__persistedChangeData
         : null;
 
-    if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
+    const persistedDetailedChildren = getPersistedDetailedChangeChildrenBg(persistedChangeData);
+    if (Array.isArray(persistedDetailedChildren)) {
+        changeMap = buildChangeMapFromDetailedChildrenBg(persistedDetailedChildren);
+    }
+
+    if (changeMap.size === 0 && Array.isArray(persistedChangeData?.changeEntries)) {
         changeMap = deserializeRecordChangeMapBg(persistedChangeData.changeEntries);
         if (Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length > 0) {
-            treeToExport = persistedChangeData.treeWithDeleted;
+            treeToExport = cloneJsonSafeBg(persistedChangeData.treeWithDeleted, persistedChangeData.treeWithDeleted);
+        } else if (!treeToExport && Array.isArray(persistedChangeData.collectionChildren) && persistedChangeData.collectionChildren.length > 0) {
+            treeToExport = {
+                title: 'root',
+                children: cloneJsonSafeBg(persistedChangeData.collectionChildren, [])
+            };
         }
     }
 
     return { treeToExport, changeMap };
+}
+
+function normalizePersistedChangeViewModeBg(mode, fallback = 'detailed') {
+    const value = String(mode || '').trim().toLowerCase();
+    if (value === 'simple' || value === 'detailed' || value === 'collection') return value;
+    const safeFallback = String(fallback || '').trim().toLowerCase();
+    if (safeFallback === 'simple' || safeFallback === 'detailed' || safeFallback === 'collection') return safeFallback;
+    return 'detailed';
+}
+
+function cloneJsonSafeBg(value, fallback = null) {
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function getPersistedDetailedChangeChildrenBg(changeData) {
+    if (!Array.isArray(changeData?.detailedChildren)) return null;
+    return cloneJsonSafeBg(changeData.detailedChildren, []);
+}
+
+function stripStoredChangeTitlePrefixBg(title, changeType = '') {
+    const value = String(title || '');
+    const types = String(changeType || '').split('+').filter(Boolean);
+    if (types.includes('added')) return value.replace(/^\[\+\]\s+/, '');
+    if (types.includes('deleted')) return value.replace(/^\[-\]\s+/, '');
+    if (types.includes('modified') && types.includes('moved')) return value.replace(/^\[~>>\]\s+/, '');
+    if (types.includes('modified')) return value.replace(/^\[~\]\s+/, '');
+    if (types.includes('moved')) return value.replace(/^\[>>\]\s+/, '');
+    return value;
+}
+
+function deriveSimpleChildrenFromDetailedBg(detailedChildren) {
+    const hasChangeRecursive = (node) => {
+        if (!node || typeof node !== 'object') return false;
+        if (String(node.changeType || '').trim()) return true;
+        return Array.isArray(node.children) && node.children.some(child => hasChangeRecursive(child));
+    };
+
+    const cloneFullNode = (node) => cloneJsonSafeBg(node, null);
+
+    const deriveNode = (node) => {
+        if (!node || typeof node !== 'object') return null;
+        const selfChanged = !!String(node.changeType || '').trim();
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+
+        if (selfChanged) {
+            return cloneFullNode(node);
+        }
+
+        if (!isFolder || !Array.isArray(node.children)) {
+            return null;
+        }
+
+        const children = node.children
+            .filter(child => hasChangeRecursive(child))
+            .map(child => deriveNode(child))
+            .filter(Boolean);
+        if (!children.length) return null;
+
+        const copied = { ...node, children };
+        return copied;
+    };
+
+    return (Array.isArray(detailedChildren) ? detailedChildren : [])
+        .map(node => deriveNode(node))
+        .filter(Boolean);
+}
+
+function deriveCollectionChildrenFromDetailedBg(detailedChildren, stats = {}, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const safeNumberLocal = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+    const displayStats = buildCurrentChangesDisplayStatsBg(stats || {});
+
+    const bookmarkAdded = safeNumberLocal(displayStats?.bookmarkAdded);
+    const folderAdded = safeNumberLocal(displayStats?.folderAdded);
+    const bookmarkDeleted = safeNumberLocal(displayStats?.bookmarkDeleted);
+    const folderDeleted = safeNumberLocal(displayStats?.folderDeleted);
+    const movedCount = safeNumberLocal(displayStats?.movedCount);
+    const modifiedCount = safeNumberLocal(displayStats?.modifiedCount);
+    const movedBookmarkCount = safeNumberLocal(displayStats?.movedBookmarkCount);
+    const movedFolderCount = safeNumberLocal(displayStats?.movedFolderCount);
+    const modifiedBookmarkCount = safeNumberLocal(displayStats?.modifiedBookmarkCount);
+    const modifiedFolderCount = safeNumberLocal(displayStats?.modifiedFolderCount);
+
+    const buckets = {
+        added: [],
+        deleted: [],
+        moved: [],
+        modified: []
+    };
+
+    const safeTitle = (title, changeType = '') => {
+        const stripped = stripStoredChangeTitlePrefixBg(title, changeType);
+        const normalized = String(stripped || '').trim();
+        return normalized || (isZh ? '(无标题)' : '(Untitled)');
+    };
+
+    const formatBookmarkFolderCounts = (bookmarkCount, folderCount) => {
+        const parts = [];
+        if (bookmarkCount > 0) {
+            parts.push(isZh ? `${bookmarkCount}个书签` : `${bookmarkCount} bookmarks`);
+        }
+        if (folderCount > 0) {
+            parts.push(isZh ? `${folderCount}个文件夹` : `${folderCount} folders`);
+        }
+        return parts.join(isZh ? '，' : ', ');
+    };
+
+    const buildCollectionGroupTitle = ({ marker, zhVerb, enVerb, bookmarkCount, folderCount, fallbackCount }) => {
+        const breakdown = formatBookmarkFolderCounts(bookmarkCount, folderCount);
+        if (breakdown) {
+            return isZh ? `${marker} ${zhVerb}${breakdown}` : `${marker} ${enVerb} ${breakdown}`;
+        }
+        if (fallbackCount > 0) {
+            return isZh ? `${marker} ${zhVerb}${fallbackCount}项` : `${marker} ${enVerb} ${fallbackCount} items`;
+        }
+        return isZh ? `${marker} ${zhVerb}` : `${marker} ${enVerb}`;
+    };
+
+    const cloneCollectionEntry = (node, rootChangeType = '') => {
+        const isFolder = node?.type === 'folder' || (!node?.url && Array.isArray(node?.children));
+        const sourceId = node?.sourceId != null
+            ? String(node.sourceId)
+            : (node?.id != null ? String(node.id) : '');
+        const entry = {
+            title: safeTitle(node?.title, node?.changeType),
+            type: isFolder ? 'folder' : 'bookmark',
+            ...(sourceId ? { sourceId } : {}),
+            ...(node?.url ? { url: node.url } : {}),
+            ...(rootChangeType ? { changeType: rootChangeType } : {})
+        };
+
+        if (isFolder) {
+            entry.children = (Array.isArray(node?.children) ? node.children : [])
+                .map(child => cloneCollectionEntry(child, ''))
+                .filter(Boolean);
+        }
+
+        return entry;
+    };
+
+    const appendEntry = (bucketKey, node, changeType) => {
+        buckets[bucketKey].push(cloneCollectionEntry(node, changeType));
+    };
+
+    const traverse = (node) => {
+        if (!node || typeof node !== 'object') return;
+
+        const changeType = String(node.changeType || '').trim();
+        const types = changeType ? changeType.split('+') : [];
+        const isFolder = node.type === 'folder' || (!node.url && Array.isArray(node.children));
+        let appendedFullSubtree = false;
+
+        if (types.includes('added')) {
+            appendEntry('added', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('deleted')) {
+            appendEntry('deleted', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('moved')) {
+            appendEntry('moved', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+        if (types.includes('modified')) {
+            appendEntry('modified', node, changeType);
+            if (isFolder) appendedFullSubtree = true;
+        }
+
+        if (appendedFullSubtree) return;
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => traverse(child));
+        }
+    };
+
+    (Array.isArray(detailedChildren) ? detailedChildren : []).forEach(node => traverse(node));
+
+    const addedTitle = buildCollectionGroupTitle({
+        marker: '[+]',
+        zhVerb: '增加了',
+        enVerb: 'Added',
+        bookmarkCount: bookmarkAdded,
+        folderCount: folderAdded,
+        fallbackCount: bookmarkAdded + folderAdded
+    });
+    const deletedTitle = buildCollectionGroupTitle({
+        marker: '[-]',
+        zhVerb: '删除了',
+        enVerb: 'Deleted',
+        bookmarkCount: bookmarkDeleted,
+        folderCount: folderDeleted,
+        fallbackCount: bookmarkDeleted + folderDeleted
+    });
+    const movedTitle = buildCollectionGroupTitle({
+        marker: '[>>]',
+        zhVerb: '移动了',
+        enVerb: 'Moved',
+        bookmarkCount: movedBookmarkCount,
+        folderCount: movedFolderCount,
+        fallbackCount: movedCount
+    });
+    const modifiedTitle = buildCollectionGroupTitle({
+        marker: '[~]',
+        zhVerb: '修改了',
+        enVerb: 'Modified',
+        bookmarkCount: modifiedBookmarkCount,
+        folderCount: modifiedFolderCount,
+        fallbackCount: modifiedCount
+    });
+
+    return [
+        { title: addedTitle, type: 'folder', children: buckets.added },
+        { title: deletedTitle, type: 'folder', children: buckets.deleted },
+        { title: movedTitle, type: 'folder', children: buckets.moved },
+        { title: modifiedTitle, type: 'folder', children: buckets.modified }
+    ].filter(group => Array.isArray(group.children) && group.children.length > 0);
+}
+
+function buildChangeMapFromDetailedChildrenBg(detailedChildren) {
+    const map = new Map();
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const id = node.id != null ? String(node.id) : '';
+        const changeType = String(node.changeType || '').trim();
+        const embeddedChange = node.change && typeof node.change === 'object'
+            ? cloneJsonSafeBg(node.change, null)
+            : null;
+        const resolvedType = String(embeddedChange?.type || changeType || '').trim();
+        if (id && resolvedType) {
+            map.set(id, {
+                ...(embeddedChange || {}),
+                type: resolvedType
+            });
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child));
+        }
+    };
+    (Array.isArray(detailedChildren) ? detailedChildren : []).forEach(node => walk(node));
+    return map;
+}
+
+function getPersistedChangeViewChildrenBg(changeData, mode, lang = 'zh_CN') {
+    const normalizedMode = normalizePersistedChangeViewModeBg(mode, 'collection');
+    const detailedChildren = getPersistedDetailedChangeChildrenBg(changeData);
+    if (!Array.isArray(detailedChildren)) {
+        if (normalizedMode === 'collection' && Array.isArray(changeData?.collectionChildren)) {
+            return cloneJsonSafeBg(changeData.collectionChildren, []);
+        }
+        return null;
+    }
+    if (normalizedMode === 'detailed') return detailedChildren;
+    if (normalizedMode === 'simple') return deriveSimpleChildrenFromDetailedBg(detailedChildren);
+    return deriveCollectionChildrenFromDetailedBg(detailedChildren, changeData?.stats || {}, lang);
+}
+
+function buildPersistedChangeViewExportPayloadBg(record, historyViewSettings, lang = 'zh_CN') {
+    const changeData = record?.__persistedChangeData && typeof record.__persistedChangeData === 'object'
+        ? record.__persistedChangeData
+        : null;
+    if (!changeData) return null;
+
+    const recordTimeKey = String(record?.time || '').trim();
+    const recordMode = recordTimeKey && historyViewSettings?.recordModes
+        ? historyViewSettings.recordModes[recordTimeKey]
+        : '';
+    const preferredMode = normalizePersistedChangeViewModeBg(
+        recordMode || historyViewSettings?.defaultMode || 'detailed',
+        'detailed'
+    );
+    const fallbackModes = [preferredMode, 'detailed', 'simple', 'collection'];
+    let resolvedMode = preferredMode;
+    let children = null;
+    for (const mode of fallbackModes) {
+        children = getPersistedChangeViewChildrenBg(changeData, mode, lang);
+        if (Array.isArray(children)) {
+            resolvedMode = mode;
+            break;
+        }
+    }
+    if (!Array.isArray(children)) return null;
+
+    const isZh = lang === 'zh_CN';
+    const exportTimeText = new Date().toLocaleString(isZh ? 'zh-CN' : 'en-US');
+    const backupTimeText = record?.time
+        ? new Date(record.time).toLocaleString(isZh ? 'zh-CN' : 'en-US')
+        : '';
+    const noteText = record?.note ? String(record.note) : (isZh ? '（无备注）' : '(No note)');
+    const stats = changeData?.stats && typeof changeData.stats === 'object'
+        ? changeData.stats
+        : (record?.bookmarkStats && typeof record.bookmarkStats === 'object' ? record.bookmarkStats : {});
+    const legendTitle = isZh
+        ? '前缀说明: [+]新增  [-]删除  [~]修改  [>>]移动'
+        : 'Prefix legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved';
+
+    return {
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: [
+            {
+                title: legendTitle,
+                children: [
+                    {
+                        title: `${isZh ? '操作统计' : 'Operation Counts'}: ${buildCurrentChangesStatsLine(stats, lang)}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备份时间' : 'Backup Time'}: ${backupTimeText}`,
+                        url: 'about:blank'
+                    },
+                    {
+                        title: `${isZh ? '备注' : 'Note'}: ${noteText}`,
+                        url: 'about:blank'
+                    }
+                ]
+            },
+            ...children
+        ],
+        _exportInfo: {
+            exportDate: new Date().toISOString(),
+            exportMode: resolvedMode,
+            source: 'bookmark-backup-history',
+            backupTime: record?.time || null,
+            note: record?.note || '',
+            fingerprint: record?.fingerprint || '',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[>>]': isZh ? '移动' : 'Moved'
+            }
+        }
+    };
 }
 
 /**
@@ -14191,6 +14605,18 @@ function generateFullBookmarkTreeHtml(record, historyViewSettings, lang = 'zh_CN
             }
         } catch (prepError) {
             
+        }
+
+        if (!treeToExport) {
+            const storedPayload = buildPersistedChangeViewExportPayloadBg(record, historyViewSettings, lang);
+            if (storedPayload) {
+                const payloadJsonText = JSON.stringify(storedPayload, null, 2);
+                return buildCurrentChangesNetscapeHtml({
+                    lang,
+                    payload: storedPayload,
+                    payloadJsonText
+                });
+            }
         }
 
         // 获取展开状态（WYSIWYG）
@@ -14359,6 +14785,13 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
             }
         } catch (prepError) {
             
+        }
+
+        if (!treeToExport) {
+            const storedPayload = buildPersistedChangeViewExportPayloadBg(record, historyViewSettings, lang);
+            if (storedPayload) {
+                return JSON.stringify(storedPayload, null, 2);
+            }
         }
 
         // 获取展开状态（WYSIWYG）

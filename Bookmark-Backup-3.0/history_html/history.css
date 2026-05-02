@@ -3607,25 +3607,35 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 集合视图：图标/折叠箭头跟随变化类型着色，和文字保持一致 */
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-added > .tree-toggle,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-added > .tree-icon {
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-added > .tree-toggle,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-added > .tree-icon,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-added > .tree-toggle,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-added > .tree-icon {
     color: #28a745;
 }
 
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-deleted > .tree-toggle,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-deleted > .tree-icon {
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-deleted > .tree-toggle,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-deleted > .tree-icon,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-deleted > .tree-toggle,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-deleted > .tree-icon {
     color: #dc3545;
 }
 
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-modified > .tree-toggle,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-modified > .tree-icon {
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-modified > .tree-toggle,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-modified > .tree-icon,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-modified > .tree-toggle,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-modified > .tree-icon {
     color: #fd7e14;
 }
 
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-moved > .tree-toggle,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-moved > .tree-icon,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-mixed > .tree-toggle,
-.history-tree-container[data-collection-view="true"] .tree-item.tree-change-mixed > .tree-icon {
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-moved > .tree-toggle,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-moved > .tree-icon,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-mixed > .tree-toggle,
+.history-tree-container .tree-item[data-node-type="folder"].tree-change-mixed > .tree-icon,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-moved > .tree-toggle,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-moved > .tree-icon,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-mixed > .tree-toggle,
+.changes-tree-preview-inline .tree-item[data-node-type="folder"].tree-change-mixed > .tree-icon {
     color: #0d6efd;
 }
 

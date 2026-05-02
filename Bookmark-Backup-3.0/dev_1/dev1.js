@@ -194,6 +194,7 @@
             submitDone: false,
             runDone: false
         },
+        workflowStepsBatchIndex: null,
         reviewSyncInFlight: false,
         running: false,
         initialized: false
@@ -205,6 +206,7 @@
             submitDone: false,
             runDone: false
         };
+        state.workflowStepsBatchIndex = null;
     }
 
     function markWorkflowStep(stepKey, done = true) {
@@ -213,17 +215,25 @@
         }
         if (!['openDone', 'submitDone', 'runDone'].includes(String(stepKey || ''))) return;
         state.workflowSteps[stepKey] = done === true;
+        state.workflowStepsBatchIndex = state.queueBatchIndex ?? 0;
+    }
+
+    function isWorkflowStepDone(stepKey) {
+        if ((state.workflowStepsBatchIndex ?? null) !== (state.queueBatchIndex ?? 0)) return false;
+        return state.workflowSteps?.[stepKey] === true;
     }
 
     function isReviewOpenStepSatisfied(queueItems = getCurrentQueueBatchItems()) {
+        if (isExistingTabReviewMode(queueItems)) return true;
         return getReviewWindowId() != null
             && isQueuePreparedWithExistingTabs(queueItems);
     }
 
     function isReviewSubmitStepSatisfied(queueItems = getCurrentQueueBatchItems()) {
         return shouldBypassReviewForQueue(queueItems)
+            || (isExistingTabReviewMode(queueItems) && isReviewSatisfiedForQueue(queueItems))
             || (getReviewWindowId() != null && isReviewSatisfiedForQueue(queueItems))
-            || state.workflowSteps?.submitDone === true;
+            || isWorkflowStepDone('submitDone');
     }
 
     const i18n = {
@@ -309,6 +319,7 @@
             queueRowDeleted: '已删除队列项。',
             queueRowWhitelistOn: '已加入白名单。',
             queueRowWhitelistOff: '已移出白名单。',
+            queueFocusTabFailed: '跳转到对应页面失败',
             colWhitelist: '白名单',
             whitelistOn: '免复核',
             whitelistOff: '需复核',
@@ -322,13 +333,17 @@
             reviewItemPending: '待复核',
             reviewItemActive: '复核中',
             reviewItemReviewed: '已复核',
+            reviewItemExistingTabActive: '活跃页面',
             reviewStateIdle: '尚未开始复核',
             reviewStatePending: '复核中（未提交）',
             reviewStateSubmitted: '已提交复核',
             reviewStateReviewed: '已复核',
+            reviewExistingTabModeReady: '已打开页面，可检查后直接提交复核',
+            reviewExistingTabUnavailable: '已打开页面不可用，请刷新队列或改用复核窗口。',
+            reviewExistingTabPromoteFailed: '当前列表没有全部匹配到已打开页面，请先点击“在新窗口打开”。',
             reviewStateBypassWhitelist: '白名单免复核',
             reviewWindowLabel: '复核窗口',
-            reviewWindowMissing: '复核窗口不可用，请先点击“在新窗口打开”。',
+            reviewWindowMissing: '当前列表需要先点击“在新窗口打开”。',
             reviewQueueChanged: '复核窗口队列发生变化，请重新勾选并提交。',
             reviewQueueReady: '抓取队列已更新，请点击“在新窗口打开”进行复核。',
             reviewSyncFailed: '刷新复核队列失败',
@@ -505,6 +520,7 @@
             queueRowDeleted: 'Queue item deleted.',
             queueRowWhitelistOn: 'Added to whitelist.',
             queueRowWhitelistOff: 'Removed from whitelist.',
+            queueFocusTabFailed: 'Failed to jump to the matching page',
             colWhitelist: 'Whitelist',
             whitelistOn: 'Bypass',
             whitelistOff: 'Review',
@@ -518,13 +534,17 @@
             reviewItemPending: 'Pending Review',
             reviewItemActive: 'Reviewing',
             reviewItemReviewed: 'Reviewed',
+            reviewItemExistingTabActive: 'Active Page',
             reviewStateIdle: 'Review not started',
             reviewStatePending: 'Review in progress (not submitted)',
             reviewStateSubmitted: 'Review submitted',
             reviewStateReviewed: 'Reviewed',
+            reviewExistingTabModeReady: 'Opened pages are ready. Check them and submit review directly',
+            reviewExistingTabUnavailable: 'Opened pages are unavailable. Refresh the queue or use the review window.',
+            reviewExistingTabPromoteFailed: 'Not every item in this list matches an opened page. Click "Open in New Window" first.',
             reviewStateBypassWhitelist: 'Whitelist Bypass',
             reviewWindowLabel: 'Review Window',
-            reviewWindowMissing: 'Review window is unavailable. Click "Open in New Window" first.',
+            reviewWindowMissing: 'This list needs "Open in New Window" first.',
             reviewQueueChanged: 'Review queue changed. Please re-check and submit again.',
             reviewQueueReady: 'Queue updated. Click "Open in New Window" to start review.',
             reviewSyncFailed: 'Failed to refresh review queue',
@@ -851,6 +871,19 @@
         }
     }
 
+    function normalizeExistingTabMatchKey(rawUrl) {
+        const value = String(rawUrl || '').trim();
+        if (!value) return '';
+        try {
+            const parsed = new URL(value);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            parsed.hash = '';
+            return parsed.toString();
+        } catch (_) {
+            return '';
+        }
+    }
+
     function normalizeWhitelistKeys(raw) {
         const set = new Set();
         if (!Array.isArray(raw)) return set;
@@ -1094,7 +1127,8 @@
     }
 
     function normalizeReviewSession(raw) {
-        const rawWindowId = Number(raw?.windowId);
+        const hasWindowId = raw?.windowId != null && String(raw.windowId).trim() !== '';
+        const rawWindowId = hasWindowId ? Number(raw.windowId) : NaN;
         const windowId = Number.isFinite(rawWindowId) ? Math.floor(rawWindowId) : null;
         const batchKeys = Array.isArray(raw?.batchKeys)
             ? Array.from(new Set(raw.batchKeys.map(v => String(v || '').trim()).filter(Boolean)))
@@ -1358,6 +1392,25 @@
         persistQueueSnapshot();
     }
 
+    function mergeExistingTabMetadata(existingItem, selectedItem) {
+        const tabId = Number(selectedItem?.existingTabId);
+        if (!(selectedItem?.useExistingTab === true && Number.isFinite(tabId))) {
+            return existingItem;
+        }
+        return {
+            ...existingItem,
+            sourceLabel: existingItem?.sourceLabel || selectedItem?.sourceLabel || '',
+            actionText: selectedItem?.actionText || existingItem?.actionText || '',
+            existingTabId: Math.floor(tabId),
+            useExistingTab: true,
+            reviewWindowId: null,
+            reviewWindowActive: false,
+            reviewLastAccessed: 0,
+            reviewed: false,
+            reviewedAt: ''
+        };
+    }
+
     function appendLockedQueueItems(items) {
         const existingQueue = cloneQueueItems(state.lockedQueueItems);
         const selectedItems = cloneQueueItems(items);
@@ -1369,22 +1422,22 @@
             };
         }
 
-        const seenKeys = new Set(
-            existingQueue
-                .map(item => getQueueItemStableKey(item))
-                .filter(Boolean)
-        );
+        const keyIndexMap = new Map();
+        existingQueue.forEach((item, index) => {
+            const key = getQueueItemStableKey(item);
+            if (key && !keyIndexMap.has(key)) keyIndexMap.set(key, index);
+        });
         const nextQueue = existingQueue.slice();
         let addedCount = 0;
         let skippedCount = 0;
         selectedItems.forEach((item) => {
             const key = getQueueItemStableKey(item);
             if (!key) return;
-            if (seenKeys.has(key)) {
+            if (keyIndexMap.has(key)) {
                 skippedCount += 1;
                 return;
             }
-            seenKeys.add(key);
+            keyIndexMap.set(key, nextQueue.length);
             nextQueue.push(item);
             addedCount += 1;
         });
@@ -1553,13 +1606,7 @@
         const currentIndex = clampQueueBatchIndex(queueItems);
         if (nextIndex === currentIndex) return false;
 
-        if (getReviewWindowId() != null) {
-            try {
-                await closeReviewWindowForCurrentSession();
-            } catch (_) { }
-        }
         state.queueBatchIndex = nextIndex;
-        clearReviewSession();
         if (rerender) {
             rerenderAllDataPanels();
         }
@@ -1757,6 +1804,20 @@
     function getQueueItemReviewWindowId(item) {
         const raw = Number(item?.reviewWindowId);
         return Number.isFinite(raw) ? Math.floor(raw) : null;
+    }
+
+    function isExistingTabReviewQueueItem(item) {
+        const tabId = getQueueItemTabId(item);
+        return item?.useExistingTab === true
+            && tabId != null
+            && getQueueItemReviewWindowId(item) == null;
+    }
+
+    function isExistingTabReviewMode(items = getCurrentQueueBatchItems()) {
+        const activeItems = getActiveQueueItems(items);
+        return Array.isArray(activeItems)
+            && activeItems.length > 0
+            && activeItems.every(item => isExistingTabReviewQueueItem(item));
     }
 
     function getReviewQueueItemKey(item) {
@@ -2155,11 +2216,11 @@
         const runBtn = document.getElementById('dev1RunBtn');
         if (!runBtn) return;
         const active = runIsActive === true;
-        const stepNumber = 3;
+        const stepNumber = isExistingTabReviewMode(getActiveQueueItems(getCurrentQueueBatchItems())) ? 2 : 3;
         const textEl = runBtn.querySelector('span');
         runBtn.title = active ? t('tipRunPause') : t('tipRunStart');
         runBtn.classList.toggle('primary', !active);
-        runBtn.classList.toggle('dev1-step-done', state.workflowSteps?.runDone === true);
+        runBtn.classList.toggle('dev1-step-done', isWorkflowStepDone('runDone'));
         if (textEl) {
             textEl.textContent = `${stepNumber}. ${active ? t('runPauseBtn') : t('runStartBtn')}`;
         }
@@ -4482,14 +4543,17 @@
             const nameIconHtml = renderQueueItemNameIconHtml(item);
             const deleteTip = t('queueOpDelete');
             const whitelistTip = whitelistByUrl ? t('queueOpWhitelistRemove') : t('queueOpWhitelistAdd');
+            const rowTabId = getQueueItemTabId(item);
+            const rowHasTab = rowTabId != null;
+            const existingTabQueueItem = isExistingTabReviewQueueItem(item);
             const reviewStateClass = item?.reviewed === true
                 ? 'success'
-                : (item?.reviewWindowActive === true ? 'warning' : 'neutral');
+                : (existingTabQueueItem ? 'info' : (item?.reviewWindowActive === true ? 'warning' : 'neutral'));
             const reviewStateText = item?.reviewed === true
                 ? t('reviewItemReviewed')
-                : (item?.reviewWindowActive === true ? t('reviewItemActive') : t('reviewItemPending'));
+                : (existingTabQueueItem ? t('reviewItemExistingTabActive') : (item?.reviewWindowActive === true ? t('reviewItemActive') : t('reviewItemPending')));
             return `
-                <tr>
+                <tr class="is-focusable" data-queue-url="${escapeHtml(item.url || '')}" ${rowHasTab ? `data-tab-id="${escapeHtml(String(rowTabId))}"` : ''}>
                     <td class="dev1-col-ops">
                         <div class="dev1-queue-ops">
                             <button type="button" class="dev1-queue-op-btn danger" data-op="delete" data-url="${escapeHtml(item.url || '')}" data-tip="${escapeHtml(deleteTip)}" aria-label="${escapeHtml(deleteTip)}">
@@ -4556,13 +4620,14 @@
         const queueItems = currentBatch.items;
         const activeQueueItems = getActiveQueueItems(queueItems);
         const queueCount = Array.isArray(activeQueueItems) ? activeQueueItems.length : 0;
+        const existingTabReviewMode = isExistingTabReviewMode(activeQueueItems);
         const bypassReview = shouldBypassReviewForQueue(activeQueueItems);
         const reviewSatisfied = isReviewSatisfiedForQueue(activeQueueItems);
         const openStepSatisfied = isReviewOpenStepSatisfied(activeQueueItems);
         const submitStepSatisfied = isReviewSubmitStepSatisfied(activeQueueItems);
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
         const selectedCounts = getBookmarkFolderCounts(activeQueueItems);
-        const reviewedItems = windowId != null
+        const reviewedItems = windowId != null || existingTabReviewMode || isReviewSubmitted()
             ? getReviewedQueueItems(queueItems)
             : [];
         const reviewedCounts = getBookmarkFolderCounts(reviewedItems);
@@ -4575,12 +4640,13 @@
         if (openReviewBtn) {
             const openTextEl = openReviewBtn.querySelector('span');
             if (openTextEl) openTextEl.textContent = `1. ${t('reviewOpenWindow')}`;
-            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || state.workflowSteps?.openDone === true);
-            openReviewBtn.disabled = state.running || queueCount <= 0;
+            openReviewBtn.hidden = existingTabReviewMode;
+            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || isWorkflowStepDone('openDone'));
+            openReviewBtn.disabled = existingTabReviewMode || state.running || queueCount <= 0;
         }
         if (submitBtn) {
             const submitTextEl = submitBtn.querySelector('span');
-            if (submitTextEl) submitTextEl.textContent = `2. ${t('reviewSubmit')}`;
+            if (submitTextEl) submitTextEl.textContent = `${existingTabReviewMode ? 1 : 2}. ${t('reviewSubmit')}`;
             submitBtn.hidden = false;
             submitBtn.classList.toggle('dev1-step-done', submitStepSatisfied);
         }
@@ -4613,12 +4679,16 @@
             statusEl.textContent = isEn
                 ? `${t('reviewReviewedSummary')}: ${t('reviewCountBookmarks')} ${bypassDisplayCounts.bookmarkCount} · ${t('reviewCountFolders')} ${bypassDisplayCounts.folderCount} · ${t('reviewStateBypassWhitelist')}`
                 : `${t('reviewReviewedSummary')}：${t('reviewCountBookmarks')} ${bypassDisplayCounts.bookmarkCount} · ${t('reviewCountFolders')} ${bypassDisplayCounts.folderCount} · ${t('reviewStateBypassWhitelist')}`;
-            submitBtn.disabled = state.running || windowId == null || queueCount <= 0;
+            submitBtn.disabled = state.running || (!existingTabReviewMode && windowId == null) || queueCount <= 0;
             return;
         }
 
         let stateText = t('reviewStateIdle');
-        if (windowId != null) {
+        if (existingTabReviewMode) {
+            stateText = isReviewSubmitted()
+                ? t('reviewStateSubmitted')
+                : (reviewSatisfied ? t('reviewStateReviewed') : t('reviewExistingTabModeReady'));
+        } else if (windowId != null) {
             stateText = isReviewSubmitted()
                 ? t('reviewStateSubmitted')
                 : (reviewSatisfied ? t('reviewStateReviewed') : t('reviewStatePending'));
@@ -4628,7 +4698,7 @@
             : `${t('reviewReviewedSummary')}：${t('reviewCountBookmarks')} ${reviewedCounts.bookmarkCount} · ${t('reviewCountFolders')} ${reviewedCounts.folderCount} · ${stateText}`;
 
         submitBtn.disabled = state.running
-            || windowId == null
+            || (!existingTabReviewMode && windowId == null)
             || queueCount <= 0;
     }
 
@@ -4806,6 +4876,11 @@
                     setStatus(hasAnyScopeSelection() ? t('runBlockedNoQueue') : t('queueSelectScopeFirst'), 'warning');
                     return;
                 }
+                if (isExistingTabReviewMode(queueItems)) {
+                    setStatus(t('reviewExistingTabModeReady'), 'info');
+                    renderReviewWorkflowPanel();
+                    return;
+                }
                 try {
                     await prepareReviewWindowForQueue(queueItems);
                 } catch (error) {
@@ -4840,10 +4915,6 @@
         const scopeDoneBtn = root.querySelector('#dev1ScopeDoneBtn');
         if (scopeDoneBtn) {
             scopeDoneBtn.addEventListener('click', async () => {
-                try {
-                    await closeReviewWindowForCurrentSession();
-                } catch (_) { }
-                clearReviewSession();
                 applyAllFilters();
                 const selectedItems = cloneQueueItems(state.filteredItems);
                 const previousQueue = cloneQueueItems(state.lockedQueueItems);
@@ -5122,21 +5193,33 @@
                 const target = event.target;
                 if (!(target instanceof HTMLElement)) return;
                 const opBtn = target.closest('.dev1-queue-op-btn[data-op][data-url]');
-                if (!(opBtn instanceof HTMLButtonElement)) return;
-                if (state.running) return;
+                if (opBtn instanceof HTMLButtonElement) {
+                    if (state.running) return;
 
-                const op = String(opBtn.dataset.op || '').trim();
-                const rawUrl = String(opBtn.dataset.url || '').trim();
-                if (!rawUrl) return;
+                    const op = String(opBtn.dataset.op || '').trim();
+                    const rawUrl = String(opBtn.dataset.url || '').trim();
+                    if (!rawUrl) return;
 
-                if (op === 'delete') {
-                    handleQueueDeleteAction(rawUrl).catch((error) => {
-                        setStatus(error?.message || t('runFailed'), 'error');
-                    });
+                    if (op === 'delete') {
+                        handleQueueDeleteAction(rawUrl).catch((error) => {
+                            setStatus(error?.message || t('runFailed'), 'error');
+                        });
+                        return;
+                    }
+                    if (op === 'whitelist') {
+                        handleQueueWhitelistToggleAction(rawUrl);
+                    }
                     return;
                 }
-                if (op === 'whitelist') {
-                    handleQueueWhitelistToggleAction(rawUrl);
+
+                const queueRow = target.closest('tr[data-queue-url]');
+                if (queueRow instanceof HTMLElement) {
+                    const tabId = Number(queueRow.dataset.tabId);
+                    const rawUrl = String(queueRow.dataset.queueUrl || '').trim();
+                    event.preventDefault();
+                    focusQueueTab(Number.isFinite(tabId) ? tabId : null, rawUrl).catch((error) => {
+                        setStatus(`${t('queueFocusTabFailed')}: ${error?.message || ''}`, 'warning');
+                    });
                 }
             });
         }
@@ -5259,7 +5342,7 @@
         });
     }
 
-    async function hasLiveExistingTabsForQueue(queueItems) {
+    async function hasLiveExistingTabsForQueue(queueItems, options = {}) {
         if (!Array.isArray(queueItems) || queueItems.length === 0) return false;
         const tabIds = Array.from(new Set(
             queueItems
@@ -5271,7 +5354,15 @@
 
         const response = await sendRuntimeMessage({
             action: 'dev1CheckExistingTabsAlive',
-            tabIds
+            tabIds,
+            items: queueItems.map((item) => ({
+                tabId: item?.existingTabId,
+                url: item?.url
+            })),
+            options: {
+                wakeDiscarded: false,
+                waitForComplete: options?.waitForComplete !== false
+            }
         }, 20000);
 
         if (!response || response.success !== true || !Array.isArray(response.aliveTabIds)) {
@@ -5290,6 +5381,47 @@
                 && Number.isFinite(tabId)
                 && aliveSet.has(Math.floor(tabId));
         });
+    }
+
+    async function promoteCurrentBatchToExistingTabs(queueItems) {
+        const activeItems = getActiveQueueItems(queueItems);
+        if (!Array.isArray(activeItems) || activeItems.length === 0) return activeItems;
+
+        let allTabsPayload = null;
+        try {
+            allTabsPayload = await fetchAllWindowTabsSourcePayload();
+        } catch (_) {
+            return activeItems;
+        }
+
+        const metadataByUrl = new Map();
+        (Array.isArray(allTabsPayload?.items) ? allTabsPayload.items : []).forEach((rawItem) => {
+            const key = normalizeExistingTabMatchKey(rawItem?.url || '');
+            const tabIdRaw = Number(rawItem?.existingTabId ?? rawItem?.tabId);
+            if (!key || !Number.isFinite(tabIdRaw) || metadataByUrl.has(key)) return;
+            metadataByUrl.set(key, {
+                existingTabId: Math.floor(tabIdRaw),
+                useExistingTab: true,
+                actionText: getLangKey() === 'en' ? 'Open Tab' : '已打开Tab',
+                sourceLabel: t('sourceLabelAllTabs')
+            });
+        });
+
+        const promotedByKey = new Map();
+        for (const item of activeItems) {
+            const key = getQueueItemStableKey(item);
+            const matchKey = normalizeExistingTabMatchKey(item?.url || '');
+            const metadata = metadataByUrl.get(matchKey);
+            if (!key || !metadata) return activeItems;
+            promotedByKey.set(key, mergeExistingTabMetadata(item, metadata));
+        }
+
+        const nextQueue = cloneQueueItems(getExecutionQueueItems()).map((item) => {
+            const key = getQueueItemStableKey(item);
+            return promotedByKey.get(key) || item;
+        });
+        setLockedQueueItems(nextQueue);
+        return getActiveQueueItems(getCurrentQueueBatchItems(nextQueue));
     }
 
     async function syncReviewWindowQueue({ silentStatus = true, fromEvent = false, removeBatchOnMissing = false, pruneMissingItems = removeBatchOnMissing } = {}) {
@@ -5495,31 +5627,15 @@
         return response.items;
     }
 
-    async function submitReviewWorkflow() {
-        const reviewWindowId = getReviewWindowId();
-        if (reviewWindowId == null) {
-            throw new Error(t('reviewWindowMissing'));
-        }
-
-        const synced = await syncReviewWindowQueue({
-            silentStatus: true,
-            pruneMissingItems: true
-        });
-        if (!synced) {
-            throw new Error(t('reviewWindowMissing'));
-        }
-
-        let queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
-        if (!Array.isArray(queueItems) || queueItems.length === 0) {
-            throw new Error(t('runBlockedNoQueue'));
-        }
+    function markCurrentReviewBatchReviewed(queueItems) {
+        const activeItems = getActiveQueueItems(queueItems);
         const batchKeySet = getCurrentReviewBatchKeySet();
         const submittedBatchKeySet = new Set([
             ...Array.from(batchKeySet),
-            ...buildReviewBatchKeys(queueItems)
+            ...buildReviewBatchKeys(activeItems)
         ]);
         const submittedBatchSlotSet = new Set(
-            queueItems
+            activeItems
                 .map(item => getQueueItemSlotKey(item))
                 .filter(Boolean)
         );
@@ -5538,14 +5654,82 @@
             };
         });
         setLockedQueueItems(reviewedQueue);
-        queueItems = getActiveQueueItems(getCurrentQueueBatchItems(reviewedQueue));
+
+        return {
+            reviewedQueue,
+            queueItems: getActiveQueueItems(getCurrentQueueBatchItems(reviewedQueue)),
+            submittedBatchKeySet
+        };
+    }
+
+    async function submitReviewWorkflow() {
+        let queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
+        if (!Array.isArray(queueItems) || queueItems.length === 0) {
+            throw new Error(t('runBlockedNoQueue'));
+        }
+
+        if (!isExistingTabReviewMode(queueItems) && getReviewWindowId() == null) {
+            queueItems = await promoteCurrentBatchToExistingTabs(queueItems);
+            if (isExistingTabReviewMode(queueItems)) {
+                rerenderAllDataPanels();
+            }
+        }
+
+        if (isExistingTabReviewMode(queueItems)) {
+            const tabsReady = await hasLiveExistingTabsForQueue(queueItems, {
+                wakeDiscarded: false,
+                waitForComplete: true
+            });
+            if (!tabsReady) {
+                throw new Error(t('reviewExistingTabUnavailable'));
+            }
+
+            const reviewedResult = markCurrentReviewBatchReviewed(queueItems);
+            queueItems = reviewedResult.queueItems;
+            setReviewSession({
+                windowId: null,
+                acknowledged: true,
+                submitted: true,
+                submittedAt: new Date().toISOString(),
+                queueSignature: buildQueueSignature(queueItems),
+                batchKeys: Array.from(reviewedResult.submittedBatchKeySet)
+            });
+            cancelReviewSyncTimers();
+            clearReviewTrackingState();
+            markWorkflowStep('submitDone', true);
+            markWorkflowStep('runDone', false);
+            rerenderAllDataPanels();
+            setStatus(t('reviewSubmittedReady'), 'success');
+            return;
+        }
+
+        const reviewWindowId = getReviewWindowId();
+        if (reviewWindowId == null) {
+            throw new Error(t('reviewExistingTabPromoteFailed'));
+        }
+
+        const synced = await syncReviewWindowQueue({
+            silentStatus: true,
+            pruneMissingItems: true
+        });
+        if (!synced) {
+            throw new Error(t('reviewExistingTabPromoteFailed'));
+        }
+
+        queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
+        if (!Array.isArray(queueItems) || queueItems.length === 0) {
+            throw new Error(t('runBlockedNoQueue'));
+        }
+
+        const reviewedResult = markCurrentReviewBatchReviewed(queueItems);
+        queueItems = reviewedResult.queueItems;
 
         setReviewSession({
             acknowledged: true,
             submitted: true,
             submittedAt: new Date().toISOString(),
             queueSignature: buildQueueSignature(queueItems),
-            batchKeys: Array.from(submittedBatchKeySet)
+            batchKeys: Array.from(reviewedResult.submittedBatchKeySet)
         });
         cancelReviewSyncTimers();
         clearReviewTrackingState();
@@ -5567,6 +5751,144 @@
         }, 20000);
 
         return !!(response && response.success === true);
+    }
+
+    function getRuntimeLastErrorMessage() {
+        return String(runtimeApi?.runtime?.lastError?.message || '').trim();
+    }
+
+    function queryTabsDirect(queryInfo = {}) {
+        return new Promise((resolve, reject) => {
+            if (!runtimeApi?.tabs || typeof runtimeApi.tabs.query !== 'function') {
+                reject(new Error(t('queueFocusTabFailed')));
+                return;
+            }
+            try {
+                runtimeApi.tabs.query(queryInfo, (tabs) => {
+                    const errorText = getRuntimeLastErrorMessage();
+                    if (errorText) {
+                        reject(new Error(errorText));
+                        return;
+                    }
+                    resolve(Array.isArray(tabs) ? tabs : []);
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function getTabDirect(tabId) {
+        return new Promise((resolve, reject) => {
+            const normalizedTabId = Number(tabId);
+            if (!Number.isFinite(normalizedTabId) || !runtimeApi?.tabs || typeof runtimeApi.tabs.get !== 'function') {
+                reject(new Error(t('queueFocusTabFailed')));
+                return;
+            }
+            try {
+                runtimeApi.tabs.get(Math.floor(normalizedTabId), (tab) => {
+                    const errorText = getRuntimeLastErrorMessage();
+                    if (errorText) {
+                        reject(new Error(errorText));
+                        return;
+                    }
+                    resolve(tab || null);
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function focusWindowDirect(windowId) {
+        return new Promise((resolve) => {
+            const normalizedWindowId = Number(windowId);
+            if (!Number.isFinite(normalizedWindowId) || !runtimeApi?.windows || typeof runtimeApi.windows.update !== 'function') {
+                resolve(null);
+                return;
+            }
+            try {
+                runtimeApi.windows.update(Math.floor(normalizedWindowId), { focused: true }, (windowInfo) => {
+                    resolve(windowInfo || null);
+                });
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    }
+
+    function activateTabDirect(tabId) {
+        return new Promise((resolve, reject) => {
+            const normalizedTabId = Number(tabId);
+            if (!Number.isFinite(normalizedTabId) || !runtimeApi?.tabs || typeof runtimeApi.tabs.update !== 'function') {
+                reject(new Error(t('queueFocusTabFailed')));
+                return;
+            }
+            try {
+                runtimeApi.tabs.update(Math.floor(normalizedTabId), { active: true }, (tab) => {
+                    const errorText = getRuntimeLastErrorMessage();
+                    if (errorText) {
+                        reject(new Error(errorText));
+                        return;
+                    }
+                    resolve(tab || null);
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    async function focusQueueTabDirect(tabId, rawUrl = '') {
+        const normalizedTabId = Number(tabId);
+        const url = String(rawUrl || '').trim();
+        if (!Number.isFinite(normalizedTabId) && !url) {
+            throw new Error(t('queueFocusTabFailed'));
+        }
+        let targetTabId = Number.isFinite(normalizedTabId) ? Math.floor(normalizedTabId) : null;
+        if (targetTabId == null && url) {
+            const targetKey = normalizeExistingTabMatchKey(url);
+            const tabs = await queryTabsDirect({});
+            const matchedTab = tabs.find((tab) => normalizeExistingTabMatchKey(tab?.url || tab?.pendingUrl || '') === targetKey);
+            targetTabId = Number.isFinite(Number(matchedTab?.id)) ? Math.floor(Number(matchedTab.id)) : null;
+        }
+        if (targetTabId == null) {
+            throw new Error(t('queueFocusTabFailed'));
+        }
+        const tab = await getTabDirect(targetTabId);
+        if (!tab || !Number.isFinite(Number(tab.id))) {
+            throw new Error(t('queueFocusTabFailed'));
+        }
+        const windowId = Number(tab.windowId);
+        if (Number.isFinite(windowId)) {
+            await focusWindowDirect(windowId);
+        }
+        await activateTabDirect(targetTabId);
+        return {
+            success: true,
+            tabId: targetTabId,
+            windowId: Number.isFinite(windowId) ? Math.floor(windowId) : null
+        };
+    }
+
+    async function focusQueueTab(tabId, rawUrl = '') {
+        if (runtimeApi?.tabs && typeof runtimeApi.tabs.update === 'function') {
+            return focusQueueTabDirect(tabId, rawUrl);
+        }
+        const normalizedTabId = Number(tabId);
+        const url = String(rawUrl || '').trim();
+        if (!Number.isFinite(normalizedTabId) && !url) {
+            throw new Error(t('queueFocusTabFailed'));
+        }
+        const response = await sendRuntimeMessage({
+            action: 'dev1FocusQueueTab',
+            tabId: Number.isFinite(normalizedTabId) ? Math.floor(normalizedTabId) : null,
+            url
+        }, 20000);
+        if (!response || response.success !== true) {
+            throw new Error(response?.error || t('queueFocusTabFailed'));
+        }
+        return response;
     }
 
     async function handleQueueDeleteAction(rawUrl) {
@@ -5634,6 +5956,7 @@
         const currentBatchIndex = clampQueueBatchIndex();
         const activeQueueItems = getActiveQueueItems(queueItems);
         const queueCount = Array.isArray(activeQueueItems) ? activeQueueItems.length : 0;
+        const existingTabReviewMode = isExistingTabReviewMode(activeQueueItems);
         const openStepSatisfied = isReviewOpenStepSatisfied(activeQueueItems);
         const submitStepSatisfied = isReviewSubmitStepSatisfied(activeQueueItems);
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
@@ -5643,8 +5966,9 @@
         if (clearBtn) clearBtn.disabled = !!disabled;
         if (scopeBtn) scopeBtn.disabled = !!disabled;
         if (openReviewBtn) {
-            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || state.workflowSteps?.openDone === true);
-            openReviewBtn.disabled = !!disabled || queueCount <= 0;
+            openReviewBtn.hidden = existingTabReviewMode;
+            openReviewBtn.classList.toggle('dev1-step-done', openStepSatisfied || isWorkflowStepDone('openDone'));
+            openReviewBtn.disabled = existingTabReviewMode || !!disabled || queueCount <= 0;
         }
         if (resumeBtn) resumeBtn.disabled = !!disabled || !(state.captureRunState && state.captureRunState.resumable);
         if (refreshRunStateBtn) refreshRunStateBtn.disabled = !!disabled;
@@ -5659,7 +5983,7 @@
             reviewSubmitBtn.hidden = false;
             reviewSubmitBtn.classList.toggle('dev1-step-done', submitStepSatisfied);
             reviewSubmitBtn.disabled = !!disabled
-                || getReviewWindowId() == null
+                || (!existingTabReviewMode && getReviewWindowId() == null)
                 || queueCount <= 0;
         }
         updateQueueBatchSizeControlState();
@@ -5765,8 +6089,14 @@
             return;
         }
 
-        // Hard gate: capture must run against a live review window queue.
-        if (getReviewWindowId() == null) {
+        let existingTabReviewMode = isExistingTabReviewMode(queueItems);
+        if (!existingTabReviewMode && getReviewWindowId() == null) {
+            queueItems = await promoteCurrentBatchToExistingTabs(queueItems);
+            existingTabReviewMode = isExistingTabReviewMode(queueItems);
+        }
+
+        // Ordinary queues capture through a review window; pure opened-tab queues reuse their existing tab ids.
+        if (getReviewWindowId() == null && !existingTabReviewMode) {
             try {
                 await prepareReviewWindowForQueue(queueItems);
             } catch (error) {
@@ -5776,6 +6106,11 @@
         }
 
         if (!isReviewSatisfiedForQueue(queueItems)) {
+            if (existingTabReviewMode) {
+                setStatus(t('reviewNeedSubmit'), 'warning');
+                renderReviewWorkflowPanel();
+                return;
+            }
             const synced = await syncReviewWindowQueue({
                 silentStatus: true,
                 pruneMissingItems: true
@@ -5801,6 +6136,11 @@
         }
 
         if (!queueReady) {
+            if (existingTabReviewMode) {
+                setStatus(t('reviewExistingTabUnavailable'), 'warning');
+                renderReviewWorkflowPanel();
+                return;
+            }
             try {
                 await prepareReviewWindowForQueue(queueItems);
             } catch (error) {

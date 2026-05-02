@@ -5174,10 +5174,17 @@
         #importTargetModal .import-target-tree-icon {
             color: var(--warning);
             width: 16px;
+            height: 16px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             flex: 0 0 16px;
+            font-size: 15px;
+            line-height: 1;
+        }
+
+        #importTargetModal .import-target-tree-icon i {
+            line-height: 1;
         }
 
         #importTargetModal .import-target-tree-title {
@@ -5446,6 +5453,7 @@
             cursor: pointer;
             color: var(--text-tertiary);
             transition: transform 0.2s ease;
+            flex: 0 0 16px;
         }
 
         #restoreConfirmModal .tree-toggle.expanded {
@@ -5456,6 +5464,7 @@
             width: 16px;
             height: 16px;
             color: var(--text-secondary);
+            flex: 0 0 16px;
         }
 
         #restoreConfirmModal .tree-label {

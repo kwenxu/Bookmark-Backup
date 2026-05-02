@@ -20327,6 +20327,22 @@ function inferCollectionGroupChangeTypeFromTitle(title) {
     return '';
 }
 
+function splitCollectionGroupTitleMarker(title) {
+    const text = String(title || '');
+    const match = text.match(/^(\[(?:\+|-|~>>|>>|~)\])\s*(.*)$/);
+    if (!match) return null;
+    return {
+        marker: match[1],
+        text: match[2] || ''
+    };
+}
+
+function renderCollectionGroupTitleHtml(title) {
+    const markerInfo = splitCollectionGroupTitleMarker(title);
+    if (!markerInfo) return escapeHtml(title);
+    return `<span class="collection-title-prefix">${escapeHtml(markerInfo.marker)}</span><span class="collection-title-text">${escapeHtml(markerInfo.text)}</span>`;
+}
+
 function buildCollectionViewNodesWithIds(nodes, prefix = 'collection') {
     const walk = (items, parentPath, depth = 0) => {
         if (!Array.isArray(items)) return [];
@@ -21554,10 +21570,14 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
             statusIcon = pathBadges;
         }
 
-        const title = escapeHtml(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const titleText = node.title || (isZh ? '(无标题)' : '(Untitled)');
+        const title = isCollectionGroupNode
+            ? renderCollectionGroupTitleHtml(titleText)
+            : escapeHtml(titleText);
         const hasChildren = isFolder && node.children && node.children.length > 0;
         const nextUnderDeletedAncestor = underDeletedAncestor || isDeletedFolder;
         const extraNodeClass = isCollectionGroupNode ? 'collection-group-node' : '';
+        const labelClass = isCollectionGroupNode ? 'tree-label collection-title-label' : 'tree-label';
         const sourceNodeId = node && node.sourceId != null ? String(node.sourceId) : idStr;
         const sourceNodeAttr = sourceNodeId ? ` data-source-node-id="${escapeHtml(sourceNodeId)}"` : '';
 
@@ -21603,7 +21623,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                     <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="folder" data-node-level="${level}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                         <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
-                        <span class="tree-label">${title}</span>
+                        <span class="${labelClass}">${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                     <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(String(node.id))}" data-child-level="${level + 1}" data-next-force-include="${nextForceInclude ? 'true' : 'false'}">
@@ -21619,7 +21639,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                     <div class="tree-item ${changeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-level="${level}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" data-bookmark-url="${escapeHtml(node.url || '')}" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
-                        <a href="${escapeHtml(node.url || '')}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
+                        <a href="${escapeHtml(node.url || '')}" target="_blank" class="${labelClass} tree-bookmark-link" rel="noopener noreferrer">${title}</a>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                 </div>

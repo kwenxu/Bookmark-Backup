@@ -1696,10 +1696,17 @@ option {
 #importTargetModal .import-target-tree-icon {
     color: var(--warning);
     width: 16px;
+    height: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 16px;
+    font-size: 15px;
+    line-height: 1;
+}
+
+#importTargetModal .import-target-tree-icon i {
+    line-height: 1;
 }
 
 #importTargetModal .import-target-tree-title {
@@ -3285,6 +3292,7 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
     cursor: pointer;
     color: var(--text-tertiary);
     transition: transform 0.2s ease;
+    flex: 0 0 16px;
 }
 
 .tree-toggle.expanded {
@@ -3295,6 +3303,7 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
     width: 16px;
     height: 16px;
     color: var(--text-secondary);
+    flex: 0 0 16px;
 }
 
 .tree-item[data-node-type="folder"] {
@@ -3574,6 +3583,27 @@ a.tree-label.tree-bookmark-link:hover {
 .history-tree-container[data-collection-view="true"] .tree-item[data-node-type="folder"] > .tree-icon {
     font-size: 15px;
     transform: none;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-label.collection-title-label {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 4px;
+    line-height: 16px;
+}
+
+.history-tree-container[data-collection-view="true"] .collection-title-prefix {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    height: 16px;
+    line-height: 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.history-tree-container[data-collection-view="true"] .collection-title-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 /* 集合视图：图标/折叠箭头跟随变化类型着色，和文字保持一致 */

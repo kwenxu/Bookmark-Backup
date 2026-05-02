@@ -800,7 +800,14 @@
 
 .dev1-scope-option-list.folder-tree-mode .dev1-folder-tree-folder-icon {
     color: var(--accent-primary);
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    font-size: 15px;
+    line-height: 1;
 }
 
 .dev1-scope-option-list.folder-tree-mode .dev1-folder-tree-bookmark-icon {
@@ -1720,6 +1727,14 @@
     white-space: nowrap;
 }
 
+.dev1-table-queue tr.is-focusable {
+    cursor: pointer;
+}
+
+.dev1-table-queue tr.is-focusable:hover td {
+    background: rgba(var(--accent-primary-rgb, 13, 110, 253), 0.04);
+}
+
 .dev1-table-queue td:nth-child(4),
 .dev1-table-queue td:nth-child(5) {
     text-align: left;
@@ -1914,6 +1929,12 @@
     color: #b26a00;
     border-color: rgba(178, 106, 0, 0.28);
     background: rgba(178, 106, 0, 0.12);
+}
+
+.dev1-pill.info {
+    color: var(--accent-primary);
+    border-color: rgba(var(--accent-primary-rgb, 13, 110, 253), 0.32);
+    background: rgba(var(--accent-primary-rgb, 13, 110, 253), 0.1);
 }
 
 .dev1-empty {

@@ -4961,9 +4961,30 @@ async function dev1OpenReviewWindowForItems(rawItems = [], options = {}) {
     };
 }
 
-async function dev1CheckExistingTabsAlive(rawTabIds = []) {
+async function dev1CheckExistingTabsAlive(rawTabIds = [], rawItems = [], options = {}) {
+    const normalizeHttpUrl = (value) => {
+        try {
+            const parsed = new URL(String(value || '').trim());
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            parsed.hash = '';
+            return parsed.toString();
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const requestedUrlByTabId = new Map();
+    (Array.isArray(rawItems) ? rawItems : []).forEach((item) => {
+        const tabId = dev1NormalizeTabId(item?.tabId ?? item?.existingTabId);
+        const url = normalizeHttpUrl(item?.url || '');
+        if (tabId != null && url) requestedUrlByTabId.set(tabId, url);
+    });
+
     const tabIds = Array.from(new Set(
-        (Array.isArray(rawTabIds) ? rawTabIds : [])
+        [
+            ...(Array.isArray(rawTabIds) ? rawTabIds : []),
+            ...Array.from(requestedUrlByTabId.keys())
+        ]
             .map(id => dev1NormalizeTabId(id))
             .filter(id => id != null)
     ));
@@ -4977,20 +4998,84 @@ async function dev1CheckExistingTabsAlive(rawTabIds = []) {
     }
 
     const aliveTabIds = [];
+    const unavailableTabIds = [];
     for (const tabId of tabIds) {
         try {
-            const tab = await browserAPI.tabs.get(tabId);
-            const url = String(tab?.url || '').trim().toLowerCase();
-            if (url.startsWith('http://') || url.startsWith('https://')) {
-                aliveTabIds.push(tabId);
+            let tab = await browserAPI.tabs.get(tabId);
+            if (tab?.discarded !== true
+                && String(tab?.status || '').trim().toLowerCase() !== 'complete'
+                && options?.waitForComplete === true) {
+                try {
+                    await dev1WaitForTabComplete(tabId, 20000);
+                    tab = await browserAPI.tabs.get(tabId);
+                } catch (_) { }
             }
-        } catch (_) { }
+            const tabUrl = normalizeHttpUrl(tab?.url || '');
+            const expectedUrl = requestedUrlByTabId.get(tabId) || '';
+            const status = String(tab?.status || '').trim().toLowerCase();
+            const ready = !!tabUrl
+                && tab?.discarded !== true
+                && (!status || status === 'complete')
+                && (!expectedUrl || expectedUrl === tabUrl);
+            if (ready) {
+                aliveTabIds.push(tabId);
+            } else {
+                unavailableTabIds.push(tabId);
+            }
+        } catch (_) {
+            unavailableTabIds.push(tabId);
+        }
     }
 
     return {
         success: true,
         total: tabIds.length,
-        aliveTabIds
+        aliveTabIds,
+        unavailableTabIds
+    };
+}
+
+async function dev1FocusQueueTab(tabId, rawUrl = '') {
+    const normalizeHttpUrl = (value) => {
+        try {
+            const parsed = new URL(String(value || '').trim());
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            parsed.hash = '';
+            return parsed.toString();
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const normalizedUrl = normalizeHttpUrl(rawUrl);
+    let normalizedTabId = dev1NormalizeTabId(tabId);
+    if (normalizedTabId == null && normalizedUrl) {
+        const tabs = await browserAPI.tabs.query({});
+        const matchedTab = (Array.isArray(tabs) ? tabs : []).find((tab) => {
+            return normalizeHttpUrl(tab?.url || tab?.pendingUrl || '') === normalizedUrl;
+        });
+        normalizedTabId = dev1NormalizeTabId(matchedTab?.id);
+    }
+    if (normalizedTabId == null) {
+        throw new Error('Matching tab is unavailable');
+    }
+
+    const tab = await browserAPI.tabs.get(normalizedTabId);
+    if (!tab || dev1NormalizeTabId(tab.id) == null) {
+        throw new Error('Tab is unavailable');
+    }
+
+    const windowId = dev1NormalizeWindowId(tab.windowId);
+    if (windowId != null) {
+        try {
+            await browserAPI.windows.update(windowId, { focused: true });
+        } catch (_) { }
+    }
+    await browserAPI.tabs.update(normalizedTabId, { active: true });
+    return {
+        success: true,
+        tabId: normalizedTabId,
+        windowId
     };
 }
 
@@ -8831,12 +8916,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'dev1CheckExistingTabsAlive') {
             (async () => {
                 try {
-                    const result = await dev1CheckExistingTabsAlive(message?.tabIds);
+                    const result = await dev1CheckExistingTabsAlive(message?.tabIds, message?.items, message?.options);
                     sendResponse(result);
                 } catch (error) {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 check existing tabs failed'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
+        } else if (message.action === 'dev1FocusQueueTab') {
+            (async () => {
+                try {
+                    const result = await dev1FocusQueueTab(message?.tabId, message?.url);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 focus queue tab failed'
                     });
                 }
             })();

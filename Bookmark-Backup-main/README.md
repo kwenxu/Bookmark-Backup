@@ -1,5 +1,6 @@
 ## Switch to [English](#english)
 
+[![Linux.do](https://img.shields.io/badge/Linux.do-Portfolio-FFD700?logo=discourse&logoColor=white)](https://linux.do/u/kk1/activity/portfolio)
 [![GitHub Releases](https://img.shields.io/github/v/release/kwenxu/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/kwenxu/Bookmark-Backup/releases)
 [![Microsoft Edge Add-ons](https://img.shields.io/badge/Edge_Add--ons-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
@@ -35,7 +36,7 @@ Bookmark-Backup-main/
 |-- dev_1/                            [TOOLS] 网页快照、MHTML、截图、录屏和队列辅助能力。
 |-- github/                           [SYNC] GitHub 仓库备份目标的 API 封装。
 |-- _locales/                         [I18N] 中英文扩展名称、描述和工具栏标题。
-|-- docs/PROJECT_STRUCTURE.md          [DOC] 更完整的项目结构说明。
+|-- docs/PROJECT_STRUCTURE.md         [DOC] 更完整的项目结构说明。
 \-- LICENSE                           [DOC] 开源许可。
 ```
 
@@ -121,7 +122,7 @@ Bookmark-Backup-main/
 |-- dev_1/                            [TOOLS] Web snapshot, MHTML, screenshot, recording, and queue helper tools.
 |-- github/                           [SYNC] GitHub repository backup API wrapper.
 |-- _locales/                         [I18N] Chinese/English extension name, description, and action title.
-|-- docs/PROJECT_STRUCTURE.md          [DOC] More complete project structure notes.
+|-- docs/PROJECT_STRUCTURE.md         [DOC] More complete project structure notes.
 \-- LICENSE                           [DOC] Open-source license.
 ```
 

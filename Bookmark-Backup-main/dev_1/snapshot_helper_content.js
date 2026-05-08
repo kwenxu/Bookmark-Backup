@@ -21,6 +21,13 @@
     const messages = {
       zh_CN: {
         title: '网页快照辅助工具',
+        save_mhtml: '保存 MHTML',
+        mhtml_saving: '保存中...',
+        mhtml_saved: 'MHTML 已保存',
+        mhtml_failed: 'MHTML 保存失败',
+        mhtml_tooltip: '保存 MHTML 网页快照',
+        open_web_snapshot: '打开网页快照页',
+        open_web_snapshot_tooltip: '打开网页快照页面',
         screenshot_area: '区域截图',
         screenshot_full: '长截图',
         screen_record: '屏幕录制',
@@ -78,6 +85,13 @@
       },
       en: {
         title: 'Web Snapshot Helper',
+        save_mhtml: 'Save MHTML',
+        mhtml_saving: 'Saving...',
+        mhtml_saved: 'MHTML saved',
+        mhtml_failed: 'MHTML save failed',
+        mhtml_tooltip: 'Save an MHTML web snapshot',
+        open_web_snapshot: 'Open Web Snapshot page',
+        open_web_snapshot_tooltip: 'Open the Web Snapshot page',
         screenshot_area: 'Area Screenshot',
         screenshot_full: 'Long Screenshot',
         screen_record: 'Screen Recording',
@@ -145,6 +159,10 @@
         domain: String(raw.domain || location.hostname || '').trim(),
         folderPath: String(raw.folderPath || '').trim(),
         subdomain: String(raw.subdomain || '').trim(),
+        source: String(raw.source || '').trim(),
+        existingTabId: Number.isFinite(Number(raw.existingTabId)) ? Math.floor(Number(raw.existingTabId)) : null,
+        originExtensionTabId: Number.isFinite(Number(raw.originExtensionTabId)) ? Math.floor(Number(raw.originExtensionTabId)) : null,
+        originExtensionWindowId: Number.isFinite(Number(raw.originExtensionWindowId)) ? Math.floor(Number(raw.originExtensionWindowId)) : null,
         queueBatchIndex: Number.isFinite(Number(raw.queueBatchIndex)) ? Math.max(0, Math.floor(Number(raw.queueBatchIndex))) : null,
         queueBatchPosition: Number.isFinite(Number(raw.queueBatchPosition)) ? Math.max(0, Math.floor(Number(raw.queueBatchPosition))) : null,
         queueDisplayIndex: Number.isFinite(Number(raw.queueDisplayIndex)) ? Math.max(0, Math.floor(Number(raw.queueDisplayIndex))) : null,
@@ -315,6 +333,12 @@
             .dev1-helper-header { display:flex; align-items:center; gap:8px; padding:10px 12px; background:${this.darkModeEnabled ? '#2d2d2d' : '#f8fafc'}; cursor:move; user-select:none; }
             .dev1-helper-title { flex:1; font-size:13px; font-weight:700; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .dev1-helper-btn { width:26px; height:26px; border:0; border-radius:8px; background:${this.darkModeEnabled ? '#374151' : '#e2e8f0'}; color:inherit; cursor:pointer; }
+            .dev1-helper-btn:hover { background:${this.darkModeEnabled ? '#4b5563' : '#cbd5e1'}; }
+            .dev1-helper-mhtml { width:auto; min-width:48px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
+            .dev1-helper-open-snapshot svg { transform:translateY(1px); }
+            .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+            .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; padding:7px 9px; border-radius:8px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1.35; box-shadow:0 10px 28px rgba(15,23,42,0.28); pointer-events:none; opacity:0; transform:translateY(-4px); transition:opacity 80ms ease, transform 80ms ease; }
+            .dev1-helper-tip[data-show="true"] { opacity:1; transform:translateY(0); }
             .dev1-helper-body { padding: 0 14px 16px; cursor:move; }
             .dev1-helper-body button { cursor:pointer; }
             .dev1-helper-root[data-open="false"] .dev1-helper-panel { display:none; }
@@ -323,6 +347,11 @@
             <div class="dev1-helper-panel">
               <div class="dev1-helper-header">
                 <div class="dev1-helper-title">${this.translate('title')}</div>
+                <div class="dev1-helper-feedback" aria-live="polite"></div>
+                <button class="dev1-helper-btn dev1-helper-mhtml" type="button" aria-label="${this.translate('mhtml_tooltip')}" data-tip="${this.translate('mhtml_tooltip')}" data-no-drag="true">MHTML</button>
+                <button class="dev1-helper-btn dev1-helper-open-snapshot" type="button" aria-label="${this.translate('open_web_snapshot_tooltip')}" data-tip="${this.translate('open_web_snapshot_tooltip')}" data-no-drag="true">
+                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14L21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
+                </button>
                 <button class="dev1-helper-btn dev1-helper-min" type="button">−</button>
                 <button class="dev1-helper-btn dev1-helper-close" type="button">×</button>
               </div>
@@ -339,6 +368,39 @@
         const body = shadow.querySelector('.dev1-helper-body');
         const launcher = shadow.querySelector('.dev1-helper-launcher');
         const minBtn = shadow.querySelector('.dev1-helper-min');
+        const mhtmlBtn = shadow.querySelector('.dev1-helper-mhtml');
+        const openSnapshotBtn = shadow.querySelector('.dev1-helper-open-snapshot');
+        const bindTip = (button) => {
+          if (!button) return;
+          let tip = null;
+          const removeTip = () => {
+            if (tip) tip.remove();
+            tip = null;
+          };
+          const showTip = () => {
+            removeTip();
+            const text = String(button.dataset.tip || '').trim();
+            if (!text) return;
+            tip = document.createElement('div');
+            tip.className = 'dev1-helper-tip';
+            tip.textContent = text;
+            shadow.appendChild(tip);
+            const rect = button.getBoundingClientRect();
+            const tipRect = tip.getBoundingClientRect();
+            const left = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, rect.left + rect.width / 2 - tipRect.width / 2));
+            const top = Math.max(8, rect.top - tipRect.height - 8);
+            tip.style.left = `${left}px`;
+            tip.style.top = `${top}px`;
+            requestAnimationFrame(() => {
+              if (tip) tip.dataset.show = 'true';
+            });
+          };
+          button.addEventListener('mouseenter', showTip);
+          button.addEventListener('focus', showTip);
+          button.addEventListener('mouseleave', removeTip);
+          button.addEventListener('blur', removeTip);
+          button.addEventListener('click', removeTip);
+        };
         shadow.querySelector('.dev1-helper-close').addEventListener('click', () => this.hidePanel());
         const setOpen = (open) => {
           root.dataset.open = open ? 'true' : 'false';
@@ -354,9 +416,68 @@
           setOpen(root.dataset.open !== 'true');
         });
         minBtn.addEventListener('click', () => setOpen(false));
+        bindTip(mhtmlBtn);
+        bindTip(openSnapshotBtn);
+        mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
+        openSnapshotBtn.addEventListener('click', () => this._openWebSnapshotPage());
         this._bindDrag(host, launcher, { skipInteractive: false });
         this._bindDrag(host, panel);
         this._renderScreenshotOptions(body);
+      }
+
+      _setHeaderFeedback(message = '', timeoutMs = 2400) {
+        const feedback = this.shadow && this.shadow.querySelector('.dev1-helper-feedback');
+        if (!feedback) return;
+        feedback.textContent = String(message || '');
+        if (this._headerFeedbackTimer) clearTimeout(this._headerFeedbackTimer);
+        if (message && timeoutMs > 0) {
+          this._headerFeedbackTimer = setTimeout(() => {
+            feedback.textContent = '';
+          }, timeoutMs);
+        }
+      }
+
+      async _saveCurrentMhtml(button) {
+        if (button && button.disabled) return;
+        const previousText = button ? button.textContent : '';
+        if (button) {
+          button.disabled = true;
+          button.textContent = '...';
+        }
+        this._setHeaderFeedback(this.translate('mhtml_saving'), 0);
+        const previousVisibility = this.host ? this.host.style.visibility : '';
+        if (this.host) this.host.style.visibility = 'hidden';
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        try {
+          const response = await sendRuntimeMessage({
+            action: 'dev1SnapshotHelperSaveCurrentMhtml',
+            lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
+            item: this.config
+          }, 120000);
+          if (!response || response.success !== true) throw new Error(response?.error || 'MHTML save failed');
+          this._setHeaderFeedback(this.translate('mhtml_saved'));
+        } catch (error) {
+          this._setHeaderFeedback(`${this.translate('mhtml_failed')}: ${error?.message || error}`, 5000);
+        } finally {
+          if (this.host) this.host.style.visibility = previousVisibility;
+          if (button) {
+            button.disabled = false;
+            button.textContent = previousText || 'MHTML';
+          }
+        }
+      }
+
+      async _openWebSnapshotPage() {
+        try {
+          const response = await sendRuntimeMessage({
+            action: 'dev1OpenWebSnapshotPage',
+            originExtensionTabId: this.config.originExtensionTabId,
+            originExtensionWindowId: this.config.originExtensionWindowId
+          }, 30000);
+          if (!response || response.success !== true) throw new Error(response?.error || 'Open failed');
+        } catch (error) {
+          this._setHeaderFeedback(error?.message || 'Open failed', 5000);
+        }
       }
 
       async _captureVisibleTab() {

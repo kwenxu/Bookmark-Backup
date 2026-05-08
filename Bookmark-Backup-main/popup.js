@@ -3588,7 +3588,7 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
         },
         {
             key: formatShortcut(shortcuts.open_web_snapshot_view, `${fallbackPrefix}W`),
-            label: isEn ? 'Open Web Snapshot' : '打开网页快照'
+            label: isEn ? 'Open Quick Snapshot Tool' : '打开当前页快照工具'
         }
     ];
 

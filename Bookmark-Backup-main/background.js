@@ -1714,6 +1714,78 @@ async function openHistoryViewFromCommand(view) {
     }
 }
 
+async function openOrFocusWebSnapshotPage(options = {}) {
+    const preferredTabId = dev1NormalizeTabId(options?.tabId);
+    const preferredWindowId = dev1NormalizeWindowId(options?.windowId);
+    if (preferredTabId != null) {
+        try {
+            const tab = await browserAPI.tabs.get(preferredTabId);
+            if (tab && String(tab.url || '').includes('history_html/history.html')) {
+                if (tab.windowId != null) await browserAPI.windows.update(tab.windowId, { focused: true });
+                await browserAPI.tabs.update(preferredTabId, { active: true });
+                return { success: true, tabId: preferredTabId, reused: true };
+            }
+        } catch (_) { }
+    }
+
+    const targetUrl = browserAPI.runtime.getURL('history_html/history.html?view=dev-1');
+    try {
+        const tabs = await browserAPI.tabs.query({});
+        const existing = Array.isArray(tabs)
+            ? tabs.find(tab => String(tab?.url || '').startsWith(browserAPI.runtime.getURL('history_html/history.html')))
+            : null;
+        if (existing?.id != null) {
+            if (existing.windowId != null) await browserAPI.windows.update(existing.windowId, { focused: true });
+            await browserAPI.tabs.update(existing.id, { active: true, url: targetUrl });
+            return { success: true, tabId: existing.id, reused: true };
+        }
+    } catch (_) { }
+
+    const createOptions = { url: targetUrl };
+    if (preferredWindowId != null) createOptions.windowId = preferredWindowId;
+    const created = await browserAPI.tabs.create(createOptions);
+    return { success: true, tabId: created?.id ?? null, reused: false };
+}
+
+async function openQuickSnapshotHelperForCurrentPage() {
+    const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
+    const tab = Array.isArray(tabs) ? tabs[0] : null;
+    const tabId = dev1NormalizeTabId(tab?.id);
+    const rawUrl = String(tab?.url || '').trim();
+    let parsed = null;
+    try {
+        parsed = new URL(rawUrl);
+    } catch (_) {
+        parsed = null;
+    }
+    if (tabId == null || !parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+        throw new Error('Current page cannot use Web Snapshot helper');
+    }
+
+    const lang = await getCurrentLang();
+    const targetFolder = dev1BuildSnapshotHelperTargetFolder(lang);
+    await dev1ExecuteScriptFile(tabId, 'dev_1/mp4-muxer.js');
+    await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_helper_content.js');
+    const result = await dev1ExecuteScript(tabId, (config) => {
+        if (!window.__dev1SnapshotHelper || typeof window.__dev1SnapshotHelper.show !== 'function') {
+            return { success: false, error: 'Snapshot helper unavailable' };
+        }
+        return window.__dev1SnapshotHelper.show(config);
+    }, [{
+        lang,
+        source: 'quick_snapshot',
+        title: String(tab?.title || '').trim(),
+        url: parsed.toString(),
+        domain: parsed.hostname || '',
+        existingTabId: tabId,
+        snapshotHelperTargetFolder: targetFolder
+    }]);
+    if (!result || result.success !== true) {
+        throw new Error(result?.error || 'Snapshot helper unavailable');
+    }
+    return { success: true, tabId, targetFolder };
+}
+
 if (browserAPI.commands && browserAPI.commands.onCommand) {
     browserAPI.commands.onCommand.addListener((command) => {
         switch (command) {
@@ -1724,7 +1796,7 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
                 openHistoryViewFromCommand('history');
                 break;
             case 'open_web_snapshot_view':
-                openHistoryViewFromCommand('dev-1');
+                openQuickSnapshotHelperForCurrentPage().catch(() => { });
                 break;
             default:
                 break;
@@ -6083,12 +6155,37 @@ function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
 }
 
 function dev1BuildSnapshotHelperLeafName(kind = 'helper', item = {}) {
+    const source = String(item?.source || '').trim();
     const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
+    if (source === 'quick_snapshot' || rawIndex == null) {
+        return dev1BuildQuickSnapshotLeafName(kind, item, {});
+    }
     const index = rawIndex != null ? rawIndex : 0;
     const leafBase = dev1BuildCaptureLeafName(index, item, item?.url, item?.title);
     const timePart = formatSyncTimeForFileName(new Date().toISOString());
     const kindPart = dev1SanitizeFilePart(kind, 'helper', 32);
     return `${leafBase}_${kindPart}_${timePart}`;
+}
+
+function dev1BuildQuickSnapshotLeafName(kind = 'mhtml', item = {}, tab = {}) {
+    let host = '';
+    try {
+        host = new URL(String(item?.url || tab?.url || '')).hostname || '';
+    } catch (_) { }
+    const hostPart = dev1SanitizeFilePart(host || item?.domain || 'site', 'site', 40);
+    const titlePart = dev1SanitizeFilePart(item?.title || tab?.title || 'current_page', 'current_page', 64);
+    const timePart = formatSyncTimeForFileName(new Date().toISOString()).split('_')[1] || formatSyncTimeForFileName(new Date().toISOString());
+    const kindPart = dev1SanitizeFilePart(kind, 'mhtml', 32);
+    return `${hostPart}_${titlePart}_${kindPart}_${timePart}`;
+}
+
+function dev1BuildSnapshotHelperMhtmlLeafName(item = {}, tab = {}) {
+    const source = String(item?.source || '').trim();
+    const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
+    if (source === 'quick_snapshot' || rawIndex == null) {
+        return dev1BuildQuickSnapshotLeafName('mhtml', item, tab);
+    }
+    return dev1BuildCaptureLeafName(rawIndex, item, item?.url || tab?.url, item?.title || tab?.title);
 }
 
 function dev1BuildSnapshotHelperTargetFolder(lang = 'zh_CN') {
@@ -6142,6 +6239,26 @@ async function dev1DownloadSnapshotHelperBlob(message = {}) {
         }
     });
     await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filename);
+    return { success: true, downloadId, filename };
+}
+
+async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
+    const tab = sender?.tab || {};
+    const tabId = dev1NormalizeTabId(tab?.id);
+    if (tabId == null) throw new Error('Missing current tab id');
+    const lang = message.lang === 'en' || message.lang === 'zh_CN'
+        ? message.lang
+        : await getCurrentLang();
+    const item = message?.item && typeof message.item === 'object' ? message.item : {};
+    const targetFolder = String(item?.snapshotHelperTargetFolder || item?.targetFolder || '').trim()
+        || dev1BuildSnapshotHelperTargetFolder(lang);
+    const leafName = dev1BuildSnapshotHelperMhtmlLeafName(item, tab);
+    const filename = `${targetFolder}/${leafName}.mhtml`;
+    const mhtmlBlob = await dev1CaptureMhtmlBlob(tabId);
+    const downloadId = await dev1DownloadBlobToLocal(filename, mhtmlBlob, 'multipart/related', {
+        tabId,
+        preferTabDownload: true
+    });
     return { success: true, downloadId, filename };
 }
 
@@ -6218,11 +6335,13 @@ function dev1NormalizeSnapshotHelperItems(rawItems = []) {
     }).filter(Boolean);
 }
 
-async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN') {
+async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN', options = {}) {
     const items = dev1NormalizeSnapshotHelperItems(rawItems);
     if (!items.length) return { success: true, total: 0, injectedCount: 0, failedCount: 0, results: [] };
     const normalizedLang = lang === 'en' ? 'en' : 'zh_CN';
     const targetFolder = dev1BuildSnapshotHelperTargetFolder(normalizedLang);
+    const originExtensionTabId = dev1NormalizeTabId(options?.originExtensionTabId);
+    const originExtensionWindowId = dev1NormalizeWindowId(options?.originExtensionWindowId);
     const results = [];
     for (const item of items) {
         const tabId = dev1NormalizeTabId(item.existingTabId);
@@ -6241,6 +6360,9 @@ async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN') {
             }, [{
                 ...item,
                 lang: normalizedLang,
+                source: 'queue',
+                originExtensionTabId,
+                originExtensionWindowId,
                 snapshotHelperTargetFolder: item.snapshotHelperTargetFolder || targetFolder
             }]);
             if (!showResult || showResult.success !== true) {
@@ -9307,7 +9429,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'dev1EnableSnapshotHelperForItems') {
             (async () => {
                 try {
-                    const result = await dev1EnableSnapshotHelperForItems(message?.items, message?.lang);
+                    const result = await dev1EnableSnapshotHelperForItems(message?.items, message?.lang, {
+                        originExtensionTabId: sender?.tab?.id,
+                        originExtensionWindowId: sender?.tab?.windowId
+                    });
                     sendResponse(result);
                 } catch (error) {
                     sendResponse({
@@ -9339,6 +9464,35 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 helper download failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperSaveCurrentMhtml') {
+            (async () => {
+                try {
+                    const result = await dev1SaveSnapshotHelperCurrentMhtml(message, sender);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper MHTML save failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1OpenWebSnapshotPage') {
+            (async () => {
+                try {
+                    const result = await openOrFocusWebSnapshotPage({
+                        tabId: message?.originExtensionTabId,
+                        windowId: message?.originExtensionWindowId
+                    });
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 open Web Snapshot page failed'
                     });
                 }
             })();

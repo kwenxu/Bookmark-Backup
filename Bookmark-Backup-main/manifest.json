@@ -58,7 +58,7 @@
             "windows": "Alt+W",
             "linux": "Alt+W"
          },
-         "description": "Open 'Web Snapshot' view"
+         "description": "Open quick Web Snapshot helper on current page"
       }
    },
    "permissions": [

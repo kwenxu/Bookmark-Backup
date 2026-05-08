@@ -39,7 +39,7 @@ function updateShortcutsDisplay() {
         if (!allowed || allowed.has('dev-1')) {
             rows.push({
                 key: key3,
-                label: lang === 'en' ? 'Open "Web Snapshot" view' : '打开「网页快照」视图'
+                label: lang === 'en' ? 'Open Quick Snapshot Tool' : '打开当前页快照工具'
             });
         }
 

@@ -6095,11 +6095,12 @@ function dev1BuildSnapshotHelperTargetFolder(lang = 'zh_CN') {
     return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
 }
 
-function dev1GetSnapshotHelperFolderName(kind = '', lang = 'zh_CN') {
-    const normalized = String(kind || '').trim().toLowerCase();
-    if (normalized === 'long_screenshot') return lang === 'en' ? 'Long Screenshots' : '长截图';
-    if (normalized === 'screen_recording') return lang === 'en' ? 'Screen Recordings' : '屏幕录制';
-    return lang === 'en' ? 'Area Screenshots' : '区域截图';
+function dev1NormalizeDownloadFolderPath(value = '') {
+    return String(value || '')
+        .split('/')
+        .map(part => String(part || '').trim())
+        .filter(part => part && part !== '.' && part !== '..')
+        .join('/');
 }
 
 async function dev1DownloadSnapshotHelperBlob(message = {}) {
@@ -6112,9 +6113,8 @@ async function dev1DownloadSnapshotHelperBlob(message = {}) {
     const extension = dev1SanitizeFilePart(message?.extension || (kind === 'screen_recording' ? 'webm' : 'png'), 'png', 12).replace(/^\.+/, '') || 'png';
     const targetFolder = String(message?.item?.snapshotHelperTargetFolder || message?.item?.targetFolder || '').trim()
         || dev1BuildSnapshotHelperTargetFolder(lang);
-    const helperFolder = dev1GetSnapshotHelperFolderName(kind, lang);
     const leafName = dev1BuildSnapshotHelperLeafName(kind, message?.item || {});
-    const filename = `${targetFolder}/${helperFolder}/${leafName}.${extension}`;
+    const filename = `${targetFolder}/${leafName}.${extension}`;
     const downloadId = await new Promise((resolve, reject) => {
         try {
             browserAPI.downloads.download({
@@ -6254,6 +6254,7 @@ async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN') {
         total: results.length,
         injectedCount,
         failedCount: results.length - injectedCount,
+        targetFolder,
         results
     };
 }
@@ -6356,9 +6357,10 @@ async function runDev1CaptureAndExport(message = {}) {
             : await getCurrentLang();
         const exportRootFolder = getExportRootFolderByLang(lang);
         const snapshotFolder = getWebSnapshotExportFolderByLang(lang);
+        let requestedTargetFolder = dev1NormalizeDownloadFolderPath(message?.targetFolder);
         const buildTargetFolder = () => {
             const runToken = formatWebSnapshotHourFolderName(new Date().toISOString());
-            return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
+            return requestedTargetFolder || `${exportRootFolder}/${snapshotFolder}/${runToken}`;
         };
 
         const runQueue = [];
@@ -6802,6 +6804,8 @@ async function runDev1CaptureAndExport(message = {}) {
                         : rowIndex;
                     const leafBase = dev1BuildCaptureLeafName(leafIndex, baseRow, effectiveUrl, effectiveTitle);
                     const rowBatchArtifacts = [];
+                    const mhtmlRelativePath = `${leafBase}.mhtml`;
+                    const mhtmlZipEntryName = `mhtml/${leafBase}.mhtml`;
 
                     if (formats.mhtml) {
                         try {
@@ -6811,19 +6815,19 @@ async function runDev1CaptureAndExport(message = {}) {
                                     id: dev1BuildArtifactId(`mhtml_r${rowIndex + 1}`),
                                     kind: 'entry',
                                     format: 'mhtml',
-                                    entryName: `mhtml/${leafBase}.mhtml`,
+                                    entryName: mhtmlZipEntryName,
                                     rowIndex,
                                     terminalState: 'queued',
                                     createdAt: dev1NowIso()
                                 });
                                 rowBatchArtifacts.push({
-                                    name: `mhtml/${leafBase}.mhtml`,
+                                    name: mhtmlZipEntryName,
                                     data: await dev1BlobToZipBytes(mhtmlBlob),
                                     artifactId: String(queuedArtifact?.id || '').trim(),
                                     format: 'mhtml'
                                 });
                             } else {
-                                const mhtmlPath = `${runState.targetFolder}/${leafBase}.mhtml`;
+                                const mhtmlPath = `${runState.targetFolder}/${mhtmlRelativePath}`;
                                 const mhtmlDownloadId = await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
                                     tabId: Number(tabId),
                                     preferTabDownload: true

@@ -192,6 +192,7 @@
                 return true;
             }
         })(),
+        snapshotHelperTargetFolder: '',
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
         queueBatchIndex: 0,
         reviewSyncEventTimerId: null,
@@ -407,7 +408,7 @@
             fmtMhtmlOfficial: '官方 MHTML API',
             snapshotHelperLabel: '辅助工具',
             snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
-            snapshotHelperHint: '辅助工具包含：区域截图、长截图、屏幕录制；输出会保存到网页快照目录下对应的辅助工具文件夹。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
+            snapshotHelperHint: '辅助工具产生的区域截图、长截图、屏幕录制会和 MHTML 一起保存到当次网页快照时间戳目录根目录，便于按文件名排序查看。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
@@ -618,7 +619,7 @@
             fmtMhtmlOfficial: 'Official MHTML API',
             snapshotHelperLabel: 'Helper Tools',
             snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
-            snapshotHelperHint: 'Helper outputs are saved under the Web Snapshot folder in the matching helper-tool subfolders. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
+            snapshotHelperHint: 'Area screenshots, long screenshots, screen recordings, and MHTML files are saved directly in the current web-snapshot timestamp folder root for easy filename sorting. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
@@ -1271,6 +1272,7 @@
 
     function setSnapshotHelperEnabled(enabled) {
         state.snapshotHelperEnabled = enabled === true;
+        if (state.snapshotHelperEnabled !== true) state.snapshotHelperTargetFolder = '';
         persistSnapshotHelperEnabled();
         const input = document.getElementById('dev1SnapshotHelperCheckbox');
         if (input instanceof HTMLInputElement) input.checked = state.snapshotHelperEnabled === true;
@@ -2268,6 +2270,7 @@
         if (!response || response.success !== true) {
             throw new Error(response?.error || t('snapshotHelperFailed'));
         }
+        state.snapshotHelperTargetFolder = String(response?.targetFolder || '').trim();
         if (options?.silentStatus !== true) {
             const failed = Number(response.failedCount) || 0;
             setStatus(failed > 0 ? t('snapshotHelperPartialStatus') : t('snapshotHelperEnabledStatus'), failed > 0 ? 'warning' : 'success');
@@ -6304,8 +6307,6 @@
     }
 
     function hasRunDownloadEvidence(response) {
-        const status = String(response?.status || '').trim().toLowerCase();
-        if (status === 'completed') return true;
         const summary = response?.summary || {};
         if ((Number(summary.successCount) || 0) > 0 || (Number(summary.partialCount) || 0) > 0) return true;
         const artifacts = Array.isArray(response?.artifacts) ? response.artifacts : [];
@@ -6316,6 +6317,15 @@
         if (!hasRunDownloadEvidence(response)) return;
         clearReviewSession();
         resetWorkflowSteps();
+    }
+
+    async function advanceQueueBatchAfterRunIfDone(response) {
+        if (!hasRunDownloadEvidence(response)) return false;
+        const queueItems = getExecutionQueueItems();
+        const batches = getQueueBatches(queueItems);
+        const currentIndex = clampQueueBatchIndex(queueItems);
+        if (!batches.length || currentIndex >= batches.length - 1) return false;
+        return await selectQueueBatchIndex(currentIndex + 1, { rerender: false });
     }
 
     async function startCaptureTask() {
@@ -6479,6 +6489,7 @@
                 lang: getLangKey(),
                 items,
                 formats,
+                targetFolder: isSnapshotHelperEnabled() ? state.snapshotHelperTargetFolder : '',
                 options: {
                     closeTabAfterCapture: true,
                     renderWaitMs: 1300,
@@ -6494,8 +6505,12 @@
 
             await refreshCaptureRunState({ silent: true });
             clearReviewWorkflowAfterRunIfDone(response);
+            const advancedBatch = await advanceQueueBatchAfterRunIfDone(response);
             rerenderAllDataPanels();
             applyRunResponseStatus(response, 'runDone');
+            if (advancedBatch) {
+                renderReviewWorkflowPanel();
+            }
         } catch (error) {
             setStatus(`${t('runFailed')}: ${error?.message || ''}`, 'error');
             await refreshCaptureRunState({ silent: true });
@@ -6544,8 +6559,12 @@
 
             await refreshCaptureRunState({ silent: true });
             clearReviewWorkflowAfterRunIfDone(response);
+            const advancedBatch = await advanceQueueBatchAfterRunIfDone(response);
             rerenderAllDataPanels();
             applyRunResponseStatus(response, 'recoveryResumeDone');
+            if (advancedBatch) {
+                renderReviewWorkflowPanel();
+            }
         } catch (error) {
             setStatus(`${t('recoveryResumeFailed')}: ${error?.message || ''}`, 'error');
             await refreshCaptureRunState({ silent: true });

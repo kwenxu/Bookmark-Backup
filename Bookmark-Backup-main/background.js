@@ -1702,7 +1702,7 @@ function resetOperationStatus() {
 
 
 // =================================================================================
-// Keyboard commands for opening history views (Alt/Option + 1~2)
+// Keyboard commands for opening history views
 // =================================================================================
 
 async function openHistoryViewFromCommand(view) {
@@ -1722,6 +1722,9 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
                 break;
             case 'open_backup_history_view':
                 openHistoryViewFromCommand('history');
+                break;
+            case 'open_web_snapshot_view':
+                openHistoryViewFromCommand('dev-1');
                 break;
             default:
                 break;

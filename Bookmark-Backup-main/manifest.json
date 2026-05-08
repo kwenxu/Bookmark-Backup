@@ -24,17 +24,41 @@
       "type": "module"
    },
    "commands": {
+      "_execute_action": {
+         "suggested_key": {
+            "default": "Alt+A",
+            "mac": "Alt+A",
+            "windows": "Alt+A",
+            "linux": "Alt+A"
+         },
+         "description": "Activate the extension"
+      },
       "open_current_changes_view": {
+         "suggested_key": {
+            "default": "Alt+C",
+            "mac": "Alt+C",
+            "windows": "Alt+C",
+            "linux": "Alt+C"
+         },
          "description": "Open 'Current quantity/structure changes' view"
       },
       "open_backup_history_view": {
          "suggested_key": {
-            "default": "Alt+2",
-            "mac": "Alt+2",
-            "windows": "Alt+2",
-            "linux": "Alt+2"
+            "default": "Alt+H",
+            "mac": "Alt+H",
+            "windows": "Alt+H",
+            "linux": "Alt+H"
          },
          "description": "Open 'Backup history' view"
+      },
+      "open_web_snapshot_view": {
+         "suggested_key": {
+            "default": "Alt+W",
+            "mac": "Alt+W",
+            "windows": "Alt+W",
+            "linux": "Alt+W"
+         },
+         "description": "Open 'Web Snapshot' view"
       }
    },
    "permissions": [

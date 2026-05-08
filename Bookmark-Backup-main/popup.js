@@ -3541,6 +3541,84 @@ function initScrollToTopButton() {
     updateButtonsVisibility();
 }
 
+async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
+    const list = document.getElementById('popupShortcutsList');
+    if (!list) return;
+
+    const isEn = lang === 'en';
+    const isMac = navigator.platform?.toUpperCase().includes('MAC') || navigator.userAgent?.toUpperCase().includes('MAC');
+    const fallbackPrefix = isMac ? '⌥' : 'Alt+';
+    const formatShortcut = (value, fallbackKey) => {
+        const raw = String(value || fallbackKey || '').trim();
+        if (!raw) return '';
+        return isMac ? raw.replace(/Alt\+/gi, '⌥') : raw;
+    };
+    const shortcuts = {
+        _execute_action: `${fallbackPrefix}A`,
+        open_current_changes_view: `${fallbackPrefix}C`,
+        open_backup_history_view: `${fallbackPrefix}H`,
+        open_web_snapshot_view: `${fallbackPrefix}W`
+    };
+
+    try {
+        if (chrome?.commands?.getAll) {
+            const commands = await new Promise(resolve => chrome.commands.getAll(resolve));
+            if (Array.isArray(commands)) {
+                commands.forEach((command) => {
+                    if (command?.name && command.shortcut) {
+                        shortcuts[command.name] = formatShortcut(command.shortcut, shortcuts[command.name]);
+                    }
+                });
+            }
+        }
+    } catch (_) { }
+
+    const rows = [
+        {
+            key: formatShortcut(shortcuts._execute_action, `${fallbackPrefix}A`),
+            label: isEn ? 'Activate the extension' : '激活扩展'
+        },
+        {
+            key: formatShortcut(shortcuts.open_current_changes_view, `${fallbackPrefix}C`),
+            label: isEn ? 'Open Current Changes' : '打开当前变化'
+        },
+        {
+            key: formatShortcut(shortcuts.open_backup_history_view, `${fallbackPrefix}H`),
+            label: isEn ? 'Open Backup History' : '打开备份历史'
+        },
+        {
+            key: formatShortcut(shortcuts.open_web_snapshot_view, `${fallbackPrefix}W`),
+            label: isEn ? 'Open Web Snapshot' : '打开网页快照'
+        }
+    ];
+
+    list.replaceChildren();
+    rows.forEach((row) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; background-color: var(--theme-bg-tertiary); border-radius: 6px;';
+
+        const label = document.createElement('span');
+        label.textContent = row.label;
+        label.style.cssText = 'font-size: 13px; color: var(--theme-text-primary);';
+
+        const key = document.createElement('kbd');
+        key.textContent = row.key;
+        key.style.cssText = 'font-size: 12px; color: var(--theme-accent-text-color); background-color: var(--theme-bg-elevated); border: 1px solid var(--theme-border-primary); border-radius: 5px; padding: 3px 7px; white-space: nowrap;';
+
+        item.appendChild(label);
+        item.appendChild(key);
+        list.appendChild(item);
+    });
+}
+
+function openBrowserShortcutsSettings() {
+    try {
+        const ua = navigator.userAgent || '';
+        const url = ua.includes('Edg/') ? 'edge://extensions/shortcuts' : 'chrome://extensions/shortcuts';
+        chrome.tabs.create({ url });
+    } catch (_) { }
+}
+
 /**
  * 初始化开源信息按钮和对话框。
  */
@@ -3549,15 +3627,22 @@ function initializeOpenSourceInfo() {
     const openSourceInfoDialog = document.getElementById('openSourceInfoDialog');
     const closeOpenSourceDialog = document.getElementById('closeOpenSourceDialog');
     const openSourceTooltip = document.getElementById('openSourceTooltip');
+    const openShortcutsSettingsBtn = document.getElementById('openShortcutsSettingsBtn');
 
     if (!openSourceInfoBtn || !openSourceInfoDialog || !closeOpenSourceDialog) {
         return;
     }
 
     // 点击开源信息按钮显示对话框
-    openSourceInfoBtn.addEventListener('click', () => {
+    openSourceInfoBtn.addEventListener('click', async () => {
+        const lang = await getPopupPreferredLang();
+        await renderPopupShortcutsDisplay(lang === 'en' ? 'en' : 'zh_CN');
         openSourceInfoDialog.style.display = 'block';
     });
+
+    if (openShortcutsSettingsBtn) {
+        openShortcutsSettingsBtn.addEventListener('click', openBrowserShortcutsSettings);
+    }
 
     // 点击关闭按钮隐藏对话框
     closeOpenSourceDialog.addEventListener('click', () => {
@@ -9490,8 +9575,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     // 定义开源信息对话框相关的国际化字符串
     openSourceInfoTitleStrings = {
-        'zh_CN': "开源信息",
-        'en': "Open Source Info"
+        'zh_CN': "开源信息与快捷键",
+        'en': "Open Source Info & Shortcuts"
     };
 
     openSourceAuthorInfoStrings = {
@@ -9554,6 +9639,18 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (openSourceIssueText) {
         openSourceIssueText.textContent = openSourceIssueTextStrings[lang] || openSourceIssueTextStrings['zh_CN'];
     }
+
+    const popupShortcutsLabel = document.getElementById('popupShortcutsLabel');
+    if (popupShortcutsLabel) {
+        popupShortcutsLabel.textContent = lang === 'en' ? 'Shortcuts:' : '快捷键:';
+    }
+
+    const popupShortcutsSettingsText = document.getElementById('popupShortcutsSettingsText');
+    if (popupShortcutsSettingsText) {
+        popupShortcutsSettingsText.textContent = lang === 'en' ? 'Settings' : '设置';
+    }
+
+    renderPopupShortcutsDisplay(lang === 'en' ? 'en' : 'zh_CN').catch(() => { });
 
     const openSourceCloseBtn = document.getElementById('openSourceCloseBtn');
     if (openSourceCloseBtn) {

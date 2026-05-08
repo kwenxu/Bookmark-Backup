@@ -6895,7 +6895,7 @@
             <!-- 标题和关闭按钮布局 -->
             <div style="position: relative; margin-bottom: 14px;">
                 <h3 id="openSourceInfoTitle"
-                    style="font-size: 17px; margin: 0; color: var(--theme-accent-text-color); text-align: left;">开源信息
+                    style="font-size: 17px; margin: 0; color: var(--theme-accent-text-color); text-align: left;">开源信息与快捷键
                 </h3>
                 <button id="closeOpenSourceDialog" class="close-button"
                     style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
@@ -6924,6 +6924,20 @@
                             <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
                             <span id="openSourceIssueText">提交问题</span>
                         </a>
+                    </div>
+
+                    <div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 6px 0;">
+                            <p id="popupShortcutsLabel"
+                                style="font-size: 14px; color: var(--theme-text-secondary); margin: 0;">快捷键:</p>
+                            <button id="openShortcutsSettingsBtn" type="button"
+                                style="font-size: 12px; padding: 4px 7px; width: auto; min-width: 0; flex: 0 0 auto; margin-left: auto; border: 1px solid var(--theme-border-primary); border-radius: 6px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); cursor: pointer;">
+                                <i class="fas fa-external-link-alt" style="margin-right: 4px;"></i>
+                                <span id="popupShortcutsSettingsText">设置</span>
+                            </button>
+                        </div>
+                        <div id="popupShortcutsList"
+                            style="display: flex; flex-direction: column; gap: 6px;"></div>
                     </div>
                 </div>
             </div>

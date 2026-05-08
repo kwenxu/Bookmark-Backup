@@ -19,16 +19,28 @@ function updateShortcutsDisplay() {
     const render = (shortcuts) => {
         const safe = (value, fallback) => (value && typeof value === 'string') ? value : fallback;
         const defaultPrefix = isMac ? '⌥' : 'Alt+';
-        const key1 = formatKey(safe(shortcuts.open_current_changes_view, defaultPrefix + '1'));
-        const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + '2'));
+        const keyActivate = formatKey(safe(shortcuts._execute_action, defaultPrefix + 'A'));
+        const key1 = formatKey(safe(shortcuts.open_current_changes_view, defaultPrefix + 'C'));
+        const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + 'H'));
+        const key3 = formatKey(safe(shortcuts.open_web_snapshot_view, defaultPrefix + 'W'));
         const allowed = Array.isArray(window.__ALLOWED_VIEWS) ? new Set(window.__ALLOWED_VIEWS) : null;
 
         const rows = [];
+        rows.push({
+            key: keyActivate,
+            label: lang === 'en' ? 'Activate the extension' : '激活扩展'
+        });
         if (!allowed || allowed.has('current-changes')) {
             rows.push({ key: key1, label: i18n.shortcutCurrentChanges[lang] });
         }
         if (!allowed || allowed.has('history')) {
             rows.push({ key: key2, label: i18n.shortcutHistory[lang] });
+        }
+        if (!allowed || allowed.has('dev-1')) {
+            rows.push({
+                key: key3,
+                label: lang === 'en' ? 'Open "Web Snapshot" view' : '打开「网页快照」视图'
+            });
         }
 
         shortcutsContent.innerHTML = `
@@ -87,8 +99,10 @@ function updateShortcutsDisplay() {
                     });
                 }
                 render({
+                    _execute_action: map._execute_action,
                     open_current_changes_view: map.open_current_changes_view,
                     open_backup_history_view: map.open_backup_history_view,
+                    open_web_snapshot_view: map.open_web_snapshot_view,
                 });
             });
         } catch (e) {

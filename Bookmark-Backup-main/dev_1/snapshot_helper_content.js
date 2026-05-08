@@ -1583,10 +1583,16 @@
         }
 
       } catch (err) {
-        console.error('Area recording error:', err);
+        const errName = err && err.name ? err.name : '';
+        const errMessage = err && err.message ? err.message : String(err || '');
+        console.error('Area recording error:', {
+          name: errName,
+          message: errMessage,
+          error: err
+        });
         this._isScreenshotting = false;
-        if (err.name !== 'NotAllowedError') {
-          alert(`${t('screen_record_error', '录屏失败')}: ${err.message || err}`);
+        if (errName !== 'NotAllowedError') {
+          alert(`${t('screen_record_error', '录屏失败')}: ${errMessage}`);
         }
       }
     }
@@ -1845,7 +1851,7 @@
 
       // Canvas for real-time stitching (device-pixel aligned)
       const masterCanvas = document.createElement('canvas');
-      const masterCtx = masterCanvas.getContext('2d');
+      const masterCtx = masterCanvas.getContext('2d', { willReadFrequently: true });
       const dpr = window.devicePixelRatio || 1;
       const viewWidth = Math.max(1, Math.round(cleanRect.width * dpr));
       const viewHeight = Math.max(1, Math.round(cleanRect.height * dpr));
@@ -2544,7 +2550,7 @@
             const frameCanvas = document.createElement('canvas');
             frameCanvas.width = viewWidth;
             frameCanvas.height = viewHeight;
-            const frameCtx = frameCanvas.getContext('2d');
+            const frameCtx = frameCanvas.getContext('2d', { willReadFrequently: true });
             frameCtx.drawImage(
               img,
               cleanRect.left * dpr, cleanRect.top * dpr, viewWidth, viewHeight,
